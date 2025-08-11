@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package helvetia.lizenz.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/lizenz/v1;lizenzv1";
+
+// Msg defines the Msg service for lizenz module
+service Msg {
+  rpc ActivateLZN(MsgActivateLZN) returns (MsgActivateLZNResponse);
+  rpc DeactivateLZN(MsgDeactivateLZN) returns (MsgDeactivateLZNResponse);
+}
+
+message MsgActivateLZN {
+  string validator = 1; // bech32 address
+  string amount = 2;    // sdk.Coin string form, parsed server-side
+}
+
+message MsgActivateLZNResponse {
+  bool success = 1;
+}
+
+message MsgDeactivateLZN {
+  string validator = 1;
+  string amount = 2;
+}
+
+message MsgDeactivateLZNResponse {
+  bool success = 1;
+}
+
+

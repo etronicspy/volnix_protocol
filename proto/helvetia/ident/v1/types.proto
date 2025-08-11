@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package helvetia.ident.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1;identv1";
+
+import "google/protobuf/timestamp.proto";
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_CITIZEN = 1;
+  ROLE_VALIDATOR = 2;
+}
+
+message VerifiedAccount {
+  string address = 1;
+  Role   role = 2;
+  google.protobuf.Timestamp last_active = 3;
+  string identity_hash = 4;
+}
+
+

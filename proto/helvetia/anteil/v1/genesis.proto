@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package helvetia.anteil.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1;anteilv1";
+
+import "google/protobuf/duration.proto";
+
+message Params {
+  string max_order_amount = 1; // Int string
+  string min_order_amount = 2; // Int string
+  string trading_fee = 3; // sdk.Dec string
+  google.protobuf.Duration auction_period = 4;
+}
+
+message GenesisState {
+  Params params = 1;
+}
+
+

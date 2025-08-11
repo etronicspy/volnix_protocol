@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package helvetia.anteil.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1;anteilv1";
+
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "google/protobuf/timestamp.proto";
+import "helvetia/anteil/v1/types.proto";
+
+service Query {
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
+  rpc Orders(QueryOrdersRequest) returns (QueryOrdersResponse);
+  rpc Trades(QueryTradesRequest) returns (QueryTradesResponse);
+  rpc Auctions(QueryAuctionsRequest) returns (QueryAuctionsResponse);
+}
+
+message QueryParamsRequest {}
+
+message QueryParamsResponse {
+  string json = 1; // placeholder
+}
+
+message Order {
+  string id = 1;
+  string owner = 2;
+  OrderSide side = 3;
+  string amount = 4;
+  string price = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message Trade {
+  string id = 1;
+  string buy_order_id = 2;
+  string sell_order_id = 3;
+  string amount = 4;
+  string price = 5;
+  google.protobuf.Timestamp executed_at = 6;
+}
+
+message Auction {
+  string id = 1;
+  google.protobuf.Timestamp started_at = 2;
+  google.protobuf.Timestamp ends_at = 3;
+}
+
+message QueryOrdersRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryOrdersResponse {
+  repeated Order orders = 1;
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryTradesRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryTradesResponse {
+  repeated Trade trades = 1;
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryAuctionsRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryAuctionsResponse {
+  repeated Auction auctions = 1;
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// OrderSide is imported from types.proto
+
+

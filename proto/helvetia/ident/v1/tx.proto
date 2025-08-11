@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package helvetia.ident.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1;identv1";
+
+import "helvetia/ident/v1/types.proto";
+
+// Msg defines the Msg service for ident module
+service Msg {
+  rpc VerifyIdentity(MsgVerifyIdentity) returns (MsgVerifyIdentityResponse);
+  rpc MigrateRole(MsgMigrateRole) returns (MsgMigrateRoleResponse);
+  rpc ChangeRole(MsgChangeRole) returns (MsgChangeRoleResponse);
+}
+
+message MsgVerifyIdentity {
+  string sender = 1; // bech32 address
+  bytes  zkp_proof = 2; // placeholder for ZKP proof bytes
+  Role   chosen_role = 3;
+}
+
+message MsgVerifyIdentityResponse {
+  bool success = 1;
+}
+
+message MsgMigrateRole {
+  string new_address = 1; // new bech32 address
+  bytes  zkp_proof = 2;
+}
+
+message MsgMigrateRoleResponse {
+  bool success = 1;
+}
+
+message MsgChangeRole {
+  string sender = 1;
+  Role   new_role = 2;
+}
+
+message MsgChangeRoleResponse {
+  bool success = 1;
+}
+
+

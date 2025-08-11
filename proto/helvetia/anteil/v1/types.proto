@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package helvetia.anteil.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1;anteilv1";
+
+enum OrderSide {
+  ORDER_SIDE_UNSPECIFIED = 0;
+  ORDER_SIDE_SELL = 1;
+  ORDER_SIDE_BUY = 2;
+}
+
+

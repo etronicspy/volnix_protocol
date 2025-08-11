@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package helvetia.ident.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1;identv1";
+
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "helvetia/ident/v1/types.proto";
+
+service Query {
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
+  rpc VerifiedAccount(QueryVerifiedAccountRequest) returns (QueryVerifiedAccountResponse);
+  rpc VerifiedAccounts(QueryVerifiedAccountsRequest) returns (QueryVerifiedAccountsResponse);
+  rpc VerifiedAccountsByRole(QueryVerifiedAccountsByRoleRequest) returns (QueryVerifiedAccountsByRoleResponse);
+}
+
+message QueryParamsRequest {}
+
+message QueryParamsResponse {
+  // Params placeholder JSON/string; real structure will be in genesis.proto/types later
+  string json = 1;
+}
+
+message QueryVerifiedAccountRequest {
+  string address = 1;
+}
+
+message QueryVerifiedAccountResponse {
+  helvetia.ident.v1.VerifiedAccount account = 1;
+}
+
+message QueryVerifiedAccountsRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryVerifiedAccountsResponse {
+  repeated helvetia.ident.v1.VerifiedAccount accounts = 1;
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryVerifiedAccountsByRoleRequest {
+  Role role = 1;
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+}
+
+message QueryVerifiedAccountsByRoleResponse {
+  repeated helvetia.ident.v1.VerifiedAccount accounts = 1;
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+

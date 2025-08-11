@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package helvetia.ident.v1;
+
+option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1;identv1";
+
+import "google/protobuf/duration.proto";
+import "helvetia/ident/v1/types.proto";
+
+message Params {
+  // Inactivity periods
+  google.protobuf.Duration citizen_inactivity_period = 1; // e.g., 1 year
+  google.protobuf.Duration validator_inactivity_period = 2; // e.g., 6 months
+}
+
+message GenesisState {
+  Params params = 1;
+  repeated helvetia.ident.v1.VerifiedAccount accounts = 2;
+}
+
+
