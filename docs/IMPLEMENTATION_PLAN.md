@@ -38,24 +38,24 @@
 - Результат: компилируемый кодоген Msg/Query/Genesis — выполнено
 
 #### Итерация 2 — Параметры и genesis (2 дня)
-- `types/params.go`: ключи параметров, `DefaultParams`, `Validate`
-- `genesis.go`: `DefaultGenesis`, `Validate`, `InitGenesis`, `ExportGenesis`
-- Протянуть `Params` в `keeper` через subspace
-- Результат: корректная инициализация сети
+- `types/params.go`: ключи параметров, `DefaultParams`, `Validate` — выполнено (включая простые строковые `Dec`)
+- `genesis.go`: `DefaultGenesis`, `Validate`, `InitGenesis`, `ExportGenesis` — выполнено (protobuf-типы)
+- Протянуть `Params` в `keeper` через subspace — выполнено
+- Результат: корректная инициализация сети — частично (app ещё не подключён)
 
 #### Итерация 3 — Keeper и хранилище (4–5 дней)
-- `keeper/keeper.go`: зависимости (account/bank/…), KV-ключи (`keys.go`)
-- Сериализация protobuf-структур; итераторы через `prefix`
-- Базовые CRUD и инварианты состояния
+- `keeper/keeper.go`: subspace, базовая инициализация — выполнено
+- Сериализация protobuf-структур; итераторы через `prefix` — позже
+- Базовые CRUD и инварианты состояния — позже
 
 #### Итерация 4 — MsgServer (5–7 дней)
-- `ident`: `VerifyIdentity`, `MigrateRole`, `ChangeRole` (ZKP — плейсхолдер-интерфейс)
-- `lizenz`: `ActivateLZN`, `DeactivateLZN`, вычисление MOA
-- `anteil`: `PlaceOrder`, `CancelOrder`, `PlaceBid` (+заготовки matching engine)
-- Результат: транзакции меняют состояние по правилам
+- `ident`: заглушки `VerifyIdentity`, `MigrateRole`, `ChangeRole` — выполнено (заготовки)
+- `lizenz`: заглушки `ActivateLZN`, `DeactivateLZN` — выполнено (заготовки)
+- `anteil`: заглушки `PlaceOrder`, `CancelOrder`, `PlaceBid` — выполнено (заготовки)
+- Результат: транзакции меняют состояние по правилам — позже (логика будет добавлена)
 
 #### Итерация 5 — QueryServer (3–4 дня)
-- Параметры и основные выборки:
+- Параметры и основные выборки — выполнено заглушками (пустые ответы, пагинация подключена)
   - `ident`: verified account по адресу/все/по роли, `Params`
   - `lizenz`: активированные/деактивируемые LZN, MOA-статус, `Params`
   - `anteil`: ордера/сделки/аукционы, `Params`
