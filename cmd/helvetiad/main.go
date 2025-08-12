@@ -9,8 +9,8 @@ import (
 
 // Application version and git commit. Commit is injected via -ldflags at build time.
 var (
-	version = "0.1.0"
-	commit  = "dev"
+	appVersion = "0.1.0"
+	commit     = "dev"
 )
 
 func main() {
@@ -36,7 +36,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print helvetiad version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("helvetiad %s (%s)\n", version, commit)
+			fmt.Printf("helvetiad %s (%s)\n", appVersion, commit)
 		},
 	}
 	return cmd
@@ -47,7 +47,6 @@ func newStartCmd() *cobra.Command {
 		Use:   "start",
 		Short: "Start Helvetia node (placeholder)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Placeholder: In later iterations this will initialize and start a Cosmos SDK app.
 			fmt.Println("Starting Helvetia node (placeholder). Cosmos SDK app wiring will be added in later iterations.")
 			return nil
 		},
