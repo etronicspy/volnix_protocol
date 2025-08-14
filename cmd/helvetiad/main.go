@@ -4,7 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	sdklog "cosmossdk.io/log"
+	dbm "github.com/cosmos/cosmos-db"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/spf13/cobra"
+
+	apppkg "github.com/helvetia-protocol/helvetia-protocol/app"
 )
 
 // Application version and git commit. Commit is injected via -ldflags at build time.
@@ -45,9 +50,27 @@ func newVersionCmd() *cobra.Command {
 func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start Helvetia node (placeholder)",
+		Short: "Start Helvetia node (init app stores in-memory)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Starting Helvetia node (placeholder). Cosmos SDK app wiring will be added in later iterations.")
+			// Bech32 prefixes
+			cfg := sdk.GetConfig()
+			cfg.SetBech32PrefixForAccount("hp", "hppub")
+			cfg.SetBech32PrefixForValidator("hpvaloper", "hpvaloperpub")
+			cfg.SetBech32PrefixForConsensusNode("hpvalcons", "hpvalconspub")
+			cfg.Seal()
+
+			// Encoding and in-memory DB
+			encoding := apppkg.MakeEncodingConfig()
+			logger := sdklog.NewNopLogger()
+			database := dbm.NewMemDB()
+
+			// Build app and load latest version
+			hpApp := apppkg.NewHelvetiaApp(logger, database, nil, encoding)
+			if err := hpApp.LoadLatestVersion(); err != nil {
+				return err
+			}
+
+			fmt.Println("Helvetia app initialized in-memory. ABCI/Tendermint server wiring will be added later.")
 			return nil
 		},
 	}
