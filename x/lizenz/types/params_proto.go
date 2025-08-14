@@ -1,7 +1,7 @@
 package types
 
 import (
-	lizenzv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/lizenz/v1"
+	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 

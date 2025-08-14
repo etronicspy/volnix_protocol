@@ -1,5 +1,5 @@
 BINDIR ?= bin
-APP    ?= helvetiad
+APP    ?= volnixd
 
 .PHONY: all build install tidy test proto-gen clean
 
@@ -7,10 +7,10 @@ all: build
 
 build:
 	@mkdir -p $(BINDIR)
-	go build -ldflags "-s -w -X main.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo dev)" -o $(BINDIR)/$(APP) ./cmd/helvetiad
+	go build -ldflags "-s -w -X main.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo dev)" -o $(BINDIR)/$(APP) ./cmd/volnixd
 
 install:
-	go install -ldflags "-s -w -X main.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo dev)" ./cmd/helvetiad
+	go install -ldflags "-s -w -X main.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo dev)" ./cmd/volnixd
 
 tidy:
 	go mod tidy

@@ -6,9 +6,9 @@ import (
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 
-	anteiltypes "github.com/helvetia-protocol/helvetia-protocol/x/anteil/types"
-	identtypes "github.com/helvetia-protocol/helvetia-protocol/x/ident/types"
-	lizenztypes "github.com/helvetia-protocol/helvetia-protocol/x/lizenz/types"
+	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
+	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
 // EncodingConfig bundles the app-wide codec and interface registry

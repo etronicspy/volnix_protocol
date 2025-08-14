@@ -2,9 +2,9 @@ package lizenz
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	lizenzv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/lizenz/v1"
-	"github.com/helvetia-protocol/helvetia-protocol/x/lizenz/keeper"
-	lztypes "github.com/helvetia-protocol/helvetia-protocol/x/lizenz/types"
+	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
+	lztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
 func DefaultGenesis() *lizenzv1.GenesisState {

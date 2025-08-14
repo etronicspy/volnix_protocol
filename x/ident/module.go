@@ -13,9 +13,9 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 
-	identv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1"
-	"github.com/helvetia-protocol/helvetia-protocol/x/ident/keeper"
-	identtypes "github.com/helvetia-protocol/helvetia-protocol/x/ident/types"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 )
 
 // AppModuleBasic implements the basic methods for the ident module.

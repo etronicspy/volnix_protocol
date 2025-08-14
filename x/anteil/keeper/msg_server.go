@@ -3,7 +3,7 @@ package keeper
 import (
 	"context"
 
-	anteilv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1"
+	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 )
 
 type MsgServer struct {

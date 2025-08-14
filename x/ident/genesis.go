@@ -2,9 +2,9 @@ package ident
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	identv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1"
-	"github.com/helvetia-protocol/helvetia-protocol/x/ident/keeper"
-	identtypes "github.com/helvetia-protocol/helvetia-protocol/x/ident/types"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 )
 
 // DefaultGenesis returns the default genesis state (protobuf type)

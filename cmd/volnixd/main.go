@@ -9,7 +9,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/spf13/cobra"
 
-	apppkg "github.com/helvetia-protocol/helvetia-protocol/app"
+	apppkg "github.com/volnix-protocol/volnix-protocol/app"
 )
 
 // Application version and git commit. Commit is injected via -ldflags at build time.
@@ -20,9 +20,9 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:           "helvetiad",
-		Short:         "Helvetia Protocol daemon",
-		Long:          "Helvetia Protocol (H•P) — sovereign L1 blockchain on Cosmos SDK. Bootstrap daemon.",
+		Use:           "volnixd",
+		Short:         "Volnix Protocol daemon",
+		Long:          "Volnix Protocol — sovereign L1 blockchain on Cosmos SDK. Bootstrap daemon.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -39,9 +39,9 @@ func main() {
 func newVersionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print helvetiad version",
+		Short: "Print volnixd version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("helvetiad %s (%s)\n", appVersion, commit)
+			fmt.Printf("volnixd %s (%s)\n", appVersion, commit)
 		},
 	}
 	return cmd
@@ -50,13 +50,13 @@ func newVersionCmd() *cobra.Command {
 func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start Helvetia node (init app stores in-memory)",
+		Short: "Start Volnix node (init app stores in-memory)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Bech32 prefixes
 			cfg := sdk.GetConfig()
-			cfg.SetBech32PrefixForAccount("hp", "hppub")
-			cfg.SetBech32PrefixForValidator("hpvaloper", "hpvaloperpub")
-			cfg.SetBech32PrefixForConsensusNode("hpvalcons", "hpvalconspub")
+			cfg.SetBech32PrefixForAccount("vx", "vxpub")
+			cfg.SetBech32PrefixForValidator("vxvaloper", "vxvaloperpub")
+			cfg.SetBech32PrefixForConsensusNode("vxvalcons", "vxvalconspub")
 			cfg.Seal()
 
 			// Encoding and in-memory DB
@@ -65,12 +65,12 @@ func newStartCmd() *cobra.Command {
 			database := dbm.NewMemDB()
 
 			// Build app and load latest version
-			hpApp := apppkg.NewHelvetiaApp(logger, database, nil, encoding)
-			if err := hpApp.LoadLatestVersion(); err != nil {
+			app := apppkg.NewVolnixApp(logger, database, nil, encoding)
+			if err := app.LoadLatestVersion(); err != nil {
 				return err
 			}
 
-			fmt.Println("Helvetia app initialized in-memory. ABCI/Tendermint server wiring will be added later.")
+			fmt.Println("Volnix app initialized in-memory. ABCI/Tendermint server wiring will be added later.")
 			return nil
 		},
 	}

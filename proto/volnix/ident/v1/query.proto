@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package helvetia.ident.v1;
+package volnix.ident.v1;
 
-option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1;identv1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
 import "cosmos/base/query/v1beta1/pagination.proto";
-import "helvetia/ident/v1/types.proto";
+import "volnix/ident/v1/types.proto";
 
 service Query {
   rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
@@ -26,7 +26,7 @@ message QueryVerifiedAccountRequest {
 }
 
 message QueryVerifiedAccountResponse {
-  helvetia.ident.v1.VerifiedAccount account = 1;
+  volnix.ident.v1.VerifiedAccount account = 1;
 }
 
 message QueryVerifiedAccountsRequest {
@@ -34,7 +34,7 @@ message QueryVerifiedAccountsRequest {
 }
 
 message QueryVerifiedAccountsResponse {
-  repeated helvetia.ident.v1.VerifiedAccount accounts = 1;
+  repeated volnix.ident.v1.VerifiedAccount accounts = 1;
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
 
@@ -44,8 +44,9 @@ message QueryVerifiedAccountsByRoleRequest {
 }
 
 message QueryVerifiedAccountsByRoleResponse {
-  repeated helvetia.ident.v1.VerifiedAccount accounts = 1;
+  repeated volnix.ident.v1.VerifiedAccount accounts = 1;
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
+
 
 

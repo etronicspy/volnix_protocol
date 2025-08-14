@@ -13,9 +13,9 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 
-	anteilv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1"
-	"github.com/helvetia-protocol/helvetia-protocol/x/anteil/keeper"
-	atypes "github.com/helvetia-protocol/helvetia-protocol/x/anteil/types"
+	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
+	atypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
 
 type AppModuleBasic struct{}

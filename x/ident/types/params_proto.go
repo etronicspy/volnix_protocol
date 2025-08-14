@@ -1,7 +1,7 @@
 package types
 
 import (
-	identv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 

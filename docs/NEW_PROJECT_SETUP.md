@@ -1,6 +1,6 @@
-# Helvetia Protocol — инструкции по созданию проекта с нуля
+# Volnix Protocol — инструкции по созданию проекта с нуля
 
-Ниже — практичная пошаговая инструкция, чтобы развернуть новый репозиторий Helvetia Protocol на базе Cosmos SDK (v0.53.x) с модульной архитектурой и готовым к локальному запуску демоном.
+Ниже — практичная пошаговая инструкция, чтобы развернуть новый репозиторий Volnix Protocol на базе Cosmos SDK (v0.53.x) с модульной архитектурой и готовым к локальному запуску демоном.
 
 ## 1) Предпосылки
 
@@ -13,14 +13,14 @@
 ## 2) Новая директория и репозиторий
 
 ```bash
-mkdir helvetia-protocol && cd helvetia-protocol
+mkdir volnix-protocol && cd volnix-protocol
 git init
 ```
 
 ## 3) Инициализация Go-модуля и зависимости
 
 ```bash
-go mod init <your.module/path>/helvetia-protocol
+go mod init <your.module/path>/volnix-protocol
 
 # Базовые зависимости
 go get github.com/cosmos/cosmos-sdk@v0.53.4
@@ -40,17 +40,17 @@ go mod tidy
 ## 4) Структура проекта
 
 ```text
-helvetia-protocol/
+volnix-protocol/
 ├── app/                    # Основное приложение (BaseApp, NewApp, ModuleBasics)
-├── cmd/                    # CLI-демон (helvetiad)
-│   └── helvetiad/
+├── cmd/                    # CLI-демон (volnixd)
+│   └── volnixd/
 │       └── main.go
 ├── x/                      # Модули
 │   ├── ident/             # Идентичность (ZKP роли, активность)
 │   ├── lizenz/            # LZN, MOA, активация/деактивация
 │   └── anteil/            # Рынок ANT, аукционы
 ├── proto/                  # Protobuf определения
-│   └── helvetia/
+│   └── volnix/
 │       ├── ident/v1/  (tx.proto, query.proto, genesis.proto)
 │       ├── lizenz/v1/ (tx.proto, query.proto, genesis.proto)
 │       └── anteil/v1/ (tx.proto, query.proto, genesis.proto)
@@ -70,7 +70,7 @@ helvetia-protocol/
 
 ```yaml
 version: v1
-name: buf.build/helvetia/protocol
+name: buf.build/volnix/protocol
 deps:
   - buf.build/cosmos/cosmos-sdk
   - buf.build/cosmos/cosmos-proto
@@ -104,16 +104,16 @@ buf generate --template proto/buf.gen.yaml
 ## 6) Скелет приложения
 
 - `app/`: реализовать `ModuleBasics`, `MakeEncodingConfig()`, `NewApp(...)` на базе `baseapp.BaseApp`. Зарегистрировать стандартные модули (auth, bank, staking, gov, mint, slashing, params, crisis, vesting) и ваши кастомные `ident`, `lizenz`, `anteil`.
-- Бех32-префикс адресов (например `hp`): настроить в `cmd/helvetiad/main.go` до запуска командной инициализации.
+- Бех32-префикс адресов (например `vx`): настроить в `cmd/volnixd/main.go` до запуска командной инициализации.
 
-CLI-демон `cmd/helvetiad/main.go` должен:
+CLI-демон `cmd/volnixd/main.go` должен:
 - создать корневую команду (cobra)
 - добавить команды сервера (start/stop/export, status, version, keys)
 - прокинуть `AppCreator`, `DefaultGenesis`, регистрацию gRPC маршрутов
 
 Имена по умолчанию:
-- Домашняя директория: `~/.helvetia`
-- Имя демона: `helvetiad`
+- Домашняя директория: `~/.volnix`
+- Имя демона: `volnixd`
 
 ## 7) Модули (v0.53, MsgServer/QueryServer)
 
@@ -136,13 +136,13 @@ CLI-демон `cmd/helvetiad/main.go` должен:
 ```Makefile
 .PHONY: install build test lint proto-gen
 
-BINARY=helvetiad
+BINARY=volnixd
 
 install:
-	go install ./cmd/helvetiad
+	go install ./cmd/volnixd
 
 build:
-	go build -o bin/$(BINARY) ./cmd/helvetiad
+	go build -o bin/$(BINARY) ./cmd/volnixd
 
 test:
 	go test ./...
@@ -158,16 +158,16 @@ proto-gen:
 make install
 
 # Инициализация сети
-helvetiad init mynode --chain-id helvetia-local-1
+volnixd init mynode --chain-id volnix-local-1
 
 # Создание ключа
-helvetiad keys add mykey
+volnixd keys add mykey
 
 # Запуск узла
-helvetiad start
+volnixd start
 ```
 
-Порты по умолчанию: RPC 26657, API 1317. Домашняя директория: `~/.helvetia`.
+Порты по умолчанию: RPC 26657, API 1317. Домашняя директория: `~/.volnix`.
 
 ## 10) Тесты и качество
 
@@ -184,8 +184,8 @@ helvetiad start
 ## 12) Docker (опционально)
 
 ```bash
-docker build -t helvetia-protocol .
-docker run -p 26657:26657 -p 1317:1317 helvetia-protocol
+docker build -t volnix-protocol .
+docker run -p 26657:26657 -p 1317:1317 volnix-protocol
 ```
 
 ## 13) Советы по миграции c legacy-кода
@@ -197,6 +197,6 @@ docker run -p 26657:26657 -p 1317:1317 helvetia-protocol
 
 ---
 
-После создания каркаса добавляйте функционал модулей по спецификации Helvetia (идентичность и ZKP, лицензии и MOA, рынок ANT и аукционы), генерируйте protobuf и регистрируйте сервисы в `app/`.
+После создания каркаса добавляйте функционал модулей по спецификации Volnix (идентичность и ZKP, лицензии и MOA, рынок ANT и аукционы), генерируйте protobuf и регистрируйте сервисы в `app/`.
 
 

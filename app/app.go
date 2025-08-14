@@ -16,16 +16,16 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	// custom modules
-	"github.com/helvetia-protocol/helvetia-protocol/x/anteil"
-	anteiltypes "github.com/helvetia-protocol/helvetia-protocol/x/anteil/types"
-	"github.com/helvetia-protocol/helvetia-protocol/x/ident"
-	identtypes "github.com/helvetia-protocol/helvetia-protocol/x/ident/types"
-	"github.com/helvetia-protocol/helvetia-protocol/x/lizenz"
-	lizenztypes "github.com/helvetia-protocol/helvetia-protocol/x/lizenz/types"
+	"github.com/volnix-protocol/volnix-protocol/x/anteil"
+	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
+	"github.com/volnix-protocol/volnix-protocol/x/ident"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
+	"github.com/volnix-protocol/volnix-protocol/x/lizenz"
+	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
-// HelvetiaApp wires BaseApp with custom module keepers and services.
-type HelvetiaApp struct {
+// VolnixApp wires BaseApp with custom module keepers and services.
+type VolnixApp struct {
 	*baseapp.BaseApp
 
 	appCodec codec.Codec
@@ -41,8 +41,8 @@ type HelvetiaApp struct {
 	paramsKeeper paramskeeper.Keeper
 }
 
-func NewHelvetiaApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig) *HelvetiaApp {
-	bapp := baseapp.NewBaseApp("helvetia", logger, db, encoding.TxConfig.TxDecoder())
+func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig) *VolnixApp {
+	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder())
 	bapp.SetVersion("0.1.0")
 	// Provide interface registry so Msg/Query services can be registered safely
 	bapp.SetInterfaceRegistry(encoding.InterfaceRegistry)
@@ -104,7 +104,7 @@ func NewHelvetiaApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, 
 		return &abci.ResponseInitChain{}, nil
 	})
 
-	return &HelvetiaApp{
+	return &VolnixApp{
 		BaseApp:      bapp,
 		appCodec:     encoding.Codec,
 		keyParams:    keyParams,

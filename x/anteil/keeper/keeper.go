@@ -6,7 +6,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
-	atypes "github.com/helvetia-protocol/helvetia-protocol/x/anteil/types"
+	atypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
 
 type Keeper struct {

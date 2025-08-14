@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package helvetia.anteil.v1;
+package volnix.anteil.v1;
 
-option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1;anteilv1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
 
 // Msg defines the Msg service for anteil module
 service Msg {
@@ -11,7 +11,7 @@ service Msg {
   rpc PlaceBid(MsgPlaceBid) returns (MsgPlaceBidResponse);
 }
 
-import "helvetia/anteil/v1/types.proto";
+import "volnix/anteil/v1/types.proto";
 
 message MsgPlaceOrder {
   string sender = 1;
@@ -42,5 +42,6 @@ message MsgPlaceBid {
 message MsgPlaceBidResponse {
   bool success = 1;
 }
+
 
 

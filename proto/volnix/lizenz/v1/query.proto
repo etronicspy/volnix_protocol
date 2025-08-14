@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package helvetia.lizenz.v1;
+package volnix.lizenz.v1;
 
-option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/lizenz/v1;lizenzv1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1;lizenzv1";
 
 import "cosmos/base/query/v1beta1/pagination.proto";
 
@@ -39,5 +39,6 @@ message QueryMOARequest {
 message QueryMOAResponse {
   string status = 1; // placeholder
 }
+
 
 

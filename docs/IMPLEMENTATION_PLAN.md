@@ -1,4 +1,4 @@
-## План реализации Helvetia Protocol (v0.53)
+## План реализации Volnix Protocol (v0.53)
 
 Этот документ описывает поэтапную реализацию проекта на базе Cosmos SDK v0.53.x с модульной архитектурой и современными сервисами (MsgServer/QueryServer). Он опирается на базовую настройку из `docs/NEW_PROJECT_SETUP.md`.
 
@@ -12,12 +12,12 @@
 
 ### Архитектура
 - `app/`: BaseApp, `ModuleBasics`, `MakeEncodingConfig`, `NewApp`, регистрация сервисов модулей
-- `cmd/helvetiad`: CLI-демон (init/keys/start/export/status/version)
+- `cmd/volnixd`: CLI-демон (init/keys/start/export/status/version)
 - `x/` модули:
   - `ident`: ZKP-идентичность, роли, активность
   - `lizenz`: LZN, активация/деактивация, MOA
   - `anteil`: рынок ANT, ордера, аукционы
-- `proto/helvetia/<module>/v1`: `tx.proto`, `query.proto`, `genesis.proto`
+- `proto/volnix/<module>/v1`: `tx.proto`, `query.proto`, `genesis.proto`
 
 ### Дорожная карта (итерациями)
 
@@ -25,9 +25,9 @@
 - Инициализация репозитория и `go mod init`
 - Добавление зависимостей (SDK, CometBFT, cobra, grpc-gateway)
 - `buf.yaml`, `proto/buf.gen.yaml`, Makefile (`install/build/test/proto-gen`) — выполнено
-- `cmd/helvetiad/main.go`: префиксы Bech32, команды сервера
+- `cmd/volnixd/main.go`: префиксы Bech32, команды сервера
 - `app/`: минимальный запуск без кастомных модулей
-- Результат: `helvetiad start` поднимает пустой узел
+- Результат: `volnixd start` поднимает пустой узел
 
 #### Итерация 1 — Protobuf API модулей (2–3 дня)
 - Для каждого модуля описать:
@@ -108,7 +108,7 @@
 - `ModuleBasics`: все `AppModuleBasic`
 - `NewApp`: keepers, subspaces, порядок `Begin/End/InitGenesis`
 - `RegisterServices(cfg)`: регистрация Msg/Query сервисов
-- Bech32-префиксы (`hp`) — в `cmd/helvetiad/main.go`
+- Bech32-префиксы (`vx`) — в `cmd/volnixd/main.go`
 
 ### Тестирование
 - Unit: мок-keepers, `sdk.Context`, property-based тесты расчётов
@@ -122,13 +122,13 @@
 - ZKP: контракт интерфейса, затем подключение реальной верификации
 
 ### Definition of Done
-- Узел запускается (`helvetiad start`) с подключёнными модулями
+- Узел запускается (`volnixd start`) с подключёнными модулями
 - Msg/Query покрыты unit-тестами, интеграция проходит
 - E2E сценарии экономики успешны
 - Документация актуальна
 
 ### Ближайшие задачи
-1. Итерация 0: каркас `app/`, `cmd/helvetiad`, Makefile, buf-конфиг
+1. Итерация 0: каркас `app/`, `cmd/volnixd`, Makefile, buf-конфиг
 2. Итерация 1: protobuf API для `ident`, `lizenz`, `anteil` + кодоген
 3. Итерация 2–3: `params`, `genesis`, `keeper` (CRUD), провязка в `app/`
 4. Итерация 4–5: `MsgServer`/`QueryServer` и CLI-команды

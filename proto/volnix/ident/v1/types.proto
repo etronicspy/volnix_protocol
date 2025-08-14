@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package helvetia.ident.v1;
+package volnix.ident.v1;
 
-option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1;identv1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
 import "google/protobuf/timestamp.proto";
 
@@ -18,5 +18,6 @@ message VerifiedAccount {
   google.protobuf.Timestamp last_active = 3;
   string identity_hash = 4;
 }
+
 
 

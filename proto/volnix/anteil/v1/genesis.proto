@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package helvetia.anteil.v1;
+package volnix.anteil.v1;
 
-option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1;anteilv1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
 
 import "google/protobuf/duration.proto";
 
@@ -16,5 +16,6 @@ message Params {
 message GenesisState {
   Params params = 1;
 }
+
 
 

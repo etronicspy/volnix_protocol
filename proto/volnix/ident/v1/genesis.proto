@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package helvetia.ident.v1;
+package volnix.ident.v1;
 
-option go_package = "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1;identv1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
 import "google/protobuf/duration.proto";
-import "helvetia/ident/v1/types.proto";
+import "volnix/ident/v1/types.proto";
 
 message Params {
   // Inactivity periods
@@ -15,7 +15,8 @@ message Params {
 
 message GenesisState {
   Params params = 1;
-  repeated helvetia.ident.v1.VerifiedAccount accounts = 2;
+  repeated volnix.ident.v1.VerifiedAccount accounts = 2;
 }
+
 
 

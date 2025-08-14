@@ -13,9 +13,9 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
 
-	lizenzv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/lizenz/v1"
-	"github.com/helvetia-protocol/helvetia-protocol/x/lizenz/keeper"
-	lztypes "github.com/helvetia-protocol/helvetia-protocol/x/lizenz/types"
+	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
+	lztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
 type AppModuleBasic struct{}
