@@ -3,7 +3,9 @@ package keeper
 import (
 	"context"
 
+    sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkquery "github.com/cosmos/cosmos-sdk/types/query"
+    "google.golang.org/protobuf/encoding/protojson"
 	identv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/ident/v1"
 )
 
@@ -17,8 +19,13 @@ func NewQueryServer(k Keeper) QueryServer { return QueryServer{k: k} }
 var _ identv1.QueryServer = QueryServer{}
 
 func (s QueryServer) Params(ctx context.Context, _ *identv1.QueryParamsRequest) (*identv1.QueryParamsResponse, error) {
-	// placeholder: return empty JSON string until real Params type is wired to protobuf
-	return &identv1.QueryParamsResponse{Json: "{}"}, nil
+    sdkCtx := sdk.UnwrapSDKContext(ctx)
+    params := s.k.GetParams(sdkCtx).ToProto()
+    bz, err := protojson.Marshal(params)
+    if err != nil {
+        return nil, err
+    }
+    return &identv1.QueryParamsResponse{Json: string(bz)}, nil
 }
 
 func (s QueryServer) VerifiedAccount(ctx context.Context, req *identv1.QueryVerifiedAccountRequest) (*identv1.QueryVerifiedAccountResponse, error) {

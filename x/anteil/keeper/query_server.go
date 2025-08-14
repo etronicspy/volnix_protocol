@@ -3,7 +3,9 @@ package keeper
 import (
 	"context"
 
+    sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkquery "github.com/cosmos/cosmos-sdk/types/query"
+    "google.golang.org/protobuf/encoding/protojson"
 	anteilv1 "github.com/helvetia-protocol/helvetia-protocol/proto/gen/go/helvetia/anteil/v1"
 )
 
@@ -17,7 +19,13 @@ func NewQueryServer(k Keeper) QueryServer { return QueryServer{k: k} }
 var _ anteilv1.QueryServer = QueryServer{}
 
 func (s QueryServer) Params(ctx context.Context, _ *anteilv1.QueryParamsRequest) (*anteilv1.QueryParamsResponse, error) {
-	return &anteilv1.QueryParamsResponse{Json: "{}"}, nil
+    sdkCtx := sdk.UnwrapSDKContext(ctx)
+    params := s.k.GetParams(sdkCtx).ToProto()
+    bz, err := protojson.Marshal(params)
+    if err != nil {
+        return nil, err
+    }
+    return &anteilv1.QueryParamsResponse{Json: string(bz)}, nil
 }
 
 func (s QueryServer) Orders(ctx context.Context, req *anteilv1.QueryOrdersRequest) (*anteilv1.QueryOrdersResponse, error) {
