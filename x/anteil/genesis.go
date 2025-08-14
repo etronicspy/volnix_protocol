@@ -23,7 +23,7 @@ func Validate(gen *anteilv1.GenesisState) error {
 	return p.Validate()
 }
 
-func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState *anteilv1.GenesisState) {
+func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *anteilv1.GenesisState) {
 	if genState == nil {
 		genState = DefaultGenesis()
 	}
@@ -31,7 +31,7 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState *anteilv1.GenesisSta
 	k.SetParams(ctx, p)
 }
 
-func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *anteilv1.GenesisState {
+func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *anteilv1.GenesisState {
 	params := k.GetParams(ctx)
 	return &anteilv1.GenesisState{Params: params.ToProto()}
 }

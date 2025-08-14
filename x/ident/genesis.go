@@ -24,7 +24,7 @@ func Validate(gen *identv1.GenesisState) error {
 }
 
 // InitGenesis initializes the module state from protobuf genesis data
-func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState *identv1.GenesisState) {
+func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *identv1.GenesisState) {
 	if genState == nil {
 		genState = DefaultGenesis()
 	}
@@ -33,7 +33,7 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState *identv1.GenesisStat
 }
 
 // ExportGenesis exports the current state as protobuf genesis
-func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *identv1.GenesisState {
+func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *identv1.GenesisState {
 	params := k.GetParams(ctx)
 	return &identv1.GenesisState{
 		Params:   params.ToProto(),

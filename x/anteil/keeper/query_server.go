@@ -14,7 +14,7 @@ type QueryServer struct {
 	anteilv1.UnimplementedQueryServer
 }
 
-func NewQueryServer(k Keeper) QueryServer { return QueryServer{k: k} }
+func NewQueryServer(k *Keeper) QueryServer { return QueryServer{k: *k} }
 
 var _ anteilv1.QueryServer = QueryServer{}
 

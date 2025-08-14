@@ -11,7 +11,7 @@ type MsgServer struct {
 	anteilv1.UnimplementedMsgServer
 }
 
-func NewMsgServer(k Keeper) MsgServer { return MsgServer{k: k} }
+func NewMsgServer(k *Keeper) MsgServer { return MsgServer{k: *k} }
 
 var _ anteilv1.MsgServer = MsgServer{}
 
@@ -26,5 +26,3 @@ func (s MsgServer) CancelOrder(ctx context.Context, req *anteilv1.MsgCancelOrder
 func (s MsgServer) PlaceBid(ctx context.Context, req *anteilv1.MsgPlaceBid) (*anteilv1.MsgPlaceBidResponse, error) {
 	return &anteilv1.MsgPlaceBidResponse{Success: true}, nil
 }
-
-func (MsgServer) mustEmbedUnimplementedMsgServer() {}

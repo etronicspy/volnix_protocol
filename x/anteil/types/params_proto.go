@@ -7,10 +7,16 @@ import (
 
 func (p Params) ToProto() *anteilv1.Params {
 	return &anteilv1.Params{
-		MaxOrderAmount: p.MaxOrderAmount,
-		MinOrderAmount: p.MinOrderAmount,
-		TradingFee:     p.TradingFee,
-		AuctionPeriod:  durationpb.New(p.AuctionPeriod),
+		MinAntAmount:                p.MinAntAmount,
+		MaxAntAmount:                p.MaxAntAmount,
+		TradingFeeRate:              p.TradingFeeRate,
+		MinOrderSize:                p.MinOrderSize,
+		MaxOrderSize:                p.MaxOrderSize,
+		OrderExpiry:                 durationpb.New(p.OrderExpiry),
+		RequireIdentityVerification: p.RequireIdentityVerification,
+		AntDenom:                    p.AntDenom,
+		MaxOpenOrders:               p.MaxOpenOrders,
+		PricePrecision:              p.PricePrecision,
 	}
 }
 
@@ -19,9 +25,15 @@ func ParamsFromProto(pp *anteilv1.Params) (Params, error) {
 		return DefaultParams(), nil
 	}
 	return Params{
-		MaxOrderAmount: pp.MaxOrderAmount,
-		MinOrderAmount: pp.MinOrderAmount,
-		TradingFee:     pp.TradingFee,
-		AuctionPeriod:  pp.AuctionPeriod.AsDuration(),
+		MinAntAmount:                pp.MinAntAmount,
+		MaxAntAmount:                pp.MaxAntAmount,
+		TradingFeeRate:              pp.TradingFeeRate,
+		MinOrderSize:                pp.MinOrderSize,
+		MaxOrderSize:                pp.MaxOrderSize,
+		OrderExpiry:                 pp.OrderExpiry.AsDuration(),
+		RequireIdentityVerification: pp.RequireIdentityVerification,
+		AntDenom:                    pp.AntDenom,
+		MaxOpenOrders:               pp.MaxOpenOrders,
+		PricePrecision:              pp.PricePrecision,
 	}, nil
 }

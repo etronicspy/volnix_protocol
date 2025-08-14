@@ -4,6 +4,8 @@ package volnix.lizenz.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1;lizenzv1";
 
+// Types are defined in types.proto
+
 // Msg defines the Msg service for lizenz module
 service Msg {
   rpc ActivateLZN(MsgActivateLZN) returns (MsgActivateLZNResponse);
@@ -13,20 +15,26 @@ service Msg {
 message MsgActivateLZN {
   string validator = 1; // bech32 address
   string amount = 2;    // sdk.Coin string form, parsed server-side
+  string identity_hash = 3; // Identity verification hash
 }
 
 message MsgActivateLZNResponse {
   bool success = 1;
+  string activation_id = 2; // Unique identifier for the activation
 }
 
 message MsgDeactivateLZN {
   string validator = 1;
   string amount = 2;
+  string reason = 3; // Reason for deactivation
 }
 
 message MsgDeactivateLZNResponse {
   bool success = 1;
+  string deactivation_id = 2; // Unique identifier for the deactivation
 }
+
+
 
 
 

@@ -4,17 +4,15 @@ package volnix.anteil.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
 
-import "google/protobuf/duration.proto";
-
-message Params {
-  string max_order_amount = 1; // Int string
-  string min_order_amount = 2; // Int string
-  string trading_fee = 3; // sdk.Dec string
-  google.protobuf.Duration auction_period = 4;
-}
+import "volnix/anteil/v1/types.proto";
 
 message GenesisState {
   Params params = 1;
+  repeated Order orders = 2;
+  repeated Trade trades = 3;
+  repeated UserPosition user_positions = 4;
+  repeated Auction auctions = 5;
+  OrderBook order_book = 6;
 }
 
 

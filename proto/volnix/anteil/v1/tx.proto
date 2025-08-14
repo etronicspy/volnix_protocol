@@ -4,43 +4,73 @@ package volnix.anteil.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
 
+import "volnix/anteil/v1/types.proto";
+
 // Msg defines the Msg service for anteil module
 service Msg {
   rpc PlaceOrder(MsgPlaceOrder) returns (MsgPlaceOrderResponse);
   rpc CancelOrder(MsgCancelOrder) returns (MsgCancelOrderResponse);
+  rpc UpdateOrder(MsgUpdateOrder) returns (MsgUpdateOrderResponse);
   rpc PlaceBid(MsgPlaceBid) returns (MsgPlaceBidResponse);
+  rpc SettleAuction(MsgSettleAuction) returns (MsgSettleAuctionResponse);
 }
 
-import "volnix/anteil/v1/types.proto";
-
 message MsgPlaceOrder {
-  string sender = 1;
-  OrderSide side = 2;
-  string amount = 3; // sdk.Coin string
-  string price  = 4; // sdk.Dec string
+  string owner = 1; // bech32 address
+  OrderType order_type = 2;
+  OrderSide order_side = 3;
+  string ant_amount = 4; // ANT amount as string
+  string price = 5; // Price as decimal string
+  string identity_hash = 6; // Identity verification hash
 }
 
 message MsgPlaceOrderResponse {
-  string order_id = 1;
+  bool success = 1;
+  string order_id = 2; // Unique identifier for the order
 }
 
 message MsgCancelOrder {
-  string sender = 1;
-  string order_id = 2;
+  string owner = 1; // bech32 address
+  string order_id = 2; // ID of the order to cancel
 }
 
 message MsgCancelOrderResponse {
   bool success = 1;
+  string cancelled_order_id = 2;
+}
+
+message MsgUpdateOrder {
+  string owner = 1; // bech32 address
+  string order_id = 2; // ID of the order to update
+  string new_ant_amount = 3; // New ANT amount
+  string new_price = 4; // New price
+}
+
+message MsgUpdateOrderResponse {
+  bool success = 1;
+  string updated_order_id = 2;
 }
 
 message MsgPlaceBid {
-  string validator = 1;
-  string auction_id = 2;
-  string ant_amount = 3;
+  string bidder = 1; // bech32 address
+  string auction_id = 2; // ID of the auction
+  string amount = 3; // Bid amount
+  string identity_hash = 4; // Identity verification hash
 }
 
 message MsgPlaceBidResponse {
   bool success = 1;
+  string bid_id = 2; // Unique identifier for the bid
+}
+
+message MsgSettleAuction {
+  string auction_id = 1; // ID of the auction to settle
+  string winner = 2; // bech32 address of the winner
+}
+
+message MsgSettleAuctionResponse {
+  bool success = 1;
+  string settled_auction_id = 2;
 }
 
 

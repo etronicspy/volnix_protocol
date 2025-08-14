@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package volnix.lizenz.v1;
+
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1;lizenzv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+// Params defines the parameters for the lizenz module
+message Params {
+  uint32 max_activated_per_validator = 1;
+  string activity_coefficient = 2; // sdk.Dec string
+  google.protobuf.Duration deactivation_period = 3;
+  google.protobuf.Duration inactivity_period = 4;
+  
+  // Additional parameters for LZN management
+  string min_lzn_amount = 5; // Minimum amount of LZN required for activation
+  string max_lzn_amount = 6; // Maximum amount of LZN that can be activated
+  bool require_identity_verification = 7; // Whether identity verification is required
+  string lzn_denom = 8; // Denomination for LZN tokens (e.g., "ulzn")
+}
+
+// ActivatedLizenz represents an activated LZN license for a validator
+message ActivatedLizenz {
+  string validator = 1;
+  string amount = 2; // sdk.Coin string
+  google.protobuf.Timestamp activation_time = 3;
+  google.protobuf.Timestamp last_activity = 4;
+  string identity_hash = 5; // Link to identity verification
+}
+
+// DeactivatingLizenz represents a LZN license in the process of deactivation
+message DeactivatingLizenz {
+  string validator = 1;
+  string amount = 2; // sdk.Coin string
+  google.protobuf.Timestamp deactivation_start = 3;
+  google.protobuf.Timestamp deactivation_end = 4;
+  string reason = 5; // Reason for deactivation
+}
+
+// MOAStatus represents the Minimum Obligation of Activity status for a validator
+message MOAStatus {
+  string validator = 1;
+  bool is_active = 2;
+  google.protobuf.Timestamp last_activity = 3;
+  string current_moa = 4; // Current MOA value as string
+  string required_moa = 5; // Required MOA value as string
+  google.protobuf.Timestamp next_check = 6;
+  bool is_compliant = 7;
+}

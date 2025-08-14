@@ -24,7 +24,16 @@ var _ module.AppModuleBasic = AppModuleBasic{}
 
 func (AppModuleBasic) Name() string                                    { return atypes.ModuleName }
 func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino)   {}
-func (AppModuleBasic) RegisterInterfaces(_ cdctypes.InterfaceRegistry) {}
+func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
+	// Register message interfaces
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&anteilv1.MsgPlaceOrder{},
+		&anteilv1.MsgCancelOrder{},
+		&anteilv1.MsgUpdateOrder{},
+		&anteilv1.MsgPlaceBid{},
+		&anteilv1.MsgSettleAuction{},
+	)
+}
 
 func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {
 	bz, _ := json.Marshal(DefaultGenesis())
@@ -43,12 +52,12 @@ func (AppModuleBasic) RegisterGRPCGatewayRoutes(_ client.Context, _ *gatewayrunt
 
 type AppModule struct {
 	AppModuleBasic
-	keeper keeper.Keeper
+	keeper *keeper.Keeper
 }
 
 var _ module.AppModule = AppModule{}
 
-func NewAppModule(k keeper.Keeper) AppModule { return AppModule{keeper: k} }
+func NewAppModule(k *keeper.Keeper) AppModule { return AppModule{keeper: k} }
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	anteilv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
@@ -70,6 +79,6 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 func (AppModule) IsAppModule()        {}
 func (AppModule) IsOnePerModuleType() {}
 
-func NewKeeper(cdc codec.BinaryCodec, key storetypes.StoreKey, ps paramtypes.Subspace) keeper.Keeper {
+func NewKeeper(cdc codec.BinaryCodec, key storetypes.StoreKey, ps paramtypes.Subspace) *keeper.Keeper {
 	return keeper.NewKeeper(cdc, key, ps)
 }

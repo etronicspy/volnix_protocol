@@ -16,6 +16,9 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	// custom modules
+	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil"
 	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 	"github.com/volnix-protocol/volnix-protocol/x/ident"
@@ -39,6 +42,9 @@ type VolnixApp struct {
 
 	// keepers
 	paramsKeeper paramskeeper.Keeper
+
+	// module manager
+	mm *module.Manager
 }
 
 func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig) *VolnixApp {
@@ -84,9 +90,42 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		anteil.NewAppModule(anteilKeeper),
 	)
 
+	// Create app instance
+	app := &VolnixApp{
+		BaseApp:      bapp,
+		appCodec:     encoding.Codec,
+		keyParams:    keyParams,
+		tkeyParams:   tkeyParams,
+		keyIdent:     keyIdent,
+		keyLizenz:    keyLizenz,
+		keyAnteil:    keyAnteil,
+		paramsKeeper: paramsKeeper,
+		mm:           mm,
+	}
+
+	// Register interfaces first
+	encoding.InterfaceRegistry.RegisterImplementations((*sdk.Msg)(nil),
+		&anteilv1.MsgPlaceOrder{},
+		&anteilv1.MsgCancelOrder{},
+		&anteilv1.MsgUpdateOrder{},
+		&anteilv1.MsgPlaceBid{},
+		&anteilv1.MsgSettleAuction{},
+	)
+	encoding.InterfaceRegistry.RegisterImplementations((*sdk.Msg)(nil),
+		&identv1.MsgVerifyIdentity{},
+		&identv1.MsgMigrateRole{},
+		&identv1.MsgChangeRole{},
+	)
+	encoding.InterfaceRegistry.RegisterImplementations((*sdk.Msg)(nil),
+		&lizenzv1.MsgActivateLZN{},
+		&lizenzv1.MsgDeactivateLZN{},
+	)
+
 	// Register Msg/Query services
 	configurator := module.NewConfigurator(encoding.Codec, bapp.MsgServiceRouter(), bapp.GRPCQueryRouter())
-	mm.RegisterServices(configurator)
+	if err := mm.RegisterServices(configurator); err != nil {
+		panic(err)
+	}
 
 	// InitGenesis handler (v0.53 InitChainer signature)
 	bapp.SetInitChainer(func(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
@@ -98,20 +137,18 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 				return nil, err
 			}
 		} else {
-			genesisState = ModuleBasics.DefaultGenesis(encoding.Codec)
+			// Create default genesis state
+			genesisState = make(map[string]json.RawMessage)
+			genesisState[identtypes.ModuleName] = encoding.Codec.MustMarshalJSON(ident.DefaultGenesis())
+			genesisState[lizenztypes.ModuleName] = encoding.Codec.MustMarshalJSON(lizenz.DefaultGenesis())
+			genesisState[anteiltypes.ModuleName] = encoding.Codec.MustMarshalJSON(anteil.DefaultGenesis())
 		}
-		mm.InitGenesis(ctx, encoding.Codec, genesisState)
+		_, err := mm.InitGenesis(ctx, encoding.Codec, genesisState)
+		if err != nil {
+			return nil, err
+		}
 		return &abci.ResponseInitChain{}, nil
 	})
 
-	return &VolnixApp{
-		BaseApp:      bapp,
-		appCodec:     encoding.Codec,
-		keyParams:    keyParams,
-		tkeyParams:   tkeyParams,
-		keyIdent:     keyIdent,
-		keyLizenz:    keyLizenz,
-		keyAnteil:    keyAnteil,
-		paramsKeeper: paramsKeeper,
-	}
+	return app
 }

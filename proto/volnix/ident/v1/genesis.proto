@@ -11,6 +11,14 @@ message Params {
   // Inactivity periods
   google.protobuf.Duration citizen_inactivity_period = 1; // e.g., 1 year
   google.protobuf.Duration validator_inactivity_period = 2; // e.g., 6 months
+  
+  // Account limits
+  uint64 max_citizen_accounts = 3; // Maximum number of citizen accounts
+  uint64 max_validator_accounts = 4; // Maximum number of validator accounts
+  
+  // Identity verification
+  bool require_identity_verification = 5; // Whether identity verification is required
+  string identity_provider_address = 6; // Address of the identity verification provider
 }
 
 message GenesisState {

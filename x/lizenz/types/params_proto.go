@@ -7,10 +7,14 @@ import (
 
 func (p Params) ToProto() *lizenzv1.Params {
 	return &lizenzv1.Params{
-		MaxActivatedPerValidator: p.MaxActivatedLZNPerValidator,
-		ActivityCoefficient:      p.ActivityCoefficient,
-		DeactivationPeriod:       durationpb.New(p.DeactivationPeriod),
-		InactivityPeriod:         durationpb.New(p.InactivityPeriod),
+		MaxActivatedPerValidator:    p.MaxActivatedPerValidator,
+		ActivityCoefficient:         p.ActivityCoefficient,
+		DeactivationPeriod:          durationpb.New(p.DeactivationPeriod),
+		InactivityPeriod:            durationpb.New(p.InactivityPeriod),
+		MinLznAmount:                p.MinLznAmount,
+		MaxLznAmount:                p.MaxLznAmount,
+		RequireIdentityVerification: p.RequireIdentityVerification,
+		LznDenom:                    p.LznDenom,
 	}
 }
 
@@ -19,9 +23,13 @@ func ParamsFromProto(pp *lizenzv1.Params) (Params, error) {
 		return DefaultParams(), nil
 	}
 	return Params{
-		MaxActivatedLZNPerValidator: pp.MaxActivatedPerValidator,
+		MaxActivatedPerValidator:    pp.MaxActivatedPerValidator,
 		ActivityCoefficient:         pp.ActivityCoefficient,
 		DeactivationPeriod:          pp.DeactivationPeriod.AsDuration(),
 		InactivityPeriod:            pp.InactivityPeriod.AsDuration(),
+		MinLznAmount:                pp.MinLznAmount,
+		MaxLznAmount:                pp.MaxLznAmount,
+		RequireIdentityVerification: pp.RequireIdentityVerification,
+		LznDenom:                    pp.LznDenom,
 	}, nil
 }

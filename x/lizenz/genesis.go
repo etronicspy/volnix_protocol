@@ -26,7 +26,7 @@ func Validate(gen *lizenzv1.GenesisState) error {
 	return p.Validate()
 }
 
-func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState *lizenzv1.GenesisState) {
+func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *lizenzv1.GenesisState) {
 	if genState == nil {
 		genState = DefaultGenesis()
 	}
@@ -34,7 +34,7 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState *lizenzv1.GenesisSta
 	k.SetParams(ctx, p)
 }
 
-func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *lizenzv1.GenesisState {
+func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *lizenzv1.GenesisState {
 	params := k.GetParams(ctx)
 	return &lizenzv1.GenesisState{
 		Params:    params.ToProto(),

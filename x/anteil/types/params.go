@@ -8,91 +8,152 @@ import (
 )
 
 var (
-	KeyMaxOrderAmount = []byte("MaxOrderAmount")
-	KeyMinOrderAmount = []byte("MinOrderAmount")
-	KeyTradingFee     = []byte("TradingFee")
-	KeyAuctionPeriod  = []byte("AuctionPeriod")
+	// KeyMinAntAmount defines the key for minimum ANT amount
+	KeyMinAntAmount = []byte("MinAntAmount")
+
+	// KeyMaxAntAmount defines the key for maximum ANT amount
+	KeyMaxAntAmount = []byte("MaxAntAmount")
+
+	// KeyTradingFeeRate defines the key for trading fee rate
+	KeyTradingFeeRate = []byte("TradingFeeRate")
+
+	// KeyMinOrderSize defines the key for minimum order size
+	KeyMinOrderSize = []byte("MinOrderSize")
+
+	// KeyMaxOrderSize defines the key for maximum order size
+	KeyMaxOrderSize = []byte("MaxOrderSize")
+
+	// KeyOrderExpiry defines the key for order expiry duration
+	KeyOrderExpiry = []byte("OrderExpiry")
+
+	// KeyRequireIdentityVerification defines the key for identity verification requirement
+	KeyRequireIdentityVerification = []byte("RequireIdentityVerification")
+
+	// KeyAntDenom defines the key for ANT denomination
+	KeyAntDenom = []byte("AntDenom")
+
+	// KeyMaxOpenOrders defines the key for maximum open orders
+	KeyMaxOpenOrders = []byte("MaxOpenOrders")
+
+	// KeyPricePrecision defines the key for price precision
+	KeyPricePrecision = []byte("PricePrecision")
 )
 
-// Ensure Params implements ParamSet
-var _ paramtypes.ParamSet = (*Params)(nil)
-
-// Params defines anteil module parameters
-type Params struct {
-	MaxOrderAmount string        `json:"max_order_amount"` // Int string
-	MinOrderAmount string        `json:"min_order_amount"` // Int string
-	TradingFee     string        `json:"trading_fee"`      // decimal as string in [0,1]
-	AuctionPeriod  time.Duration `json:"auction_period"`
-}
-
+// ParamKeyTable returns the parameter key table
 func ParamKeyTable() paramtypes.KeyTable {
 	return paramtypes.NewKeyTable().RegisterParamSet(&Params{})
 }
 
+// Params defines the parameters for the anteil module
+type Params struct {
+	MinAntAmount                string        `json:"min_ant_amount"`
+	MaxAntAmount                string        `json:"max_ant_amount"`
+	TradingFeeRate              string        `json:"trading_fee_rate"`
+	MinOrderSize                string        `json:"min_order_size"`
+	MaxOrderSize                string        `json:"max_order_size"`
+	OrderExpiry                 time.Duration `json:"order_expiry"`
+	RequireIdentityVerification bool          `json:"require_identity_verification"`
+	AntDenom                    string        `json:"ant_denom"`
+	MaxOpenOrders               uint32        `json:"max_open_orders"`
+	PricePrecision              string        `json:"price_precision"`
+}
+
+// ParamSetPairs returns the parameter set pairs
 func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyMaxOrderAmount, &p.MaxOrderAmount, validateIntStringPositive),
-		paramtypes.NewParamSetPair(KeyMinOrderAmount, &p.MinOrderAmount, validateIntStringPositive),
-		paramtypes.NewParamSetPair(KeyTradingFee, &p.TradingFee, validateDecString),
-		paramtypes.NewParamSetPair(KeyAuctionPeriod, &p.AuctionPeriod, validateDuration),
+		paramtypes.NewParamSetPair(KeyMinAntAmount, &p.MinAntAmount, validateString),
+		paramtypes.NewParamSetPair(KeyMaxAntAmount, &p.MaxAntAmount, validateString),
+		paramtypes.NewParamSetPair(KeyTradingFeeRate, &p.TradingFeeRate, validateString),
+		paramtypes.NewParamSetPair(KeyMinOrderSize, &p.MinOrderSize, validateString),
+		paramtypes.NewParamSetPair(KeyMaxOrderSize, &p.MaxOrderSize, validateString),
+		paramtypes.NewParamSetPair(KeyOrderExpiry, &p.OrderExpiry, validateDuration),
+		paramtypes.NewParamSetPair(KeyRequireIdentityVerification, &p.RequireIdentityVerification, validateBool),
+		paramtypes.NewParamSetPair(KeyAntDenom, &p.AntDenom, validateString),
+		paramtypes.NewParamSetPair(KeyMaxOpenOrders, &p.MaxOpenOrders, validateUint32),
+		paramtypes.NewParamSetPair(KeyPricePrecision, &p.PricePrecision, validateString),
 	}
 }
 
+// DefaultParams returns the default parameters for the anteil module
 func DefaultParams() Params {
 	return Params{
-		MaxOrderAmount: "0",
-		MinOrderAmount: "0",
-		TradingFee:     "0.001",
-		AuctionPeriod:  60 * time.Second,
+		MinAntAmount:                "1000000",      // 1 ANT in micro units
+		MaxAntAmount:                "1000000000",   // 1000 ANT in micro units
+		TradingFeeRate:              "0.001",        // 0.1%
+		MinOrderSize:                "100000",       // 0.1 ANT in micro units
+		MaxOrderSize:                "100000000",    // 100 ANT in micro units
+		OrderExpiry:                 24 * time.Hour, // 24 hours
+		RequireIdentityVerification: true,
+		AntDenom:                    "uant",
+		MaxOpenOrders:               10,
+		PricePrecision:              "0.000001", // 6 decimal places
 	}
 }
 
-func (p Params) Validate() error {
-	if err := validateIntStringPositive(p.MaxOrderAmount); err != nil {
-		return fmt.Errorf("invalid MaxOrderAmount: %w", err)
+// Validate validates the parameters
+func (p *Params) Validate() error {
+	if p.MinAntAmount == "" {
+		return fmt.Errorf("MinAntAmount cannot be empty")
 	}
-	if err := validateIntStringPositive(p.MinOrderAmount); err != nil {
-		return fmt.Errorf("invalid MinOrderAmount: %w", err)
+	if p.MaxAntAmount == "" {
+		return fmt.Errorf("MaxAntAmount cannot be empty")
 	}
-	if err := validateDecString(p.TradingFee); err != nil {
-		return fmt.Errorf("invalid TradingFee: %w", err)
+	if p.TradingFeeRate == "" {
+		return fmt.Errorf("TradingFeeRate cannot be empty")
 	}
-	if err := validateDuration(p.AuctionPeriod); err != nil {
-		return fmt.Errorf("invalid AuctionPeriod: %w", err)
+	if p.MinOrderSize == "" {
+		return fmt.Errorf("MinOrderSize cannot be empty")
+	}
+	if p.MaxOrderSize == "" {
+		return fmt.Errorf("MaxOrderSize cannot be empty")
+	}
+	if p.OrderExpiry <= 0 {
+		return fmt.Errorf("OrderExpiry must be greater than 0")
+	}
+	if p.AntDenom == "" {
+		return fmt.Errorf("AntDenom cannot be empty")
+	}
+	if p.MaxOpenOrders == 0 {
+		return fmt.Errorf("MaxOpenOrders must be greater than 0")
+	}
+	if p.PricePrecision == "" {
+		return fmt.Errorf("PricePrecision cannot be empty")
 	}
 	return nil
 }
 
-func validateIntStringPositive(i interface{}) error {
-	s, ok := i.(string)
+// Validation functions
+func validateString(i interface{}) error {
+	_, ok := i.(string)
 	if !ok {
 		return fmt.Errorf("expected string, got %T", i)
-	}
-	if len(s) == 0 {
-		return fmt.Errorf("value cannot be empty")
-	}
-	// defer exact math.Int parsing to later steps; just ensure non-empty
-	return nil
-}
-
-func validateDecString(i interface{}) error {
-	s, ok := i.(string)
-	if !ok {
-		return fmt.Errorf("expected string, got %T", i)
-	}
-	if len(s) == 0 {
-		return fmt.Errorf("decimal string cannot be empty")
 	}
 	return nil
 }
 
 func validateDuration(i interface{}) error {
-	d, ok := i.(time.Duration)
+	_, ok := i.(time.Duration)
 	if !ok {
 		return fmt.Errorf("expected time.Duration, got %T", i)
 	}
-	if d <= 0 {
-		return fmt.Errorf("duration must be positive")
+	return nil
+}
+
+func validateBool(i interface{}) error {
+	_, ok := i.(bool)
+	if !ok {
+		return fmt.Errorf("expected bool, got %T", i)
+	}
+	return nil
+}
+
+func validateUint32(i interface{}) error {
+	u, ok := i.(uint32)
+	if !ok {
+		return fmt.Errorf("expected uint32, got %T", i)
+	}
+	if u == 0 {
+		return fmt.Errorf("value must be greater than 0")
 	}
 	return nil
 }

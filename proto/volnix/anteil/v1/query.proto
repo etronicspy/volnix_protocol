@@ -5,53 +5,56 @@ package volnix.anteil.v1;
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
 
 import "cosmos/base/query/v1beta1/pagination.proto";
-import "google/protobuf/timestamp.proto";
 import "volnix/anteil/v1/types.proto";
 
 service Query {
   rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
+  rpc Order(QueryOrderRequest) returns (QueryOrderResponse);
   rpc Orders(QueryOrdersRequest) returns (QueryOrdersResponse);
+  rpc OrderBook(QueryOrderBookRequest) returns (QueryOrderBookResponse);
+  rpc UserPosition(QueryUserPositionRequest) returns (QueryUserPositionResponse);
   rpc Trades(QueryTradesRequest) returns (QueryTradesResponse);
+  rpc Auction(QueryAuctionRequest) returns (QueryAuctionResponse);
   rpc Auctions(QueryAuctionsRequest) returns (QueryAuctionsResponse);
 }
 
 message QueryParamsRequest {}
 
 message QueryParamsResponse {
-  string json = 1; // placeholder
+  string json = 1; // JSON string of Params
 }
 
-message Order {
-  string id = 1;
-  string owner = 2;
-  OrderSide side = 3;
-  string amount = 4;
-  string price = 5;
-  google.protobuf.Timestamp created_at = 6;
+message QueryOrderRequest {
+  string order_id = 1;
 }
 
-message Trade {
-  string id = 1;
-  string buy_order_id = 2;
-  string sell_order_id = 3;
-  string amount = 4;
-  string price = 5;
-  google.protobuf.Timestamp executed_at = 6;
-}
-
-message Auction {
-  string id = 1;
-  google.protobuf.Timestamp started_at = 2;
-  google.protobuf.Timestamp ends_at = 3;
+message QueryOrderResponse {
+  Order order = 1;
 }
 
 message QueryOrdersRequest {
-  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+  string owner = 1; // Filter by owner
+  OrderStatus status = 2; // Filter by status
+  cosmos.base.query.v1beta1.PageRequest pagination = 3;
 }
 
 message QueryOrdersResponse {
   repeated Order orders = 1;
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryOrderBookRequest {}
+
+message QueryOrderBookResponse {
+  OrderBook order_book = 1;
+}
+
+message QueryUserPositionRequest {
+  string owner = 1; // bech32 address
+}
+
+message QueryUserPositionResponse {
+  UserPosition position = 1;
 }
 
 message QueryTradesRequest {
@@ -63,16 +66,23 @@ message QueryTradesResponse {
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
 
+message QueryAuctionRequest {
+  string auction_id = 1;
+}
+
+message QueryAuctionResponse {
+  Auction auction = 1;
+}
+
 message QueryAuctionsRequest {
-  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+  AuctionStatus status = 1; // Filter by status
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
 }
 
 message QueryAuctionsResponse {
   repeated Auction auctions = 1;
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
-
-// OrderSide is imported from types.proto
 
 
 

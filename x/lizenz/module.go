@@ -22,9 +22,15 @@ type AppModuleBasic struct{}
 
 var _ module.AppModuleBasic = AppModuleBasic{}
 
-func (AppModuleBasic) Name() string                                    { return lztypes.ModuleName }
-func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino)   {}
-func (AppModuleBasic) RegisterInterfaces(_ cdctypes.InterfaceRegistry) {}
+func (AppModuleBasic) Name() string                                  { return lztypes.ModuleName }
+func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino) {}
+func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
+	// Register the protobuf types
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&lizenzv1.MsgActivateLZN{},
+		&lizenzv1.MsgDeactivateLZN{},
+	)
+}
 
 func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {
 	bz, _ := json.Marshal(DefaultGenesis())
@@ -43,12 +49,12 @@ func (AppModuleBasic) RegisterGRPCGatewayRoutes(_ client.Context, _ *gatewayrunt
 
 type AppModule struct {
 	AppModuleBasic
-	keeper keeper.Keeper
+	keeper *keeper.Keeper
 }
 
 var _ module.AppModule = AppModule{}
 
-func NewAppModule(k keeper.Keeper) AppModule { return AppModule{keeper: k} }
+func NewAppModule(k *keeper.Keeper) AppModule { return AppModule{keeper: k} }
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	lizenzv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
@@ -71,6 +77,6 @@ func (AppModule) IsAppModule()        {}
 func (AppModule) IsOnePerModuleType() {}
 
 // Dependencies wiring helper
-func NewKeeper(cdc codec.BinaryCodec, key storetypes.StoreKey, ps paramtypes.Subspace) keeper.Keeper {
+func NewKeeper(cdc codec.BinaryCodec, key storetypes.StoreKey, ps paramtypes.Subspace) *keeper.Keeper {
 	return keeper.NewKeeper(cdc, key, ps)
 }
