@@ -22,8 +22,8 @@ type AppModuleBasic struct{}
 
 var _ module.AppModuleBasic = AppModuleBasic{}
 
-func (AppModuleBasic) Name() string                                    { return atypes.ModuleName }
-func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino)   {}
+func (AppModuleBasic) Name() string                                  { return atypes.ModuleName }
+func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino) {}
 func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 	// Register message interfaces
 	registry.RegisterImplementations((*sdk.Msg)(nil),

@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	KeyCitizenInactivityPeriod      = []byte("CitizenInactivityPeriod")
-	KeyValidatorInactivityPeriod    = []byte("ValidatorInactivityPeriod")
+	KeyCitizenInactivityPeriod     = []byte("CitizenInactivityPeriod")
+	KeyValidatorInactivityPeriod   = []byte("ValidatorInactivityPeriod")
 	KeyMaxCitizenAccounts          = []byte("MaxCitizenAccounts")
 	KeyMaxValidatorAccounts        = []byte("MaxValidatorAccounts")
 	KeyRequireIdentityVerification = []byte("RequireIdentityVerification")
@@ -21,8 +21,8 @@ var _ paramtypes.ParamSet = (*Params)(nil)
 
 // Params defines ident module parameters
 type Params struct {
-	CitizenInactivityPeriod      time.Duration `json:"citizen_inactivity_period"`
-	ValidatorInactivityPeriod    time.Duration `json:"validator_inactivity_period"`
+	CitizenInactivityPeriod     time.Duration `json:"citizen_inactivity_period"`
+	ValidatorInactivityPeriod   time.Duration `json:"validator_inactivity_period"`
 	MaxCitizenAccounts          uint64        `json:"max_citizen_accounts"`
 	MaxValidatorAccounts        uint64        `json:"max_validator_accounts"`
 	RequireIdentityVerification bool          `json:"require_identity_verification"`
@@ -49,12 +49,12 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 // DefaultParams returns default parameters
 func DefaultParams() Params {
 	return Params{
-		CitizenInactivityPeriod:      365 * 24 * time.Hour, // 1 year
-		ValidatorInactivityPeriod:    180 * 24 * time.Hour, // 6 months
-		MaxCitizenAccounts:           10000,
-		MaxValidatorAccounts:         1000,
-		RequireIdentityVerification:  true,
-		IdentityProviderAddress:      "",
+		CitizenInactivityPeriod:     365 * 24 * time.Hour, // 1 year
+		ValidatorInactivityPeriod:   180 * 24 * time.Hour, // 6 months
+		MaxCitizenAccounts:          10000,
+		MaxValidatorAccounts:        1000,
+		RequireIdentityVerification: true,
+		IdentityProviderAddress:     "",
 	}
 }
 

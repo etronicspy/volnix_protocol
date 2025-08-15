@@ -1,0 +1,37 @@
+syntax = "proto3";
+package volnix.consensus.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1";
+
+// Validator represents a validator in the PoVB consensus system
+message Validator {
+  string validator = 1;
+  string ant_balance = 2;
+  ValidatorStatus status = 3;
+  google.protobuf.Timestamp last_active = 4;
+  uint64 last_block_height = 5;
+  string moa_score = 6;
+}
+
+// ValidatorStatus represents the status of a validator
+enum ValidatorStatus {
+  VALIDATOR_STATUS_UNSPECIFIED = 0;
+  VALIDATOR_STATUS_ACTIVE = 1;
+  VALIDATOR_STATUS_INACTIVE = 2;
+  VALIDATOR_STATUS_SLASHED = 3;
+}
+
+// Params defines the parameters for the consensus module
+message Params {
+  string base_block_time = 1;
+  uint64 high_activity_threshold = 2;
+  uint64 low_activity_threshold = 3;
+}
+
+// GenesisState defines the consensus module's genesis state
+message GenesisState {
+  Params params = 1;
+  repeated Validator validators = 2;
+}

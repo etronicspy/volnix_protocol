@@ -1,0 +1,24 @@
+syntax = "proto3";
+package volnix.consensus.v1;
+
+import "cosmos/msg/v1/msg.proto";
+
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1";
+
+// Msg defines the consensus Msg service.
+service Msg {
+  // SelectBlockCreator selects the next block creator
+  rpc SelectBlockCreator(MsgSelectBlockCreator) returns (MsgSelectBlockCreatorResponse);
+}
+
+// MsgSelectBlockCreator defines a message to select the next block creator
+message MsgSelectBlockCreator {
+  option (cosmos.msg.v1.signer) = "creator";
+  
+  string creator = 1;
+}
+
+// MsgSelectBlockCreatorResponse defines the response for MsgSelectBlockCreator
+message MsgSelectBlockCreatorResponse {
+  string selected_validator = 1;
+}

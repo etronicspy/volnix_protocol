@@ -2,12 +2,14 @@ package keeper
 
 import (
 	"fmt"
+	"time"
 
 	"cosmossdk.io/store/prefix"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/ident/types"
@@ -77,6 +79,101 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 	}
 
 	store.Set(accountKey, accountBz)
+	return nil
+}
+
+// ========================================
+// BLOCK PROCESSORS - BeginBlocker/EndBlocker Logic
+// ========================================
+
+// BeginBlocker processes events at the beginning of each block
+func (k Keeper) BeginBlocker(ctx sdk.Context) error {
+	// Check account activity and update roles if needed
+	if err := k.checkAccountActivity(ctx); err != nil {
+		return fmt.Errorf("failed to check account activity: %w", err)
+	}
+
+	// Process role migrations
+	if err := k.processRoleMigrations(ctx); err != nil {
+		return fmt.Errorf("failed to process role migrations: %w", err)
+	}
+
+	return nil
+}
+
+// EndBlocker processes events at the end of each block
+func (k Keeper) EndBlocker(ctx sdk.Context) error {
+	// Update account activity timestamps
+	if err := k.updateAccountActivity(ctx); err != nil {
+		return fmt.Errorf("failed to update account activity: %w", err)
+	}
+
+	return nil
+}
+
+// checkAccountActivity checks account activity and updates roles if needed
+func (k Keeper) checkAccountActivity(ctx sdk.Context) error {
+	allAccounts, err := k.GetAllVerifiedAccounts(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get verified accounts: %w", err)
+	}
+
+	currentTime := ctx.BlockTime()
+
+	for _, account := range allAccounts {
+		// Check if account has been inactive for too long
+		lastActivity := account.GetLastActive().AsTime()
+
+		var activityPeriod time.Duration
+		switch account.GetRole() {
+		case identv1.Role_ROLE_CITIZEN:
+			activityPeriod = time.Duration(365 * 24 * time.Hour) // 1 year
+		case identv1.Role_ROLE_VALIDATOR:
+			activityPeriod = time.Duration(180 * 24 * time.Hour) // 6 months
+		default:
+			continue // Skip guests
+		}
+
+		if currentTime.Sub(lastActivity) > activityPeriod {
+			// Downgrade role to guest (ROLE_UNSPECIFIED = 0)
+			account.Role = identv1.Role_ROLE_UNSPECIFIED
+
+			// Update account in store
+			if err := k.UpdateVerifiedAccount(ctx, account); err != nil {
+				return fmt.Errorf("failed to update inactive account: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// processRoleMigrations processes pending role migrations
+func (k Keeper) processRoleMigrations(ctx sdk.Context) error {
+	// This would process any pending role migrations
+	// For now, it's a placeholder for future implementation
+	return nil
+}
+
+// updateAccountActivity updates activity timestamps for all accounts
+func (k Keeper) updateAccountActivity(ctx sdk.Context) error {
+	allAccounts, err := k.GetAllVerifiedAccounts(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get verified accounts: %w", err)
+	}
+
+	currentTime := ctx.BlockTime()
+
+	for _, account := range allAccounts {
+		// Update last activity timestamp
+		account.LastActive = &timestamppb.Timestamp{Seconds: currentTime.Unix()}
+
+		// Update in store
+		if err := k.UpdateVerifiedAccount(ctx, account); err != nil {
+			return fmt.Errorf("failed to update account activity: %w", err)
+		}
+	}
+
 	return nil
 }
 

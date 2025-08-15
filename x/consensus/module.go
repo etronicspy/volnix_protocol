@@ -1,0 +1,119 @@
+package consensus
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module"
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/spf13/cobra"
+
+	"github.com/volnix-protocol/volnix-protocol/x/consensus/client/cli"
+	"github.com/volnix-protocol/volnix-protocol/x/consensus/keeper"
+	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
+)
+
+// ConsensusAppModuleBasic implements the AppModuleBasic interface for the consensus module.
+type ConsensusAppModuleBasic struct{}
+
+// Name returns the consensus module's name.
+func (ConsensusAppModuleBasic) Name() string {
+	return types.ModuleName
+}
+
+// RegisterLegacyAminoCodec registers the consensus module's types on the LegacyAmino codec.
+func (ConsensusAppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
+	types.RegisterLegacyAminoCodec(cdc)
+}
+
+// RegisterInterfaces registers the consensus module's interface types.
+func (ConsensusAppModuleBasic) RegisterInterfaces(reg codectypes.InterfaceRegistry) {
+	types.RegisterInterfaces(reg)
+}
+
+// DefaultGenesis returns default genesis state as raw bytes for the consensus module.
+func (ConsensusAppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
+	return cdc.MustMarshalJSON(types.DefaultGenesis())
+}
+
+// ValidateGenesis performs genesis state validation for the consensus module.
+func (ConsensusAppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
+	var genState types.GenesisState
+	if err := cdc.UnmarshalJSON(bz, &genState); err != nil {
+		return fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err)
+	}
+	return types.ValidateGenesis(&genState)
+}
+
+// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the consensus module.
+func (ConsensusAppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
+	types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
+}
+
+// GetTxCmd returns the root tx command for the consensus module.
+func (ConsensusAppModuleBasic) GetTxCmd() *cobra.Command {
+	return cli.GetTxCmd()
+}
+
+// GetQueryCmd returns the root query command for the consensus module.
+func (ConsensusAppModuleBasic) GetQueryCmd() *cobra.Command {
+	return cli.GetQueryCmd()
+}
+
+// ConsensusAppModule implements the AppModule interface for the consensus module.
+type ConsensusAppModule struct {
+	ConsensusAppModuleBasic
+
+	keeper keeper.Keeper
+}
+
+// NewConsensusAppModule creates a new ConsensusAppModule object.
+func NewConsensusAppModule(cdc codec.Codec, keeper keeper.Keeper) ConsensusAppModule {
+	return ConsensusAppModule{
+		ConsensusAppModuleBasic: ConsensusAppModuleBasic{},
+		keeper:                  keeper,
+	}
+}
+
+// RegisterServices registers a gRPC query service to respond to the module-specific gRPC queries.
+func (am ConsensusAppModule) RegisterServices(cfg module.Configurator) {
+	// Register services when they are implemented
+	// types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
+	// types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+}
+
+// RegisterInvariants registers the consensus module invariants.
+func (am ConsensusAppModule) RegisterInvariants(ir sdk.InvariantRegistry) {
+	// Register invariants if needed
+}
+
+// InitGenesis performs genesis initialization for the consensus module.
+func (am ConsensusAppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, gs json.RawMessage) {
+	var genState types.GenesisState
+	cdc.MustUnmarshalJSON(gs, &genState)
+
+	am.keeper.InitGenesis(ctx, genState)
+}
+
+// ExportGenesis returns the exported genesis state as raw bytes for the consensus module.
+func (am ConsensusAppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
+	genState := am.keeper.ExportGenesis(ctx)
+	return cdc.MustMarshalJSON(genState)
+}
+
+// IsAppModule implements the module.AppModule interface.
+func (am ConsensusAppModule) IsAppModule() {}
+
+// IsOnePerModuleType implements the module.AppModule interface.
+func (am ConsensusAppModule) IsOnePerModuleType() {}
+
+// ConsensusAppModule implements the module.AppModule interface.
+var _ module.AppModule = ConsensusAppModule{}
+
+// ConsensusAppModuleBasic implements the module.AppModuleBasic interface.
+var _ module.AppModuleBasic = ConsensusAppModuleBasic{}

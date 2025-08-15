@@ -10,10 +10,10 @@ const (
 var (
 	// ActivatedLizenzKeyPrefix defines the prefix for activated LZN keys
 	ActivatedLizenzKeyPrefix = []byte{0x01}
-	
+
 	// DeactivatingLizenzKeyPrefix defines the prefix for deactivating LZN keys
 	DeactivatingLizenzKeyPrefix = []byte{0x02}
-	
+
 	// MOAStatusKeyPrefix defines the prefix for MOA status keys
 	MOAStatusKeyPrefix = []byte{0x03}
 )

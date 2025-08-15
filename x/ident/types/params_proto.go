@@ -8,8 +8,8 @@ import (
 // ToProto converts local Params to protobuf Params
 func (p Params) ToProto() *identv1.Params {
 	return &identv1.Params{
-		CitizenInactivityPeriod:      durationpb.New(p.CitizenInactivityPeriod),
-		ValidatorInactivityPeriod:    durationpb.New(p.ValidatorInactivityPeriod),
+		CitizenInactivityPeriod:     durationpb.New(p.CitizenInactivityPeriod),
+		ValidatorInactivityPeriod:   durationpb.New(p.ValidatorInactivityPeriod),
 		MaxCitizenAccounts:          p.MaxCitizenAccounts,
 		MaxValidatorAccounts:        p.MaxValidatorAccounts,
 		RequireIdentityVerification: p.RequireIdentityVerification,
@@ -23,8 +23,8 @@ func ParamsFromProto(pp *identv1.Params) Params {
 		return DefaultParams()
 	}
 	return Params{
-		CitizenInactivityPeriod:      pp.CitizenInactivityPeriod.AsDuration(),
-		ValidatorInactivityPeriod:    pp.ValidatorInactivityPeriod.AsDuration(),
+		CitizenInactivityPeriod:     pp.CitizenInactivityPeriod.AsDuration(),
+		ValidatorInactivityPeriod:   pp.ValidatorInactivityPeriod.AsDuration(),
 		MaxCitizenAccounts:          pp.MaxCitizenAccounts,
 		MaxValidatorAccounts:        pp.MaxValidatorAccounts,
 		RequireIdentityVerification: pp.RequireIdentityVerification,
