@@ -36,6 +36,9 @@ import (
 	lizenzkeeper "github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
 )
 
+// Application name
+const Name = "volnix"
+
 // VolnixApp wires BaseApp with custom module keepers and services.
 type VolnixApp struct {
 	*baseapp.BaseApp
@@ -209,4 +212,61 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	})
 
 	return app
+}
+
+// ExportAppStateAndValidators exports the state of the application for a genesis file.
+func (app *VolnixApp) ExportAppStateAndValidators(
+	forZeroHeight bool, jailAllowedAddrs []string,
+) (map[string]json.RawMessage, error) {
+	// Create the context
+	ctx := app.NewContext(true)
+
+	// Export genesis state
+	genesisState, err := app.mm.ExportGenesis(ctx, app.appCodec)
+	if err != nil {
+		return nil, err
+	}
+
+	return genesisState, nil
+}
+
+// GetBaseApp returns the base application of type *baseapp.BaseApp.
+func (app *VolnixApp) GetBaseApp() *baseapp.BaseApp {
+	return app.BaseApp
+}
+
+// ModuleAccountAddrs returns all the app's module account addresses.
+func (app *VolnixApp) ModuleAccountAddrs() map[string]bool {
+	modAccAddrs := make(map[string]bool)
+	// For now, return empty map since we don't have standard modules yet
+	return modAccAddrs
+}
+
+// GetModuleManager returns the app module manager.
+func (app *VolnixApp) GetModuleManager() *module.Manager {
+	return app.mm
+}
+
+// AppBasicManager returns the app's basic module manager.
+func (app *VolnixApp) AppBasicManager() *module.Manager {
+	return app.mm
+}
+
+// GetMaccPerms returns a copy of the module account permissions
+func GetMaccPerms() map[string][]string {
+	// For now, return empty map since we don't have standard modules yet
+	return make(map[string][]string)
+}
+
+// initParamsKeeper init params keeper and its subspaces
+func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper {
+	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
+
+	// Create subspaces for custom modules
+	paramsKeeper.Subspace(identtypes.ModuleName)
+	paramsKeeper.Subspace(lizenztypes.ModuleName)
+	paramsKeeper.Subspace(anteiltypes.ModuleName)
+	paramsKeeper.Subspace(consensustypes.ModuleName)
+
+	return paramsKeeper
 }
