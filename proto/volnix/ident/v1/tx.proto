@@ -4,6 +4,7 @@ package volnix.ident.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
+import "cosmos/base/v1beta1/coin.proto";
 import "volnix/ident/v1/types.proto";
 
 // Msg defines the Msg service for ident module
@@ -11,34 +12,64 @@ service Msg {
   rpc VerifyIdentity(MsgVerifyIdentity) returns (MsgVerifyIdentityResponse);
   rpc MigrateRole(MsgMigrateRole) returns (MsgMigrateRoleResponse);
   rpc ChangeRole(MsgChangeRole) returns (MsgChangeRoleResponse);
+  rpc RegisterVerificationProvider(MsgRegisterVerificationProvider) returns (MsgRegisterVerificationProviderResponse);
 }
 
+// MsgVerifyIdentity defines a message for verifying identity with ZKP
 message MsgVerifyIdentity {
-  string sender = 1; // bech32 address
-  bytes  zkp_proof = 2; // placeholder for ZKP proof bytes
-  Role   chosen_role = 3;
+  string address = 1;
+  string zkp_proof = 2;
+  string verification_provider = 3;
+  cosmos.base.v1beta1.Coin verification_cost = 4;
 }
 
+// MsgVerifyIdentityResponse defines the response for identity verification
 message MsgVerifyIdentityResponse {
   bool success = 1;
+  string verification_id = 2;
+  string identity_hash = 3;
 }
 
+// MsgMigrateRole defines a message for migrating role to another address
 message MsgMigrateRole {
-  string new_address = 1; // new bech32 address
-  bytes  zkp_proof = 2;
+  string from_address = 1;
+  string to_address = 2;
+  string zkp_proof = 3;
+  cosmos.base.v1beta1.Coin migration_fee = 4;
 }
 
+// MsgMigrateRoleResponse defines the response for role migration
 message MsgMigrateRoleResponse {
   bool success = 1;
+  string migration_hash = 2;
 }
 
+// MsgChangeRole defines a message for changing role within the same address
 message MsgChangeRole {
-  string sender = 1;
-  Role   new_role = 2;
+  string address = 1;
+  Role new_role = 2;
+  string zkp_proof = 3;
+  cosmos.base.v1beta1.Coin change_fee = 4;
 }
 
+// MsgChangeRoleResponse defines the response for role change
 message MsgChangeRoleResponse {
   bool success = 1;
+  string change_hash = 2;
+}
+
+// MsgRegisterVerificationProvider defines a message for registering a new verification provider
+message MsgRegisterVerificationProvider {
+  string provider_id = 1;
+  string provider_name = 2;
+  string provider_public_key = 3;
+  string accreditation_proof = 4;
+}
+
+// MsgRegisterVerificationProviderResponse defines the response for provider registration
+message MsgRegisterVerificationProviderResponse {
+  bool success = 1;
+  string accreditation_hash = 2;
 }
 
 

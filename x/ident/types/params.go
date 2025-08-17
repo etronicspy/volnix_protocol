@@ -4,16 +4,20 @@ import (
 	"fmt"
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkmath "cosmossdk.io/math"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 var (
-	KeyCitizenInactivityPeriod     = []byte("CitizenInactivityPeriod")
-	KeyValidatorInactivityPeriod   = []byte("ValidatorInactivityPeriod")
-	KeyMaxCitizenAccounts          = []byte("MaxCitizenAccounts")
-	KeyMaxValidatorAccounts        = []byte("MaxValidatorAccounts")
-	KeyRequireIdentityVerification = []byte("RequireIdentityVerification")
-	KeyIdentityProviderAddress     = []byte("IdentityProviderAddress")
+	KeyCitizenActivityPeriod        = []byte("CitizenActivityPeriod")
+	KeyValidatorActivityPeriod      = []byte("ValidatorActivityPeriod")
+	KeyMaxIdentitiesPerAddress      = []byte("MaxIdentitiesPerAddress")
+	KeyRequireIdentityVerification  = []byte("RequireIdentityVerification")
+	KeyDefaultVerificationProvider  = []byte("DefaultVerificationProvider")
+	KeyVerificationCost             = []byte("VerificationCost")
+	KeyMigrationFee                 = []byte("MigrationFee")
+	KeyRoleChangeFee                = []byte("RoleChangeFee")
 )
 
 // Ensure Params implements ParamSet
@@ -21,12 +25,14 @@ var _ paramtypes.ParamSet = (*Params)(nil)
 
 // Params defines ident module parameters
 type Params struct {
-	CitizenInactivityPeriod     time.Duration `json:"citizen_inactivity_period"`
-	ValidatorInactivityPeriod   time.Duration `json:"validator_inactivity_period"`
-	MaxCitizenAccounts          uint64        `json:"max_citizen_accounts"`
-	MaxValidatorAccounts        uint64        `json:"max_validator_accounts"`
-	RequireIdentityVerification bool          `json:"require_identity_verification"`
-	IdentityProviderAddress     string        `json:"identity_provider_address"`
+	CitizenActivityPeriod        time.Duration `json:"citizen_activity_period"`
+	ValidatorActivityPeriod      time.Duration `json:"validator_activity_period"`
+	MaxIdentitiesPerAddress      uint64        `json:"max_identities_per_address"`
+	RequireIdentityVerification  bool          `json:"require_identity_verification"`
+	DefaultVerificationProvider  string        `json:"default_verification_provider"`
+	VerificationCost             sdk.Coin      `json:"verification_cost"`
+	MigrationFee                 sdk.Coin      `json:"migration_fee"`
+	RoleChangeFee                sdk.Coin      `json:"role_change_fee"`
 }
 
 // ParamKeyTable for ident module
@@ -37,46 +43,56 @@ func ParamKeyTable() paramtypes.KeyTable {
 // ParamSetPairs returns the parameter set pairs
 func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyCitizenInactivityPeriod, &p.CitizenInactivityPeriod, validateDuration),
-		paramtypes.NewParamSetPair(KeyValidatorInactivityPeriod, &p.ValidatorInactivityPeriod, validateDuration),
-		paramtypes.NewParamSetPair(KeyMaxCitizenAccounts, &p.MaxCitizenAccounts, validateUint64),
-		paramtypes.NewParamSetPair(KeyMaxValidatorAccounts, &p.MaxValidatorAccounts, validateUint64),
+		paramtypes.NewParamSetPair(KeyCitizenActivityPeriod, &p.CitizenActivityPeriod, validateDuration),
+		paramtypes.NewParamSetPair(KeyValidatorActivityPeriod, &p.ValidatorActivityPeriod, validateDuration),
+		paramtypes.NewParamSetPair(KeyMaxIdentitiesPerAddress, &p.MaxIdentitiesPerAddress, validateUint64),
 		paramtypes.NewParamSetPair(KeyRequireIdentityVerification, &p.RequireIdentityVerification, validateBool),
-		paramtypes.NewParamSetPair(KeyIdentityProviderAddress, &p.IdentityProviderAddress, validateString),
+		paramtypes.NewParamSetPair(KeyDefaultVerificationProvider, &p.DefaultVerificationProvider, validateString),
+		paramtypes.NewParamSetPair(KeyVerificationCost, &p.VerificationCost, validateString),
+		paramtypes.NewParamSetPair(KeyMigrationFee, &p.MigrationFee, validateString),
+		paramtypes.NewParamSetPair(KeyRoleChangeFee, &p.RoleChangeFee, validateString),
 	}
 }
 
 // DefaultParams returns default parameters
 func DefaultParams() Params {
 	return Params{
-		CitizenInactivityPeriod:     365 * 24 * time.Hour, // 1 year
-		ValidatorInactivityPeriod:   180 * 24 * time.Hour, // 6 months
-		MaxCitizenAccounts:          10000,
-		MaxValidatorAccounts:        1000,
-		RequireIdentityVerification: true,
-		IdentityProviderAddress:     "",
+		CitizenActivityPeriod:        365 * 24 * time.Hour, // 1 year
+		ValidatorActivityPeriod:      180 * 24 * time.Hour, // 6 months
+		MaxIdentitiesPerAddress:      1,
+		RequireIdentityVerification:  true,
+		DefaultVerificationProvider:  "",
+		VerificationCost:             sdk.NewCoin("uvx", sdkmath.NewInt(1000000)),
+		MigrationFee:                 sdk.NewCoin("uvx", sdkmath.NewInt(500000)),
+		RoleChangeFee:                sdk.NewCoin("uvx", sdkmath.NewInt(100000)),
 	}
 }
 
 // Validate performs basic validation of params
 func (p Params) Validate() error {
-	if err := validateDuration(p.CitizenInactivityPeriod); err != nil {
-		return fmt.Errorf("invalid CitizenInactivityPeriod: %w", err)
+	if err := validateDuration(p.CitizenActivityPeriod); err != nil {
+		return fmt.Errorf("invalid CitizenActivityPeriod: %w", err)
 	}
-	if err := validateDuration(p.ValidatorInactivityPeriod); err != nil {
-		return fmt.Errorf("invalid ValidatorInactivityPeriod: %w", err)
+	if err := validateDuration(p.ValidatorActivityPeriod); err != nil {
+		return fmt.Errorf("invalid ValidatorActivityPeriod: %w", err)
 	}
-	if err := validateUint64(p.MaxCitizenAccounts); err != nil {
-		return fmt.Errorf("invalid MaxCitizenAccounts: %w", err)
-	}
-	if err := validateUint64(p.MaxValidatorAccounts); err != nil {
-		return fmt.Errorf("invalid MaxValidatorAccounts: %w", err)
+	if err := validateUint64(p.MaxIdentitiesPerAddress); err != nil {
+		return fmt.Errorf("invalid MaxIdentitiesPerAddress: %w", err)
 	}
 	if err := validateBool(p.RequireIdentityVerification); err != nil {
 		return fmt.Errorf("invalid RequireIdentityVerification: %w", err)
 	}
-	if err := validateString(p.IdentityProviderAddress); err != nil {
-		return fmt.Errorf("invalid IdentityProviderAddress: %w", err)
+	if err := validateString(p.DefaultVerificationProvider); err != nil {
+		return fmt.Errorf("invalid DefaultVerificationProvider: %w", err)
+	}
+	if err := validateString(p.VerificationCost); err != nil {
+		return fmt.Errorf("invalid VerificationCost: %w", err)
+	}
+	if err := validateString(p.MigrationFee); err != nil {
+		return fmt.Errorf("invalid MigrationFee: %w", err)
+	}
+	if err := validateString(p.RoleChangeFee); err != nil {
+		return fmt.Errorf("invalid RoleChangeFee: %w", err)
 	}
 	return nil
 }

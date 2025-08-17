@@ -22,27 +22,27 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Validate request
-	if req.Sender == "" {
+	if req.Address == "" {
 		return nil, types.ErrEmptyAddress
 	}
-	if len(req.ZkpProof) == 0 {
+	if req.ZkpProof == "" {
 		return nil, types.ErrEmptyIdentityHash
 	}
-	if req.ChosenRole == identv1.Role_ROLE_UNSPECIFIED {
-		return nil, types.ErrInvalidRole
+	if req.VerificationProvider == "" {
+		return nil, types.ErrEmptyAddress
 	}
 
 	// Check if account already exists
-	existingAccount, err := s.k.GetVerifiedAccount(sdkCtx, req.Sender)
+	existingAccount, err := s.k.GetVerifiedAccount(sdkCtx, req.Address)
 	if err == nil && existingAccount != nil {
 		return nil, types.ErrAccountAlreadyExists
 	}
 
 	// Create new verified account (using ZKP proof hash as identity hash)
 	hash := sha3.NewLegacyKeccak256()
-	hash.Write(req.ZkpProof)
+	hash.Write([]byte(req.ZkpProof))
 	identityHash := string(hash.Sum(nil))
-	account := types.NewVerifiedAccount(req.Sender, req.ChosenRole, identityHash)
+	account := types.NewVerifiedAccount(req.Address, identv1.Role_ROLE_CITIZEN, identityHash)
 
 	// Store the account
 	if err := s.k.SetVerifiedAccount(sdkCtx, account); err != nil {
@@ -53,30 +53,32 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 	sdkCtx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			"identity_verified",
-			sdk.NewAttribute("address", req.Sender),
-			sdk.NewAttribute("role", req.ChosenRole.String()),
+			sdk.NewAttribute("address", req.Address),
+			sdk.NewAttribute("verification_provider", req.VerificationProvider),
 			sdk.NewAttribute("identity_hash", identityHash),
 		),
 	)
 
-	return &identv1.MsgVerifyIdentityResponse{Success: true}, nil
+	return &identv1.MsgVerifyIdentityResponse{
+		Success:        true,
+		VerificationId: "verification_" + req.Address,
+		IdentityHash:   identityHash,
+	}, nil
 }
 
 func (s MsgServer) MigrateRole(ctx context.Context, req *identv1.MsgMigrateRole) (*identv1.MsgMigrateRoleResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Validate request
-	if req.NewAddress == "" {
+	if req.ToAddress == "" {
 		return nil, types.ErrEmptyAddress
 	}
-	if len(req.ZkpProof) == 0 {
+	if req.ZkpProof == "" {
 		return nil, types.ErrEmptyIdentityHash
 	}
 
-	// For migration, we need to get the current sender from context
-	// This is a simplified implementation - in real scenario, you'd need to handle this differently
-	// For now, we'll use a placeholder - in real implementation this should come from the transaction
-	sender := "migration_sender_placeholder"
+	// Get source account from request
+	sender := req.FromAddress
 
 	// Get source account
 	sourceAccount, err := s.k.GetVerifiedAccount(sdkCtx, sender)
@@ -85,16 +87,16 @@ func (s MsgServer) MigrateRole(ctx context.Context, req *identv1.MsgMigrateRole)
 	}
 
 	// Check if target account already exists
-	_, err = s.k.GetVerifiedAccount(sdkCtx, req.NewAddress)
+	_, err = s.k.GetVerifiedAccount(sdkCtx, req.ToAddress)
 	if err == nil {
 		return nil, types.ErrAccountAlreadyExists
 	}
 
 	// Create new account with migrated role and ZKP proof
 	hash := sha3.NewLegacyKeccak256()
-	hash.Write(req.ZkpProof)
+	hash.Write([]byte(req.ZkpProof))
 	identityHash := string(hash.Sum(nil))
-	newAccount := types.NewVerifiedAccount(req.NewAddress, sourceAccount.Role, identityHash)
+	newAccount := types.NewVerifiedAccount(req.ToAddress, sourceAccount.Role, identityHash)
 
 	// Store the new account
 	if err := s.k.SetVerifiedAccount(sdkCtx, newAccount); err != nil {
@@ -111,7 +113,7 @@ func (s MsgServer) MigrateRole(ctx context.Context, req *identv1.MsgMigrateRole)
 		sdk.NewEvent(
 			"role_migrated",
 			sdk.NewAttribute("from_address", sender),
-			sdk.NewAttribute("to_address", req.NewAddress),
+			sdk.NewAttribute("to_address", req.ToAddress),
 			sdk.NewAttribute("role", sourceAccount.Role.String()),
 		),
 	)
@@ -123,7 +125,7 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Validate request
-	if req.Sender == "" {
+	if req.Address == "" {
 		return nil, types.ErrEmptyAddress
 	}
 	if req.NewRole == identv1.Role_ROLE_UNSPECIFIED {
@@ -131,7 +133,7 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 	}
 
 	// Change the role
-	if err := s.k.ChangeAccountRole(sdkCtx, req.Sender, req.NewRole); err != nil {
+	if err := s.k.ChangeAccountRole(sdkCtx, req.Address, req.NewRole); err != nil {
 		return nil, err
 	}
 
@@ -139,7 +141,7 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 	sdkCtx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			"role_changed",
-			sdk.NewAttribute("address", req.Sender),
+			sdk.NewAttribute("address", req.Address),
 			sdk.NewAttribute("new_role", req.NewRole.String()),
 		),
 	)

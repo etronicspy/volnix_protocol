@@ -10,8 +10,12 @@ import (
 // DefaultGenesis returns the default genesis state (protobuf type)
 func DefaultGenesis() *identv1.GenesisState {
 	return &identv1.GenesisState{
-		Params:   identtypes.DefaultParams().ToProto(),
-		Accounts: []*identv1.VerifiedAccount{},
+		Params:                 identtypes.DefaultParams().ToProto(),
+		VerifiedAccounts:       []*identv1.VerifiedAccount{},
+		IdentityVerifications:  []*identv1.IdentityVerification{},
+		RoleMigrations:         []*identv1.RoleMigration{},
+		VerificationProviders:  []*identv1.VerificationProvider{},
+		ZkpProofs:              []*identv1.ZKPProof{},
 	}
 }
 
@@ -36,7 +40,11 @@ func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *identv1.GenesisSta
 func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *identv1.GenesisState {
 	params := k.GetParams(ctx)
 	return &identv1.GenesisState{
-		Params:   params.ToProto(),
-		Accounts: []*identv1.VerifiedAccount{},
+		Params:                 params.ToProto(),
+		VerifiedAccounts:       []*identv1.VerifiedAccount{},
+		IdentityVerifications:  []*identv1.IdentityVerification{},
+		RoleMigrations:         []*identv1.RoleMigration{},
+		VerificationProviders:  []*identv1.VerificationProvider{},
+		ZkpProofs:              []*identv1.ZKPProof{},
 	}
 }

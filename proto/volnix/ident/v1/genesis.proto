@@ -4,26 +4,16 @@ package volnix.ident.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
-import "google/protobuf/duration.proto";
 import "volnix/ident/v1/types.proto";
 
-message Params {
-  // Inactivity periods
-  google.protobuf.Duration citizen_inactivity_period = 1; // e.g., 1 year
-  google.protobuf.Duration validator_inactivity_period = 2; // e.g., 6 months
-  
-  // Account limits
-  uint64 max_citizen_accounts = 3; // Maximum number of citizen accounts
-  uint64 max_validator_accounts = 4; // Maximum number of validator accounts
-  
-  // Identity verification
-  bool require_identity_verification = 5; // Whether identity verification is required
-  string identity_provider_address = 6; // Address of the identity verification provider
-}
-
+// GenesisState defines the ident module's genesis state.
 message GenesisState {
   Params params = 1;
-  repeated volnix.ident.v1.VerifiedAccount accounts = 2;
+  repeated VerifiedAccount verified_accounts = 2;
+  repeated IdentityVerification identity_verifications = 3;
+  repeated RoleMigration role_migrations = 4;
+  repeated VerificationProvider verification_providers = 5;
+  repeated ZKPProof zkp_proofs = 6;
 }
 
 

@@ -26,9 +26,9 @@ func IsAccountActive(acc *identv1.VerifiedAccount, params Params) bool {
 	var inactivityPeriod time.Duration
 	switch acc.Role {
 	case identv1.Role_ROLE_CITIZEN:
-		inactivityPeriod = params.CitizenInactivityPeriod
+		inactivityPeriod = params.CitizenActivityPeriod
 	case identv1.Role_ROLE_VALIDATOR:
-		inactivityPeriod = params.ValidatorInactivityPeriod
+		inactivityPeriod = params.ValidatorActivityPeriod
 	default:
 		return false
 	}

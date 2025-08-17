@@ -8,12 +8,14 @@ import (
 // ToProto converts local Params to protobuf Params
 func (p Params) ToProto() *identv1.Params {
 	return &identv1.Params{
-		CitizenInactivityPeriod:     durationpb.New(p.CitizenInactivityPeriod),
-		ValidatorInactivityPeriod:   durationpb.New(p.ValidatorInactivityPeriod),
-		MaxCitizenAccounts:          p.MaxCitizenAccounts,
-		MaxValidatorAccounts:        p.MaxValidatorAccounts,
-		RequireIdentityVerification: p.RequireIdentityVerification,
-		IdentityProviderAddress:     p.IdentityProviderAddress,
+		CitizenActivityPeriod:        durationpb.New(p.CitizenActivityPeriod),
+		ValidatorActivityPeriod:      durationpb.New(p.ValidatorActivityPeriod),
+		MaxIdentitiesPerAddress:      p.MaxIdentitiesPerAddress,
+		RequireIdentityVerification:  p.RequireIdentityVerification,
+		DefaultVerificationProvider:  p.DefaultVerificationProvider,
+		VerificationCost:             &p.VerificationCost,
+		MigrationFee:                 &p.MigrationFee,
+		RoleChangeFee:                &p.RoleChangeFee,
 	}
 }
 
@@ -23,11 +25,13 @@ func ParamsFromProto(pp *identv1.Params) Params {
 		return DefaultParams()
 	}
 	return Params{
-		CitizenInactivityPeriod:     pp.CitizenInactivityPeriod.AsDuration(),
-		ValidatorInactivityPeriod:   pp.ValidatorInactivityPeriod.AsDuration(),
-		MaxCitizenAccounts:          pp.MaxCitizenAccounts,
-		MaxValidatorAccounts:        pp.MaxValidatorAccounts,
-		RequireIdentityVerification: pp.RequireIdentityVerification,
-		IdentityProviderAddress:     pp.IdentityProviderAddress,
+		CitizenActivityPeriod:        pp.CitizenActivityPeriod.AsDuration(),
+		ValidatorActivityPeriod:      pp.ValidatorActivityPeriod.AsDuration(),
+		MaxIdentitiesPerAddress:      pp.MaxIdentitiesPerAddress,
+		RequireIdentityVerification:  pp.RequireIdentityVerification,
+		DefaultVerificationProvider:  pp.DefaultVerificationProvider,
+		VerificationCost:             *pp.VerificationCost,
+		MigrationFee:                 *pp.MigrationFee,
+		RoleChangeFee:                *pp.RoleChangeFee,
 	}
 }

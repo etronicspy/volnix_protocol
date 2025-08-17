@@ -5,11 +5,32 @@ package volnix.ident.v1;
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "cosmos/base/v1beta1/coin.proto";
 
 enum Role {
   ROLE_UNSPECIFIED = 0;
-  ROLE_CITIZEN = 1;
-  ROLE_VALIDATOR = 2;
+  ROLE_GUEST = 1;
+  ROLE_CITIZEN = 2;
+  ROLE_VALIDATOR = 3;
+}
+
+message Params {
+  // Inactivity periods
+  google.protobuf.Duration citizen_activity_period = 1; // e.g., 1 year
+  google.protobuf.Duration validator_activity_period = 2; // e.g., 6 months
+  
+  // Account limits
+  uint64 max_identities_per_address = 3; // Maximum number of identities per address
+  
+  // Identity verification
+  bool require_identity_verification = 4; // Whether identity verification is required
+  string default_verification_provider = 5; // Default verification provider address
+  
+  // Fees
+  cosmos.base.v1beta1.Coin verification_cost = 6; // Cost for identity verification
+  cosmos.base.v1beta1.Coin migration_fee = 7; // Fee for role migration
+  cosmos.base.v1beta1.Coin role_change_fee = 8; // Fee for role change
 }
 
 message VerifiedAccount {
@@ -17,6 +38,49 @@ message VerifiedAccount {
   Role   role = 2;
   google.protobuf.Timestamp last_active = 3;
   string identity_hash = 4;
+  string zkp_proof = 5;
+  string verification_provider = 6;
+  google.protobuf.Timestamp verification_date = 7;
+  bool is_active = 8;
+}
+
+message ZKPProof {
+  string proof_hash = 1;
+  string public_inputs = 2;
+  string proof_data = 3;
+  string verification_key = 4;
+  google.protobuf.Timestamp created_at = 5;
+  string provider_signature = 6;
+}
+
+message IdentityVerification {
+  string address = 1;
+  string verification_provider = 2;
+  string verification_id = 3;
+  google.protobuf.Timestamp verification_date = 4;
+  string verification_hash = 5;
+  bool is_verified = 6;
+  string verification_metadata = 7;
+}
+
+message RoleMigration {
+  string from_address = 1;
+  string to_address = 2;
+  Role from_role = 3;
+  Role to_role = 4;
+  google.protobuf.Timestamp migration_date = 5;
+  string migration_hash = 6;
+  string zkp_proof = 7;
+  bool is_completed = 8;
+}
+
+message VerificationProvider {
+  string provider_id = 1;
+  string provider_name = 2;
+  string provider_public_key = 3;
+  bool is_accredited = 4;
+  google.protobuf.Timestamp accreditation_date = 5;
+  string accreditation_hash = 6;
 }
 
 

@@ -285,7 +285,7 @@ func (k Keeper) checkAccountLimits(ctx sdk.Context, role identv1.Role, params ty
 			return err
 		}
 		currentCount = uint64(len(accounts))
-		maxCount = params.MaxCitizenAccounts
+		maxCount = params.MaxIdentitiesPerAddress
 
 	case identv1.Role_ROLE_VALIDATOR:
 		accounts, err := k.GetVerifiedAccountsByRole(ctx, identv1.Role_ROLE_VALIDATOR)
@@ -293,7 +293,7 @@ func (k Keeper) checkAccountLimits(ctx sdk.Context, role identv1.Role, params ty
 			return err
 		}
 		currentCount = uint64(len(accounts))
-		maxCount = params.MaxValidatorAccounts
+		maxCount = params.MaxIdentitiesPerAddress
 
 	default:
 		return types.ErrInvalidRole
