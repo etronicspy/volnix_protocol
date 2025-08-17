@@ -48,9 +48,9 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 		paramtypes.NewParamSetPair(KeyMaxIdentitiesPerAddress, &p.MaxIdentitiesPerAddress, validateUint64),
 		paramtypes.NewParamSetPair(KeyRequireIdentityVerification, &p.RequireIdentityVerification, validateBool),
 		paramtypes.NewParamSetPair(KeyDefaultVerificationProvider, &p.DefaultVerificationProvider, validateString),
-		paramtypes.NewParamSetPair(KeyVerificationCost, &p.VerificationCost, validateString),
-		paramtypes.NewParamSetPair(KeyMigrationFee, &p.MigrationFee, validateString),
-		paramtypes.NewParamSetPair(KeyRoleChangeFee, &p.RoleChangeFee, validateString),
+		paramtypes.NewParamSetPair(KeyVerificationCost, &p.VerificationCost, validateCoin),
+		paramtypes.NewParamSetPair(KeyMigrationFee, &p.MigrationFee, validateCoin),
+		paramtypes.NewParamSetPair(KeyRoleChangeFee, &p.RoleChangeFee, validateCoin),
 	}
 }
 
@@ -85,13 +85,13 @@ func (p Params) Validate() error {
 	if err := validateString(p.DefaultVerificationProvider); err != nil {
 		return fmt.Errorf("invalid DefaultVerificationProvider: %w", err)
 	}
-	if err := validateString(p.VerificationCost); err != nil {
+	if err := validateCoin(p.VerificationCost); err != nil {
 		return fmt.Errorf("invalid VerificationCost: %w", err)
 	}
-	if err := validateString(p.MigrationFee); err != nil {
+	if err := validateCoin(p.MigrationFee); err != nil {
 		return fmt.Errorf("invalid MigrationFee: %w", err)
 	}
-	if err := validateString(p.RoleChangeFee); err != nil {
+	if err := validateCoin(p.RoleChangeFee); err != nil {
 		return fmt.Errorf("invalid RoleChangeFee: %w", err)
 	}
 	return nil
@@ -133,5 +133,16 @@ func validateString(i interface{}) error {
 		return fmt.Errorf("expected string, got %T", i)
 	}
 	// Allow empty string for optional fields
+	return nil
+}
+
+func validateCoin(i interface{}) error {
+	coin, ok := i.(sdk.Coin)
+	if !ok {
+		return fmt.Errorf("expected sdk.Coin, got %T", i)
+	}
+	if err := coin.Validate(); err != nil {
+		return fmt.Errorf("invalid coin: %w", err)
+	}
 	return nil
 }
