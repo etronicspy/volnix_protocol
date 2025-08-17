@@ -246,6 +246,11 @@ func (app *VolnixApp) GetModuleManager() *module.Manager {
 	return app.mm
 }
 
+// GetConsensusKeeper returns the consensus keeper.
+func (app *VolnixApp) GetConsensusKeeper() *consensuskeeper.Keeper {
+	return app.consensusKeeper
+}
+
 // AppBasicManager returns the app's basic module manager.
 func (app *VolnixApp) AppBasicManager() *module.Manager {
 	return app.mm

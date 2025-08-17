@@ -95,23 +95,50 @@ func (a *ABCIAdapter) FinalizeBlock(ctx context.Context, req *abci.RequestFinali
 	// Создаем SDK контекст
 	sdkCtx := a.app.NewContext(true)
 
-	// Выполняем BeginBlocker через SDK
-	// Здесь нужно будет интегрировать с существующей логикой
-	_ = sdkCtx // Пока не используем, но создаем для совместимости
-
-	// Обрабатываем транзакции
-	txs := make([]*abci.ExecTxResult, len(req.Txs))
-	for i := range req.Txs {
-		// Здесь будет логика обработки транзакций
-		txs[i] = &abci.ExecTxResult{
-			Code: 0,
-			Data: []byte("tx processed"),
-			Log:  "transaction processed successfully",
-		}
+	// Выполняем BeginBlocker через SDK для PoVB консенсуса
+	if err := a.app.GetConsensusKeeper().BeginBlocker(sdkCtx); err != nil {
+		return nil, fmt.Errorf("failed to execute BeginBlocker: %w", err)
 	}
 
+	// Обрабатываем транзакции
+	var deliverTxs []*abci.ExecTxResult
+	for _, tx := range req.Txs {
+		// Проверяем транзакцию
+		checkResult, err := a.CheckTx(ctx, &abci.RequestCheckTx{
+			Tx: tx,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to check transaction: %w", err)
+		}
+
+		if checkResult.Code != 0 {
+			// Транзакция не прошла проверку
+			deliverTxs = append(deliverTxs, &abci.ExecTxResult{
+				Code: checkResult.Code,
+				Log:  checkResult.Log,
+			})
+			continue
+		}
+
+		// Выполняем транзакцию
+		// Здесь будет логика выполнения через SDK
+		deliverTxs = append(deliverTxs, &abci.ExecTxResult{
+			Code: 0,
+			Log:  "transaction executed successfully",
+		})
+	}
+
+	// Выполняем EndBlocker через SDK
+	if err := a.app.GetConsensusKeeper().EndBlocker(sdkCtx); err != nil {
+		return nil, fmt.Errorf("failed to execute EndBlocker: %w", err)
+	}
+
+	// Возвращаем результат
 	return &abci.ResponseFinalizeBlock{
-		TxResults: txs,
+		Events:        sdkCtx.EventManager().ABCIEvents(),
+		TxResults:     deliverTxs,
+		ValidatorUpdates: []abci.ValidatorUpdate{},
+		AppHash:       []byte{}, // Будет обновляться
 	}, nil
 }
 
