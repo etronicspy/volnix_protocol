@@ -6,6 +6,7 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
+import "cosmos/base/v1beta1/coin.proto";
 
 // Params defines the parameters for the lizenz module
 message Params {
@@ -19,6 +20,12 @@ message Params {
   string max_lzn_amount = 6; // Maximum amount of LZN that can be activated
   bool require_identity_verification = 7; // Whether identity verification is required
   string lzn_denom = 8; // Denomination for LZN tokens (e.g., "ulzn")
+  
+  // Integration parameters
+  string consensus_integration_enabled = 9; // Whether consensus integration is enabled
+  string ident_verification_required = 10; // Whether ident verification is required
+  string anteil_market_access = 11; // Whether access to ANT market is granted
+  string validator_performance_threshold = 12; // Performance threshold for validators
 }
 
 // ActivatedLizenz represents an activated LZN license for a validator
@@ -28,6 +35,12 @@ message ActivatedLizenz {
   google.protobuf.Timestamp activation_time = 3;
   google.protobuf.Timestamp last_activity = 4;
   string identity_hash = 5; // Link to identity verification
+  
+  // Integration fields
+  string consensus_participation = 6; // Consensus participation score
+  string ant_market_access = 7; // ANT market access level
+  string performance_rating = 8; // Overall performance rating
+  bool is_eligible_for_rewards = 9; // Whether eligible for rewards
 }
 
 // DeactivatingLizenz represents a LZN license in the process of deactivation
@@ -37,6 +50,11 @@ message DeactivatingLizenz {
   google.protobuf.Timestamp deactivation_start = 3;
   google.protobuf.Timestamp deactivation_end = 4;
   string reason = 5; // Reason for deactivation
+  
+  // Integration fields
+  string deactivation_impact_score = 6; // Impact on consensus and market
+  string replacement_validator = 7; // Suggested replacement validator
+  bool emergency_deactivation = 8; // Whether this is an emergency deactivation
 }
 
 // MOAStatus represents the Minimum Obligation of Activity status for a validator
@@ -48,4 +66,43 @@ message MOAStatus {
   string required_moa = 5; // Required MOA value as string
   google.protobuf.Timestamp next_check = 6;
   bool is_compliant = 7;
+  
+  // Integration fields
+  string consensus_contribution = 8; // Contribution to consensus
+  string market_participation = 9; // Participation in ANT market
+  string overall_score = 10; // Overall performance score
+}
+
+// ValidatorIntegration represents the integration status of a validator
+message ValidatorIntegration {
+  string validator = 1;
+  string lzn_license_status = 2; // Status of LZN license
+  string ident_verification_status = 3; // Status of identity verification
+  string consensus_participation = 4; // Consensus participation level
+  string ant_market_access = 5; // ANT market access level
+  google.protobuf.Timestamp last_integration_check = 6;
+  string integration_score = 7; // Overall integration score
+  repeated string active_integrations = 8; // List of active integrations
+}
+
+// CrossModuleEvent represents events that affect multiple modules
+message CrossModuleEvent {
+  string event_id = 1;
+  string event_type = 2; // Type of cross-module event
+  string source_module = 3; // Source module
+  string target_module = 4; // Target module
+  string event_data = 5; // Event data as JSON string
+  google.protobuf.Timestamp timestamp = 6;
+  string validator = 7; // Affected validator if applicable
+  bool requires_action = 8; // Whether action is required
+}
+
+// ModuleDependency represents dependencies between modules
+message ModuleDependency {
+  string module_name = 1;
+  repeated string dependencies = 2; // List of module dependencies
+  repeated string dependents = 3; // List of modules that depend on this one
+  string dependency_type = 4; // Type of dependency (strong, weak, optional)
+  bool is_critical = 5; // Whether this dependency is critical
+  string health_status = 6; // Health status of the dependency
 }
