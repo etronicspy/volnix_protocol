@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Test Current Functionality Script for Helvetia Protocol
+# Test Current Functionality Script for Волникс Протокол
 # This script tests the current ABCI server functionality
 
 set -e
 
-echo "🧪 Testing Current Helvetia Protocol Functionality"
+echo "🧪 Testing Current Волникс Протокол Functionality"
 echo "=================================================="
 
 # Colors for output

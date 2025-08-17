@@ -88,7 +88,7 @@ test-current:
 	fi
 
 help:
-	@echo "🚀 Helvetia Protocol - Available Commands:"
+	@echo "🚀 Волникс Протокол - Available Commands:"
 	@echo ""
 	@echo "Build & Install:"
 	@echo "  build        - Build the binary"
