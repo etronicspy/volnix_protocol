@@ -98,13 +98,12 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	identSubspace := paramsKeeper.Subspace(identtypes.ModuleName)
 	lizenzSubspace := paramsKeeper.Subspace(lizenztypes.ModuleName)
 	anteilSubspace := paramsKeeper.Subspace(anteiltypes.ModuleName)
-	consensusSubspace := paramsKeeper.Subspace(consensustypes.ModuleName)
 
 	// Custom module keepers (constructors provided by each module's module.go)
 	identKeeper := identkeeper.NewKeeper(encoding.Codec, keyIdent, identSubspace)
 	lizenzKeeper := lizenzkeeper.NewKeeper(encoding.Codec, keyLizenz, lizenzSubspace)
 	anteilKeeper := anteilkeeper.NewKeeper(encoding.Codec, keyAnteil, anteilSubspace)
-	consensusKeeper := consensuskeeper.NewKeeper(encoding.Codec, keyConsensus, consensusSubspace)
+	consensusKeeper := consensuskeeper.NewKeeper(encoding.Codec, keyConsensus, keyConsensus)
 
 	// Module manager (register Msg/Query services only at this stage)
 	mm := module.NewManager(
