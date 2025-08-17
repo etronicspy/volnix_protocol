@@ -2,6 +2,7 @@ syntax = "proto3";
 package volnix.consensus.v1;
 
 import "google/protobuf/timestamp.proto";
+import "cosmos/base/v1beta1/coin.proto";
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1";
 
@@ -13,6 +14,9 @@ message Validator {
   google.protobuf.Timestamp last_active = 4;
   uint64 last_block_height = 5;
   string moa_score = 6;
+  string activity_score = 7;
+  uint64 total_blocks_created = 8;
+  string total_burn_amount = 9;
 }
 
 // ValidatorStatus represents the status of a validator
@@ -23,15 +27,53 @@ enum ValidatorStatus {
   VALIDATOR_STATUS_SLASHED = 3;
 }
 
+// BlockCreator represents a validator selected to create the next block
+message BlockCreator {
+  string validator = 1;
+  string ant_balance = 2;
+  string activity_score = 3;
+  string burn_amount = 4;
+  uint64 block_height = 5;
+  google.protobuf.Timestamp selection_time = 6;
+}
+
+// BurnProof represents proof of token burning for consensus
+message BurnProof {
+  string validator = 1;
+  string burn_amount = 2;
+  string burn_hash = 3;
+  uint64 block_height = 4;
+  google.protobuf.Timestamp burn_time = 5;
+  string proof_signature = 6;
+}
+
+// ActivityScore represents the activity score of a validator
+message ActivityScore {
+  string validator = 1;
+  uint64 score = 2;
+  uint64 ant_balance = 3;
+  uint64 blocks_created = 4;
+  uint64 transactions_processed = 5;
+  google.protobuf.Timestamp last_update = 6;
+}
+
 // Params defines the parameters for the consensus module
 message Params {
   string base_block_time = 1;
   uint64 high_activity_threshold = 2;
   uint64 low_activity_threshold = 3;
+  string min_burn_amount = 4;
+  string max_burn_amount = 5;
+  uint64 block_creator_selection_rounds = 6;
+  string activity_decay_rate = 7;
+  string moa_penalty_rate = 8;
 }
 
 // GenesisState defines the consensus module's genesis state
 message GenesisState {
   Params params = 1;
   repeated Validator validators = 2;
+  repeated BlockCreator block_creators = 3;
+  repeated BurnProof burn_proofs = 4;
+  repeated ActivityScore activity_scores = 5;
 }

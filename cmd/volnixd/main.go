@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cometbft/cometbft/libs/log"
+
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -18,8 +20,8 @@ import (
 
 // Application version and git commit. Commit is injected via -ldflags at build time.
 var (
-	appVersion = "0.1.0"
-	commit     = "dev"
+	Version = "0.1.0"
+	Commit  = ""
 )
 
 func main() {
@@ -84,6 +86,18 @@ func newInitCmd() *cobra.Command {
 					},
 					"validator": map[string]interface{}{
 						"pub_key_types": []string{"secp256k1"},
+					},
+				},
+				"validators": []map[string]interface{}{
+					{
+						"address": "73DB49F602BBEAF45B2F56AE13A44B462D0F1EC0",
+						"pub_key": map[string]interface{}{
+							"type":  "tendermint/PubKeySecp256k1",
+							"value": "Aqj+0BaJ0xAbIcUQpVPQ9hBM1qQ/Nn3Bkyo7hOkuI0Xb",
+						},
+						"power":     "1000000",
+						"name":      "test-validator",
+						"proposer_priority": "0",
 					},
 				},
 				"app_hash": "",
@@ -179,16 +193,18 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print volnixd version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("volnixd %s (%s)\n", appVersion, commit)
+			fmt.Printf("volnixd %s (%s)\n", Version, Commit)
 		},
 	}
 	return cmd
 }
 
 func newStartCmd() *cobra.Command {
+	var homeDir string
+
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start Volnix node with persistent storage",
+		Short: "Start Волникс Протокол node with CometBFT blockchain",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Bech32 prefixes
 			cfg := sdk.GetConfig()
@@ -198,7 +214,9 @@ func newStartCmd() *cobra.Command {
 			cfg.Seal()
 
 			// Get home directory
-			homeDir := os.Getenv("HOME") + "/.volnix"
+			if homeDir == "" {
+				homeDir = os.Getenv("HOME") + "/.volnix"
+			}
 			if _, err := os.Stat(homeDir); os.IsNotExist(err) {
 				return fmt.Errorf("home directory %s does not exist. Please run 'volnixd init [moniker]' first", homeDir)
 			}
@@ -209,7 +227,7 @@ func newStartCmd() *cobra.Command {
 				return fmt.Errorf("failed to create data directory: %w", err)
 			}
 
-			// Use goleveldb for persistence instead of in-memory
+			// Use goleveldb for persistence
 			database, err := dbm.NewDB("application", dbm.GoLevelDBBackend, dbPath)
 			if err != nil {
 				return fmt.Errorf("failed to create database: %w", err)
@@ -226,26 +244,31 @@ func newStartCmd() *cobra.Command {
 				return fmt.Errorf("failed to load latest version: %w", err)
 			}
 
-			fmt.Println("🚀 Volnix node started successfully!")
-			fmt.Printf("📡 Chain ID: test-volnix\n")
-			fmt.Printf("🌐 RPC: http://127.0.0.1:26657\n")
-			fmt.Printf("🔗 P2P: 127.0.0.1:26656\n")
-			fmt.Printf("📊 Database: %s\n", dbPath)
-			fmt.Printf("💾 Storage: Persistent (GoLevelDB)\n")
-			fmt.Println("✅ ABCI server is running with persistent storage...")
-			fmt.Println("")
-			fmt.Println("🔮 Next Steps for Full Blockchain:")
-			fmt.Println("   • Integrate with CometBFT v0.38.17")
-			fmt.Println("   • Implement real consensus (PoVB)")
-			fmt.Println("   • Add ZKP verification")
-			fmt.Println("   • Enable economic logic")
-			fmt.Println("")
-			fmt.Println("Use Ctrl+C to stop")
+			// Create CometBFT node
+			fmt.Println("🚀 Starting Волникс Протокол with CometBFT consensus...")
+			
+			// Create CometBFT logger
+			cometLogger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+			
+			// Create CometBFT node
+			node, err := NewCometBFTNode(homeDir, cometLogger)
+			if err != nil {
+				return fmt.Errorf("failed to create CometBFT node: %w", err)
+			}
 
-			// Keep the server running
-			select {}
+			// Start CometBFT node
+			if err := node.Start(); err != nil {
+				return fmt.Errorf("failed to start CometBFT node: %w", err)
+			}
+
+			// Wait for shutdown signal
+			node.WaitForShutdown()
+			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&homeDir, "home", "", "Directory for config and data (default: $HOME/.volnix)")
+
 	return cmd
 }
 
