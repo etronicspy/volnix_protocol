@@ -37,6 +37,13 @@ var (
 
 	// KeyPricePrecision defines the key for price precision
 	KeyPricePrecision = []byte("PricePrecision")
+	
+	// New economic parameter keys
+	KeyMarketMakerRewardRate = []byte("MarketMakerRewardRate")
+	KeyStakingRewardRate     = []byte("StakingRewardRate")
+	KeyLiquidityPoolFee      = []byte("LiquidityPoolFee")
+	KeyMaxSlippage           = []byte("MaxSlippage")
+	KeyMinLiquidityThreshold = []byte("MinLiquidityThreshold")
 )
 
 // ParamKeyTable returns the parameter key table
@@ -56,6 +63,13 @@ type Params struct {
 	AntDenom                    string        `json:"ant_denom"`
 	MaxOpenOrders               uint32        `json:"max_open_orders"`
 	PricePrecision              string        `json:"price_precision"`
+	
+	// New economic parameters
+	MarketMakerRewardRate string `json:"market_maker_reward_rate"`
+	StakingRewardRate     string `json:"staking_reward_rate"`
+	LiquidityPoolFee      string `json:"liquidity_pool_fee"`
+	MaxSlippage           string `json:"max_slippage"`
+	MinLiquidityThreshold uint64 `json:"min_liquidity_threshold"`
 }
 
 // ParamSetPairs returns the parameter set pairs
@@ -71,6 +85,13 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 		paramtypes.NewParamSetPair(KeyAntDenom, &p.AntDenom, validateString),
 		paramtypes.NewParamSetPair(KeyMaxOpenOrders, &p.MaxOpenOrders, validateUint32),
 		paramtypes.NewParamSetPair(KeyPricePrecision, &p.PricePrecision, validateString),
+		
+		// New economic parameter pairs
+		paramtypes.NewParamSetPair(KeyMarketMakerRewardRate, &p.MarketMakerRewardRate, validateString),
+		paramtypes.NewParamSetPair(KeyStakingRewardRate, &p.StakingRewardRate, validateString),
+		paramtypes.NewParamSetPair(KeyLiquidityPoolFee, &p.LiquidityPoolFee, validateString),
+		paramtypes.NewParamSetPair(KeyMaxSlippage, &p.MaxSlippage, validateString),
+		paramtypes.NewParamSetPair(KeyMinLiquidityThreshold, &p.MinLiquidityThreshold, validateUint64),
 	}
 }
 
@@ -87,6 +108,13 @@ func DefaultParams() Params {
 		AntDenom:                    "uant",
 		MaxOpenOrders:               10,
 		PricePrecision:              "0.000001", // 6 decimal places
+		
+		// New economic parameters
+		MarketMakerRewardRate: "0.002", // 0.2%
+		StakingRewardRate:     "0.05",  // 5%
+		LiquidityPoolFee:      "0.003", // 0.3%
+		MaxSlippage:           "0.05",  // 5%
+		MinLiquidityThreshold: 1000000, // 1 ANT in micro units
 	}
 }
 
@@ -118,6 +146,23 @@ func (p *Params) Validate() error {
 	}
 	if p.PricePrecision == "" {
 		return fmt.Errorf("PricePrecision cannot be empty")
+	}
+	
+	// Validate new economic parameters
+	if p.MarketMakerRewardRate == "" {
+		return fmt.Errorf("MarketMakerRewardRate cannot be empty")
+	}
+	if p.StakingRewardRate == "" {
+		return fmt.Errorf("StakingRewardRate cannot be empty")
+	}
+	if p.LiquidityPoolFee == "" {
+		return fmt.Errorf("LiquidityPoolFee cannot be empty")
+	}
+	if p.MaxSlippage == "" {
+		return fmt.Errorf("MaxSlippage cannot be empty")
+	}
+	if p.MinLiquidityThreshold == 0 {
+		return fmt.Errorf("MinLiquidityThreshold must be greater than 0")
 	}
 	return nil
 }
@@ -151,6 +196,17 @@ func validateUint32(i interface{}) error {
 	u, ok := i.(uint32)
 	if !ok {
 		return fmt.Errorf("expected uint32, got %T", i)
+	}
+	if u == 0 {
+		return fmt.Errorf("value must be greater than 0")
+	}
+	return nil
+}
+
+func validateUint64(i interface{}) error {
+	u, ok := i.(uint64)
+	if !ok {
+		return fmt.Errorf("expected uint64, got %T", i)
 	}
 	if u == 0 {
 		return fmt.Errorf("value must be greater than 0")

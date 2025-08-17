@@ -1,9 +1,9 @@
 syntax = "proto3";
-
 package volnix.anteil.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
 
+import "cosmos/base/v1beta1/coin.proto";
 import "volnix/anteil/v1/types.proto";
 
 // Msg defines the Msg service for anteil module
@@ -13,64 +13,165 @@ service Msg {
   rpc UpdateOrder(MsgUpdateOrder) returns (MsgUpdateOrderResponse);
   rpc PlaceBid(MsgPlaceBid) returns (MsgPlaceBidResponse);
   rpc SettleAuction(MsgSettleAuction) returns (MsgSettleAuctionResponse);
+  
+  // New economic operations
+  rpc RegisterMarketMaker(MsgRegisterMarketMaker) returns (MsgRegisterMarketMakerResponse);
+  rpc ProvideLiquidity(MsgProvideLiquidity) returns (MsgProvideLiquidityResponse);
+  rpc WithdrawLiquidity(MsgWithdrawLiquidity) returns (MsgWithdrawLiquidityResponse);
+  rpc StakeANT(MsgStakeANT) returns (MsgStakeANTResponse);
+  rpc UnstakeANT(MsgUnstakeANTResponse) returns (MsgUnstakeANTResponse);
+  rpc ClaimRewards(MsgClaimRewards) returns (MsgClaimRewardsResponse);
 }
 
+// MsgPlaceOrder defines a message for placing a trading order
 message MsgPlaceOrder {
-  string owner = 1; // bech32 address
+  string owner = 1;
   OrderType order_type = 2;
   OrderSide order_side = 3;
-  string ant_amount = 4; // ANT amount as string
-  string price = 5; // Price as decimal string
-  string identity_hash = 6; // Identity verification hash
+  string ant_amount = 4;
+  string price = 5;
+  string identity_hash = 6;
 }
 
+// MsgPlaceOrderResponse defines the response for placing an order
 message MsgPlaceOrderResponse {
   bool success = 1;
-  string order_id = 2; // Unique identifier for the order
+  string order_id = 2;
+  string status = 3;
 }
 
+// MsgCancelOrder defines a message for cancelling an order
 message MsgCancelOrder {
-  string owner = 1; // bech32 address
-  string order_id = 2; // ID of the order to cancel
+  string owner = 1;
+  string order_id = 2;
 }
 
+// MsgCancelOrderResponse defines the response for cancelling an order
 message MsgCancelOrderResponse {
   bool success = 1;
-  string cancelled_order_id = 2;
+  string status = 2;
 }
 
+// MsgUpdateOrder defines a message for updating an order
 message MsgUpdateOrder {
-  string owner = 1; // bech32 address
-  string order_id = 2; // ID of the order to update
-  string new_ant_amount = 3; // New ANT amount
-  string new_price = 4; // New price
+  string owner = 1;
+  string order_id = 2;
+  string new_price = 3;
+  string new_amount = 4;
 }
 
+// MsgUpdateOrderResponse defines the response for updating an order
 message MsgUpdateOrderResponse {
   bool success = 1;
-  string updated_order_id = 2;
+  string status = 2;
 }
 
+// MsgPlaceBid defines a message for placing a bid in an auction
 message MsgPlaceBid {
-  string bidder = 1; // bech32 address
-  string auction_id = 2; // ID of the auction
-  string amount = 3; // Bid amount
-  string identity_hash = 4; // Identity verification hash
+  string bidder = 1;
+  string auction_id = 2;
+  string amount = 3;
+  string identity_hash = 4;
 }
 
+// MsgPlaceBidResponse defines the response for placing a bid
 message MsgPlaceBidResponse {
   bool success = 1;
-  string bid_id = 2; // Unique identifier for the bid
+  string bid_id = 2;
+  string status = 3;
 }
 
+// MsgSettleAuction defines a message for settling an auction
 message MsgSettleAuction {
-  string auction_id = 1; // ID of the auction to settle
-  string winner = 2; // bech32 address of the winner
+  string auction_id = 1;
+  string winner = 2;
 }
 
+// MsgSettleAuctionResponse defines the response for settling an auction
 message MsgSettleAuctionResponse {
   bool success = 1;
-  string settled_auction_id = 2;
+  string status = 2;
+}
+
+// MsgRegisterMarketMaker defines a message for registering as a market maker
+message MsgRegisterMarketMaker {
+  string address = 1;
+  string ant_balance = 2;
+  string bid_ask_spread = 3;
+  string min_order_size = 4;
+  string max_order_size = 5;
+}
+
+// MsgRegisterMarketMakerResponse defines the response for market maker registration
+message MsgRegisterMarketMakerResponse {
+  bool success = 1;
+  string market_maker_id = 2;
+}
+
+// MsgProvideLiquidity defines a message for providing liquidity to a pool
+message MsgProvideLiquidity {
+  string provider = 1;
+  string pool_id = 2;
+  string ant_amount = 3;
+}
+
+// MsgProvideLiquidityResponse defines the response for providing liquidity
+message MsgProvideLiquidityResponse {
+  bool success = 1;
+  string shares_received = 2;
+  string pool_id = 3;
+}
+
+// MsgWithdrawLiquidity defines a message for withdrawing liquidity from a pool
+message MsgWithdrawLiquidity {
+  string provider = 1;
+  string pool_id = 2;
+  string shares = 3;
+}
+
+// MsgWithdrawLiquidityResponse defines the response for withdrawing liquidity
+message MsgWithdrawLiquidityResponse {
+  bool success = 1;
+  string ant_amount_received = 2;
+  string pool_id = 3;
+}
+
+// MsgStakeANT defines a message for staking ANT tokens
+message MsgStakeANT {
+  string staker = 1;
+  string ant_amount = 2;
+}
+
+// MsgStakeANTResponse defines the response for staking ANT
+message MsgStakeANTResponse {
+  bool success = 1;
+  string staked_amount = 2;
+  string reward_rate = 3;
+}
+
+// MsgUnstakeANT defines a message for unstaking ANT tokens
+message MsgUnstakeANT {
+  string staker = 1;
+  string ant_amount = 2;
+}
+
+// MsgUnstakeANTResponse defines the response for unstaking ANT
+message MsgUnstakeANTResponse {
+  bool success = 1;
+  string unstaked_amount = 2;
+  string rewards_claimed = 3;
+}
+
+// MsgClaimRewards defines a message for claiming staking rewards
+message MsgClaimRewards {
+  string staker = 1;
+}
+
+// MsgClaimRewardsResponse defines the response for claiming rewards
+message MsgClaimRewardsResponse {
+  bool success = 1;
+  string reward_amount = 2;
+  string total_rewards_earned = 3;
 }
 
 

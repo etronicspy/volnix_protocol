@@ -6,6 +6,7 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
+import "cosmos/base/v1beta1/coin.proto";
 
 // Params defines the parameters for the anteil module
 message Params {
@@ -19,6 +20,13 @@ message Params {
   string ant_denom = 8; // Denomination for ANT tokens (e.g., "uant")
   uint32 max_open_orders = 9; // Maximum number of open orders per user
   string price_precision = 10; // Price precision for orders
+  
+  // New economic parameters
+  string market_maker_reward_rate = 11; // Reward rate for market makers
+  string staking_reward_rate = 12; // Reward rate for staking ANT
+  string liquidity_pool_fee = 13; // Fee for liquidity pool operations
+  string max_slippage = 14; // Maximum allowed slippage for trades
+  uint64 min_liquidity_threshold = 15; // Minimum liquidity threshold
 }
 
 // Order represents a trading order on the ANT market
@@ -33,6 +41,12 @@ message Order {
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp expires_at = 9;
   string identity_hash = 10; // Link to identity verification
+  
+  // New fields for economic features
+  string filled_amount = 11; // Amount already filled
+  string remaining_amount = 12; // Remaining amount to fill
+  string total_fees_paid = 13; // Total fees paid for this order
+  bool is_market_maker = 14; // Whether this is a market maker order
 }
 
 // OrderType defines the type of order
@@ -40,6 +54,8 @@ enum OrderType {
   ORDER_TYPE_UNSPECIFIED = 0;
   ORDER_TYPE_LIMIT = 1; // Limit order
   ORDER_TYPE_MARKET = 2; // Market order
+  ORDER_TYPE_STOP_LOSS = 3; // Stop loss order
+  ORDER_TYPE_TAKE_PROFIT = 4; // Take profit order
 }
 
 // OrderSide defines the side of the order
@@ -71,6 +87,11 @@ message Trade {
   string total_value = 8; // Total value of the trade
   google.protobuf.Timestamp executed_at = 9;
   string identity_hash = 10; // Link to identity verification
+  
+  // New fields for economic analysis
+  string trading_fee = 11; // Trading fee paid
+  string slippage = 12; // Slippage experienced
+  string market_impact = 13; // Market impact of the trade
 }
 
 // OrderBook represents the current state of the order book
@@ -80,6 +101,11 @@ message OrderBook {
   string last_price = 3; // Last executed price
   string volume_24h = 4; // 24-hour trading volume
   uint64 total_orders = 5; // Total number of open orders
+  
+  // New fields for market analysis
+  string bid_ask_spread = 6; // Current bid-ask spread
+  string market_depth = 7; // Total market depth
+  string volatility_24h = 8; // 24-hour price volatility
 }
 
 // OrderBookEntry represents an entry in the order book
@@ -99,6 +125,12 @@ message UserPosition {
   string total_trades = 6; // Total number of trades
   string total_volume = 7; // Total trading volume
   google.protobuf.Timestamp last_activity = 8;
+  
+  // New fields for economic features
+  string staked_ant = 9; // ANT staked for rewards
+  string market_maker_rewards = 10; // Rewards earned as market maker
+  string liquidity_provider_fees = 11; // Fees earned from liquidity provision
+  string total_pnl = 12; // Total profit/loss
 }
 
 // Auction represents a blind auction for block creation rights
@@ -112,6 +144,11 @@ message Auction {
   string winning_bid = 7; // ID of the winning bid
   string reserve_price = 8; // Minimum acceptable price
   string ant_amount = 9; // ANT amount being auctioned
+  
+  // New fields for economic features
+  string total_bid_value = 10; // Total value of all bids
+  uint64 participant_count = 11; // Number of participants
+  string market_clearing_price = 12; // Market clearing price
 }
 
 // Bid represents a bid in an auction
@@ -121,6 +158,11 @@ message Bid {
   string amount = 3; // Bid amount
   google.protobuf.Timestamp submitted_at = 4;
   string identity_hash = 5; // Link to identity verification
+  
+  // New fields for auction analysis
+  string bid_value = 6; // Value of the bid
+  bool is_winning = 7; // Whether this bid is currently winning
+  string ant_amount_offered = 8; // ANT amount offered in the bid
 }
 
 // AuctionStatus defines the status of an auction
@@ -130,6 +172,49 @@ enum AuctionStatus {
   AUCTION_STATUS_CLOSED = 2; // Auction is closed
   AUCTION_STATUS_SETTLED = 3; // Auction has been settled
   AUCTION_STATUS_CANCELLED = 4; // Auction was cancelled
+}
+
+// MarketMaker represents a market maker in the ANT market
+message MarketMaker {
+  string address = 1; // bech32 address
+  string ant_balance = 2; // ANT balance for market making
+  string bid_ask_spread = 3; // Target bid-ask spread
+  string min_order_size = 4; // Minimum order size
+  string max_order_size = 5; // Maximum order size
+  bool is_active = 6; // Whether market maker is active
+  google.protobuf.Timestamp last_activity = 7;
+  string total_rewards_earned = 8; // Total rewards earned
+  string performance_score = 9; // Performance score
+}
+
+// LiquidityPool represents a liquidity pool for ANT trading
+message LiquidityPool {
+  string pool_id = 1;
+  string ant_amount = 2; // Total ANT in the pool
+  string total_shares = 3; // Total liquidity provider shares
+  repeated LiquidityProvider providers = 4; // List of liquidity providers
+  string pool_fee = 5; // Pool fee rate
+  google.protobuf.Timestamp created_at = 6;
+  string total_volume = 7; // Total trading volume through pool
+}
+
+// LiquidityProvider represents a liquidity provider in a pool
+message LiquidityProvider {
+  string address = 1; // bech32 address
+  string ant_amount = 2; // ANT amount provided
+  string shares = 3; // Shares owned in the pool
+  google.protobuf.Timestamp joined_at = 4;
+  string total_fees_earned = 5; // Total fees earned
+}
+
+// StakingReward represents a staking reward for ANT holders
+message StakingReward {
+  string address = 1; // bech32 address
+  string staked_amount = 2; // Amount staked
+  string reward_amount = 3; // Reward amount
+  google.protobuf.Timestamp reward_time = 4;
+  string reward_rate = 5; // Reward rate applied
+  string total_rewards_earned = 6; // Total rewards earned
 }
 
 

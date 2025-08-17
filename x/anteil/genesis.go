@@ -8,7 +8,17 @@ import (
 )
 
 func DefaultGenesis() *anteilv1.GenesisState {
-	return &anteilv1.GenesisState{Params: atypes.DefaultParams().ToProto()}
+	return &anteilv1.GenesisState{
+		Params:           atypes.DefaultParams().ToProto(),
+		Orders:           []*anteilv1.Order{},
+		Trades:           []*anteilv1.Trade{},
+		UserPositions:    []*anteilv1.UserPosition{},
+		Auctions:         []*anteilv1.Auction{},
+		OrderBook:        &anteilv1.OrderBook{},
+		MarketMakers:     []*anteilv1.MarketMaker{},
+		LiquidityPools:   []*anteilv1.LiquidityPool{},
+		StakingRewards:   []*anteilv1.StakingReward{},
+	}
 }
 
 func Validate(gen *anteilv1.GenesisState) error {
@@ -33,5 +43,15 @@ func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *anteilv1.GenesisSt
 
 func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *anteilv1.GenesisState {
 	params := k.GetParams(ctx)
-	return &anteilv1.GenesisState{Params: params.ToProto()}
+	return &anteilv1.GenesisState{
+		Params:           params.ToProto(),
+		Orders:           []*anteilv1.Order{},
+		Trades:           []*anteilv1.Trade{},
+		UserPositions:    []*anteilv1.UserPosition{},
+		Auctions:         []*anteilv1.Auction{},
+		OrderBook:        &anteilv1.OrderBook{},
+		MarketMakers:     []*anteilv1.MarketMaker{},
+		LiquidityPools:   []*anteilv1.LiquidityPool{},
+		StakingRewards:   []*anteilv1.StakingReward{},
+	}
 }
