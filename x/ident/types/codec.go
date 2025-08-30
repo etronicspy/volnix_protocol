@@ -16,6 +16,7 @@ func RegisterInterfaces(reg cdctypes.InterfaceRegistry) {
 		&identv1.MsgVerifyIdentity{},
 		&identv1.MsgMigrateRole{},
 		&identv1.MsgChangeRole{},
+		&identv1.MsgRegisterVerificationProvider{},
 	)
 
 	// tx.MsgResponse responses
@@ -23,5 +24,6 @@ func RegisterInterfaces(reg cdctypes.InterfaceRegistry) {
 		&identv1.MsgVerifyIdentityResponse{},
 		&identv1.MsgMigrateRoleResponse{},
 		&identv1.MsgChangeRoleResponse{},
+		&identv1.MsgRegisterVerificationProviderResponse{},
 	)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,12 +9,13 @@ import (
 	"strings"
 
 	"github.com/cometbft/cometbft/libs/log"
+	"github.com/cometbft/cometbft/privval"
 
+	sdklog "cosmossdk.io/log"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/spf13/cobra"
-	sdklog "cosmossdk.io/log"
 
 	apppkg "github.com/volnix-protocol/volnix-protocol/app"
 )
@@ -61,6 +63,17 @@ func newInitCmd() *cobra.Command {
 				return fmt.Errorf("failed to create config directory: %w", err)
 			}
 
+			// Generate or load priv-validator (ed25519)
+			privKeyFile := filepath.Join(homeDir, "config", "priv_validator_key.json")
+			stateFile := filepath.Join(homeDir, "config", "priv_validator_state.json")
+			pv := privval.LoadOrGenFilePV(privKeyFile, stateFile)
+			pubKey, err := pv.GetPubKey()
+			if err != nil {
+				return fmt.Errorf("failed to get privval pubkey: %w", err)
+			}
+			pubKeyB64 := base64.StdEncoding.EncodeToString(pubKey.Bytes())
+			valAddress := fmt.Sprintf("%X", pubKey.Address())
+
 			// Set Bech32 prefixes
 			cfg := sdk.GetConfig()
 			cfg.SetBech32PrefixForAccount("vx", "vxpub")
@@ -68,10 +81,21 @@ func newInitCmd() *cobra.Command {
 			cfg.SetBech32PrefixForConsensusNode("vxvalcons", "vxvalconspub")
 			cfg.Seal()
 
+			// Minimal app_state placeholders; modules will apply defaults at InitGenesis
+			empty := json.RawMessage("{}")
+			appState := map[string]json.RawMessage{
+				"ident":     empty,
+				"lizenz":    empty,
+				"anteil":    empty,
+				"consensus": empty,
+			}
+
+			chainID := "test-volnix"
+
 			// Create genesis.json
 			genesis := map[string]interface{}{
 				"genesis_time":   "2024-08-14T20:00:00Z",
-				"chain_id":       "test-volnix",
+				"chain_id":       chainID,
 				"initial_height": "1",
 				"consensus_params": map[string]interface{}{
 					"block": map[string]interface{}{
@@ -85,69 +109,23 @@ func newInitCmd() *cobra.Command {
 						"max_bytes":          "1048576",
 					},
 					"validator": map[string]interface{}{
-						"pub_key_types": []string{"secp256k1"},
+						"pub_key_types": []string{"ed25519"},
 					},
 				},
 				"validators": []map[string]interface{}{
 					{
-						"address": "73DB49F602BBEAF45B2F56AE13A44B462D0F1EC0",
+						"address": valAddress,
 						"pub_key": map[string]interface{}{
-							"type":  "tendermint/PubKeySecp256k1",
-							"value": "Aqj+0BaJ0xAbIcUQpVPQ9hBM1qQ/Nn3Bkyo7hOkuI0Xb",
+							"type":  "tendermint/PubKeyEd25519",
+							"value": pubKeyB64,
 						},
-						"power":     "1000000",
-						"name":      "test-validator",
+						"power":             "1000000",
+						"name":              moniker,
 						"proposer_priority": "0",
 					},
 				},
-				"app_hash": "",
-				"app_state": map[string]interface{}{
-					"anteil": map[string]interface{}{
-						"params": map[string]interface{}{
-							"min_ant_amount":                 "1000000",
-							"max_ant_amount":                 "1000000000000",
-							"trading_fee_rate":               "0.001",
-							"order_expiry":                   "3600s",
-							"identity_verification_required": true,
-							"ant_denom":                      "uant",
-							"max_open_orders":                100,
-							"price_precision":                8,
-						},
-						"orders":         []interface{}{},
-						"trades":         []interface{}{},
-						"user_positions": []interface{}{},
-						"auctions":       []interface{}{},
-						"order_book": map[string]interface{}{
-							"buy_orders":   []interface{}{},
-							"sell_orders":  []interface{}{},
-							"last_price":   "0",
-							"volume_24h":   "0",
-							"total_orders": 0,
-						},
-					},
-					"ident": map[string]interface{}{
-						"params": map[string]interface{}{
-							"verification_cost":          "1000000uvx",
-							"migration_fee":              "500000uvx",
-							"citizen_activity_period":    "31536000s",
-							"validator_activity_period":  "15768000s",
-							"max_identities_per_address": 1,
-						},
-						"identities": []interface{}{},
-						"roles":      []interface{}{},
-						"migrations": []interface{}{},
-					},
-					"lizenz": map[string]interface{}{
-						"params": map[string]interface{}{
-							"activation_cost":          "1000000uvx",
-							"deactivation_fee":         "1000000uvx",
-							"min_activity_period":      "2592000s",
-							"max_lizenz_per_validator": 10,
-						},
-						"lizenz":      []interface{}{},
-						"activations": []interface{}{},
-					},
-				},
+				"app_hash":  "",
+				"app_state": appState,
 			}
 
 			genesisBytes, err := json.MarshalIndent(genesis, "", "  ")
@@ -157,6 +135,11 @@ func newInitCmd() *cobra.Command {
 
 			if err := os.WriteFile(homeDir+"/config/genesis.json", genesisBytes, 0644); err != nil {
 				return fmt.Errorf("failed to write genesis.json: %w", err)
+			}
+
+			// Write chain_id marker for future starts
+			if err := os.WriteFile(filepath.Join(homeDir, "chain_id"), []byte(chainID), 0644); err != nil {
+				return fmt.Errorf("failed to write chain_id marker: %w", err)
 			}
 
 			// Create config.toml
@@ -180,6 +163,7 @@ log_format = "json"
 			fmt.Printf("📁 Home directory: %s\n", homeDir)
 			fmt.Printf("📄 Genesis file: %s/config/genesis.json\n", homeDir)
 			fmt.Printf("⚙️  Config file: %s/config/config.toml\n", homeDir)
+			fmt.Printf("🔑 PrivValidator: %s\n", privKeyFile)
 			fmt.Printf("\n🚀 To start the node, run: volnixd start\n")
 
 			return nil
@@ -201,6 +185,7 @@ func newVersionCmd() *cobra.Command {
 
 func newStartCmd() *cobra.Command {
 	var homeDir string
+	var reset bool
 
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -220,6 +205,48 @@ func newStartCmd() *cobra.Command {
 			if _, err := os.Stat(homeDir); os.IsNotExist(err) {
 				return fmt.Errorf("home directory %s does not exist. Please run 'volnixd init [moniker]' first", homeDir)
 			}
+
+			// Optional pre-start reset (flag or env)
+			if !reset {
+				if v := strings.TrimSpace(os.Getenv("VOLNIX_RESET")); v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes") {
+					reset = true
+				}
+			}
+			if reset {
+				_ = os.RemoveAll(filepath.Join(homeDir, "data"))
+				_ = os.Remove(filepath.Join(homeDir, "config", "priv_validator_state.json"))
+			}
+
+			// Pre-start chain-id reconciliation
+			chainIDMarker := filepath.Join(homeDir, "chain_id")
+			genesisPath := filepath.Join(homeDir, "config", "genesis.json")
+			genChain := ""
+			if b, err := os.ReadFile(genesisPath); err == nil {
+				var g map[string]any
+				if json.Unmarshal(b, &g) == nil {
+					if v, ok := g["chain_id"].(string); ok {
+						genChain = v
+					}
+				}
+			}
+			prevChain := ""
+			if b, err := os.ReadFile(chainIDMarker); err == nil {
+				prevChain = strings.TrimSpace(string(b))
+			}
+			if genChain != "" && prevChain != "" && genChain != prevChain {
+				_ = os.RemoveAll(filepath.Join(homeDir, "data"))
+				_ = os.Remove(filepath.Join(homeDir, "config", "priv_validator_state.json"))
+				_ = os.WriteFile(chainIDMarker, []byte(genChain), 0644)
+			}
+			if prevChain == "" && genChain != "" {
+				_ = os.WriteFile(chainIDMarker, []byte(genChain), 0644)
+			}
+
+			// Ensure config dir and priv validator state exist
+			_ = os.MkdirAll(filepath.Join(homeDir, "config"), 0755)
+			pvKey := filepath.Join(homeDir, "config", "priv_validator_key.json")
+			pvState := filepath.Join(homeDir, "config", "priv_validator_state.json")
+			_ = privval.LoadOrGenFilePV(pvKey, pvState)
 
 			// Create database directory
 			dbPath := filepath.Join(homeDir, "data")
@@ -246,19 +273,38 @@ func newStartCmd() *cobra.Command {
 
 			// Create CometBFT node
 			fmt.Println("🚀 Starting Волникс Протокол with CometBFT consensus...")
-			
+
 			// Create CometBFT logger
 			cometLogger := log.NewTMLogger(log.NewSyncWriter(os.Stdout))
-			
-			// Create CometBFT node
-			node, err := NewCometBFTNode(homeDir, cometLogger)
+
+			// Helper to create node
+			create := func() (*CometBFTNode, error) { return NewCometBFTNode(homeDir, cometLogger) }
+
+			node, err := create()
 			if err != nil {
 				return fmt.Errorf("failed to create CometBFT node: %w", err)
 			}
 
-			// Start CometBFT node
+			// Start CometBFT node with retry on chain-id mismatch
 			if err := node.Start(); err != nil {
-				return fmt.Errorf("failed to start CometBFT node: %w", err)
+				errStr := err.Error()
+				if strings.Contains(errStr, "invalid chain-id on InitChain") || strings.Contains(errStr, "error on replay") {
+					// Clean state and retry once
+					_ = os.RemoveAll(filepath.Join(homeDir, "data"))
+					_ = os.Remove(filepath.Join(homeDir, "config", "priv_validator_state.json"))
+					// Ensure PV state recreated
+					_ = privval.LoadOrGenFilePV(pvKey, pvState)
+					// Recreate and start
+					node, err = create()
+					if err != nil {
+						return fmt.Errorf("failed to recreate CometBFT node after reset: %w", err)
+					}
+					if err := node.Start(); err != nil {
+						return fmt.Errorf("failed to start CometBFT node after reset: %w", err)
+					}
+				} else {
+					return fmt.Errorf("failed to start CometBFT node: %w", err)
+				}
 			}
 
 			// Wait for shutdown signal
@@ -268,6 +314,7 @@ func newStartCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&homeDir, "home", "", "Directory for config and data (default: $HOME/.volnix)")
+	cmd.Flags().BoolVar(&reset, "reset", false, "Reset data and priv_validator_state before start")
 
 	return cmd
 }

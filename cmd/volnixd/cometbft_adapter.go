@@ -18,167 +18,89 @@ import (
 	"github.com/cometbft/cometbft/privval"
 	"github.com/cometbft/cometbft/proxy"
 	"github.com/cometbft/cometbft/rpc/client/local"
-	"github.com/cometbft/cometbft/rpc/core/types"
-	"github.com/cometbft/cometbft/types"
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
+	cmttypes "github.com/cometbft/cometbft/types"
 	dbm "github.com/cosmos/cosmos-db"
 
 	apppkg "github.com/volnix-protocol/volnix-protocol/app"
 )
 
-// ABCIAdapter адаптирует VolnixApp для работы с CometBFT v0.38.17
+// ABCIAdapter bridges CometBFT's context-aware ABCI to BaseApp
+// by forwarding requests to BaseApp's methods.
 type ABCIAdapter struct {
 	app *apppkg.VolnixApp
 }
 
-// NewABCIAdapter создает новый ABCI адаптер
-func NewABCIAdapter(app *apppkg.VolnixApp) *ABCIAdapter {
-	return &ABCIAdapter{app: app}
-}
+func NewABCIAdapter(app *apppkg.VolnixApp) *ABCIAdapter { return &ABCIAdapter{app: app} }
 
-// Info implements abci.Application
 func (a *ABCIAdapter) Info(ctx context.Context, req *abci.RequestInfo) (*abci.ResponseInfo, error) {
-	return &abci.ResponseInfo{
-		Data:             "volnix-protocol",
-		Version:          "0.1.0",
-		AppVersion:       1,
-		LastBlockHeight:  0, // Будет обновляться
-		LastBlockAppHash: []byte{},
-	}, nil
+	res, err := a.app.GetBaseApp().Info(req)
+	return res, err
 }
 
-// Query implements abci.Application
 func (a *ABCIAdapter) Query(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
-	// Здесь будет логика запросов
-	// Пока возвращаем заглушку
-	return &abci.ResponseQuery{
-		Code:  0,
-		Value: []byte("query response"),
-		Log:   "query processed",
-	}, nil
+	res, err := a.app.GetBaseApp().Query(ctx, req)
+	return res, err
 }
 
-// CheckTx implements abci.Application
 func (a *ABCIAdapter) CheckTx(ctx context.Context, req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
-	// Здесь будет логика проверки транзакций
-	// Пока возвращаем заглушку
-	return &abci.ResponseCheckTx{
-		Code: 0,
-		Data: []byte("tx valid"),
-		Log:  "transaction is valid",
-	}, nil
+	res, err := a.app.GetBaseApp().CheckTx(req)
+	return res, err
 }
 
-// InitChain implements abci.Application
 func (a *ABCIAdapter) InitChain(ctx context.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
-	// Создаем SDK контекст
-	sdkCtx := a.app.NewContext(true)
-
-	// Выполняем InitChain через SDK
-	_ = sdkCtx // Пока не используем, но создаем для совместимости
-	return &abci.ResponseInitChain{}, nil
+	res, err := a.app.GetBaseApp().InitChain(req)
+	return res, err
 }
 
-// PrepareProposal implements abci.Application
 func (a *ABCIAdapter) PrepareProposal(ctx context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
-	// Заглушка для PrepareProposal
-	return &abci.ResponsePrepareProposal{}, nil
+	res, err := a.app.GetBaseApp().PrepareProposal(req)
+	return res, err
 }
 
-// ProcessProposal implements abci.Application
 func (a *ABCIAdapter) ProcessProposal(ctx context.Context, req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
-	// Заглушка для ProcessProposal
-	return &abci.ResponseProcessProposal{}, nil
+	res, err := a.app.GetBaseApp().ProcessProposal(req)
+	return res, err
 }
 
-// FinalizeBlock implements abci.Application
 func (a *ABCIAdapter) FinalizeBlock(ctx context.Context, req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
-	// Создаем SDK контекст
-	sdkCtx := a.app.NewContext(true)
-
-	// Выполняем BeginBlocker через SDK для PoVB консенсуса
-	if err := a.app.GetConsensusKeeper().BeginBlocker(sdkCtx); err != nil {
-		return nil, fmt.Errorf("failed to execute BeginBlocker: %w", err)
-	}
-
-	// Обрабатываем транзакции
-	var deliverTxs []*abci.ExecTxResult
-	for _, tx := range req.Txs {
-		// Проверяем транзакцию
-		checkResult, err := a.CheckTx(ctx, &abci.RequestCheckTx{
-			Tx: tx,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to check transaction: %w", err)
-		}
-
-		if checkResult.Code != 0 {
-			// Транзакция не прошла проверку
-			deliverTxs = append(deliverTxs, &abci.ExecTxResult{
-				Code: checkResult.Code,
-				Log:  checkResult.Log,
-			})
-			continue
-		}
-
-		// Выполняем транзакцию
-		// Здесь будет логика выполнения через SDK
-		deliverTxs = append(deliverTxs, &abci.ExecTxResult{
-			Code: 0,
-			Log:  "transaction executed successfully",
-		})
-	}
-
-	// Выполняем EndBlocker через SDK
-	if err := a.app.GetConsensusKeeper().EndBlocker(sdkCtx); err != nil {
-		return nil, fmt.Errorf("failed to execute EndBlocker: %w", err)
-	}
-
-	// Возвращаем результат
-	return &abci.ResponseFinalizeBlock{
-		Events:        sdkCtx.EventManager().ABCIEvents(),
-		TxResults:     deliverTxs,
-		ValidatorUpdates: []abci.ValidatorUpdate{},
-		AppHash:       []byte{}, // Будет обновляться
-	}, nil
+	res, err := a.app.GetBaseApp().FinalizeBlock(req)
+	return res, err
 }
 
-// ExtendVote implements abci.Application
 func (a *ABCIAdapter) ExtendVote(ctx context.Context, req *abci.RequestExtendVote) (*abci.ResponseExtendVote, error) {
-	// Заглушка для ExtendVote
-	return &abci.ResponseExtendVote{}, nil
+	res, err := a.app.GetBaseApp().ExtendVote(ctx, req)
+	return res, err
 }
 
-// VerifyVoteExtension implements abci.Application
 func (a *ABCIAdapter) VerifyVoteExtension(ctx context.Context, req *abci.RequestVerifyVoteExtension) (*abci.ResponseVerifyVoteExtension, error) {
-	// Заглушка для VerifyVoteExtension
-	return &abci.ResponseVerifyVoteExtension{}, nil
+	res, err := a.app.GetBaseApp().VerifyVoteExtension(req)
+	return res, err
 }
 
-// Commit implements abci.Application
 func (a *ABCIAdapter) Commit(ctx context.Context, req *abci.RequestCommit) (*abci.ResponseCommit, error) {
-	// Здесь будет логика коммита состояния
-	// Пока возвращаем заглушку
-	return &abci.ResponseCommit{}, nil
+	res, err := a.app.GetBaseApp().Commit()
+	return res, err
 }
 
-// ListSnapshots implements abci.Application
 func (a *ABCIAdapter) ListSnapshots(ctx context.Context, req *abci.RequestListSnapshots) (*abci.ResponseListSnapshots, error) {
-	return &abci.ResponseListSnapshots{}, nil
+	res, err := a.app.GetBaseApp().ListSnapshots(req)
+	return res, err
 }
 
-// OfferSnapshot implements abci.Application
 func (a *ABCIAdapter) OfferSnapshot(ctx context.Context, req *abci.RequestOfferSnapshot) (*abci.ResponseOfferSnapshot, error) {
-	return &abci.ResponseOfferSnapshot{}, nil
+	res, err := a.app.GetBaseApp().OfferSnapshot(req)
+	return res, err
 }
 
-// LoadSnapshotChunk implements abci.Application
 func (a *ABCIAdapter) LoadSnapshotChunk(ctx context.Context, req *abci.RequestLoadSnapshotChunk) (*abci.ResponseLoadSnapshotChunk, error) {
-	return &abci.ResponseLoadSnapshotChunk{}, nil
+	res, err := a.app.GetBaseApp().LoadSnapshotChunk(req)
+	return res, err
 }
 
-// ApplySnapshotChunk implements abci.Application
 func (a *ABCIAdapter) ApplySnapshotChunk(ctx context.Context, req *abci.RequestApplySnapshotChunk) (*abci.ResponseApplySnapshotChunk, error) {
-	return &abci.ResponseApplySnapshotChunk{}, nil
+	res, err := a.app.GetBaseApp().ApplySnapshotChunk(req)
+	return res, err
 }
 
 // CometBFTNode представляет полноценный блокчейн узел
@@ -212,10 +134,8 @@ func NewCometBFTNode(homeDir string, logger log.Logger) (*CometBFTNode, error) {
 		return nil, fmt.Errorf("failed to load latest version: %w", err)
 	}
 
-	// Создаем ABCI адаптер
+	// Создаем ABCI адаптер и клиент
 	abciAdapter := NewABCIAdapter(app)
-
-	// Создаем ABCI клиент
 	abciClient := proxy.NewLocalClientCreator(abciAdapter)
 
 	// Создаем конфигурацию CometBFT по умолчанию
@@ -237,13 +157,19 @@ func NewCometBFTNode(homeDir string, logger log.Logger) (*CometBFTNode, error) {
 		PrivKey: ed25519.GenPrivKey(),
 	}
 
+	// Явный провайдер genesis.json
+	genesisPath := filepath.Join(homeDir, "config", "genesis.json")
+	genesisProvider := func() (*cmttypes.GenesisDoc, error) {
+		return cmttypes.GenesisDocFromFile(genesisPath)
+	}
+
 	// Создаем узел с правильными параметрами для v0.38.17
 	node, err := node.NewNode(
 		cfg,
 		privValidator,
 		nodeKey,
 		abciClient,
-		node.DefaultGenesisDocProviderFunc(cfg),
+		genesisProvider,
 		config.DefaultDBProvider,
 		node.DefaultMetricsProvider(cfg.Instrumentation),
 		logger,
@@ -324,7 +250,7 @@ func (n *CometBFTNode) GetNodeInfo() (*p2p.DefaultNodeInfo, error) {
 }
 
 // GetGenesisDoc возвращает genesis документ
-func (n *CometBFTNode) GetGenesisDoc() (*types.GenesisDoc, error) {
+func (n *CometBFTNode) GetGenesisDoc() (*cmttypes.GenesisDoc, error) {
 	genesisDoc := n.node.GenesisDoc()
 	if genesisDoc == nil {
 		return nil, fmt.Errorf("genesis doc not available")
@@ -367,21 +293,21 @@ func (n *CometBFTNode) GetBlockHeight() (int64, error) {
 }
 
 // GetValidators возвращает список валидаторов
-func (n *CometBFTNode) GetValidators(height int64) (*types.ValidatorSet, error) {
+func (n *CometBFTNode) GetValidators(height int64) (*cmttypes.ValidatorSet, error) {
 	client := n.GetRPCClient()
 	result, err := client.Validators(context.Background(), &height, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	// Создаем ValidatorSet из списка валидаторов
-	validatorSet := &types.ValidatorSet{
+	validatorSet := &cmttypes.ValidatorSet{
 		Validators: result.Validators,
 	}
 	return validatorSet, nil
 }
 
 // GetBlock возвращает блок по высоте
-func (n *CometBFTNode) GetBlock(height int64) (*types.Block, error) {
+func (n *CometBFTNode) GetBlock(height int64) (*cmttypes.Block, error) {
 	client := n.GetRPCClient()
 	result, err := client.Block(context.Background(), &height)
 	if err != nil {
@@ -391,7 +317,7 @@ func (n *CometBFTNode) GetBlock(height int64) (*types.Block, error) {
 }
 
 // GetBlockByHash возвращает блок по хешу
-func (n *CometBFTNode) GetBlockByHash(hash []byte) (*types.Block, error) {
+func (n *CometBFTNode) GetBlockByHash(hash []byte) (*cmttypes.Block, error) {
 	client := n.GetRPCClient()
 	result, err := client.BlockByHash(context.Background(), hash)
 	if err != nil {
@@ -418,19 +344,19 @@ func (n *CometBFTNode) GetTx(hash []byte) (*abci.TxResult, error) {
 }
 
 // BroadcastTxSync отправляет транзакцию синхронно
-func (n *CometBFTNode) BroadcastTxSync(tx types.Tx) (*coretypes.ResultBroadcastTx, error) {
+func (n *CometBFTNode) BroadcastTxSync(tx cmttypes.Tx) (*coretypes.ResultBroadcastTx, error) {
 	client := n.GetRPCClient()
 	return client.BroadcastTxSync(context.Background(), tx)
 }
 
 // BroadcastTxAsync отправляет транзакцию асинхронно
-func (n *CometBFTNode) BroadcastTxAsync(tx types.Tx) (*coretypes.ResultBroadcastTx, error) {
+func (n *CometBFTNode) BroadcastTxAsync(tx cmttypes.Tx) (*coretypes.ResultBroadcastTx, error) {
 	client := n.GetRPCClient()
 	return client.BroadcastTxAsync(context.Background(), tx)
 }
 
 // BroadcastTxCommit отправляет транзакцию и ждет коммита
-func (n *CometBFTNode) BroadcastTxCommit(tx types.Tx) (*coretypes.ResultBroadcastTxCommit, error) {
+func (n *CometBFTNode) BroadcastTxCommit(tx cmttypes.Tx) (*coretypes.ResultBroadcastTxCommit, error) {
 	client := n.GetRPCClient()
 	return client.BroadcastTxCommit(context.Background(), tx)
 }

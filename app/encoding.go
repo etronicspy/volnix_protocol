@@ -7,6 +7,7 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 
 	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
+	consensustypes "github.com/volnix-protocol/volnix-protocol/x/consensus/types"
 	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
@@ -27,6 +28,7 @@ func MakeEncodingConfig() EncodingConfig {
 	identtypes.RegisterInterfaces(interfaceRegistry)
 	lizenztypes.RegisterInterfaces(interfaceRegistry)
 	anteiltypes.RegisterInterfaces(interfaceRegistry)
+	consensustypes.RegisterInterfaces(interfaceRegistry)
 
 	// Create codecs
 	protoCodec := codec.NewProtoCodec(interfaceRegistry)
