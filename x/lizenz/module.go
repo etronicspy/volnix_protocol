@@ -30,6 +30,8 @@ func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&lizenzv1.MsgActivateLZN{},
 		&lizenzv1.MsgDeactivateLZN{},
 	)
+
+	// Do not register msgservice descriptor here; BaseApp wires services via RegisterServices
 }
 
 func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {

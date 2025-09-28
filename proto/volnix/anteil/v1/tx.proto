@@ -2,8 +2,6 @@ syntax = "proto3";
 package volnix.anteil.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
-
-import "cosmos/base/v1beta1/coin.proto";
 import "volnix/anteil/v1/types.proto";
 
 // Msg defines the Msg service for anteil module
@@ -19,7 +17,7 @@ service Msg {
   rpc ProvideLiquidity(MsgProvideLiquidity) returns (MsgProvideLiquidityResponse);
   rpc WithdrawLiquidity(MsgWithdrawLiquidity) returns (MsgWithdrawLiquidityResponse);
   rpc StakeANT(MsgStakeANT) returns (MsgStakeANTResponse);
-  rpc UnstakeANT(MsgUnstakeANTResponse) returns (MsgUnstakeANTResponse);
+  rpc UnstakeANT(MsgUnstakeANT) returns (MsgUnstakeANTResponse);
   rpc ClaimRewards(MsgClaimRewards) returns (MsgClaimRewardsResponse);
 }
 

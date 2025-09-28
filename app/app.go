@@ -71,6 +71,8 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	bapp.SetVersion("0.1.0")
 	// Provide interface registry so Msg/Query services can be registered safely
 	bapp.SetInterfaceRegistry(encoding.InterfaceRegistry)
+	// Minimal Tx encoder to match TxConfig
+	bapp.SetTxEncoder(encoding.TxConfig.TxEncoder())
 
 	// Store keys
 	keyParams := storetypes.NewKVStoreKey(paramtypes.StoreKey)
@@ -154,6 +156,9 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	if err := mm.RegisterServices(configurator); err != nil {
 		panic(err)
 	}
+
+	// Minimal AnteHandler: check for signatures presence only
+	bapp.SetAnteHandler(MinimalAnteHandler)
 
 	// Set BeginBlocker and EndBlocker for all modules
 	bapp.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {

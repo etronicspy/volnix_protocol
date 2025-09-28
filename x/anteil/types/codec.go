@@ -19,7 +19,7 @@ func RegisterInterfaces(reg cdctypes.InterfaceRegistry) {
 		&anteilv1.MsgProvideLiquidity{},
 		&anteilv1.MsgWithdrawLiquidity{},
 		&anteilv1.MsgStakeANT{},
-		&anteilv1.MsgUnstakeANTResponse{},
+		&anteilv1.MsgUnstakeANT{},
 		&anteilv1.MsgClaimRewards{},
 	)
 	reg.RegisterImplementations((*txtypes.MsgResponse)(nil),

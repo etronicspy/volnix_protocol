@@ -1,7 +1,6 @@
 package consensus
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
+	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/client/cli"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/keeper"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
@@ -52,7 +52,8 @@ func (ConsensusAppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config clien
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the consensus module.
 func (ConsensusAppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
+	_ = clientCtx
+	_ = mux
 }
 
 // GetTxCmd returns the root tx command for the consensus module.
@@ -82,9 +83,8 @@ func NewConsensusAppModule(cdc codec.Codec, keeper keeper.Keeper) ConsensusAppMo
 
 // RegisterServices registers a gRPC query service to respond to the module-specific gRPC queries.
 func (am ConsensusAppModule) RegisterServices(cfg module.Configurator) {
-	// Register services when they are implemented
-	// types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
-	// types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+	consensusv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
+	consensusv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
 }
 
 // RegisterInvariants registers the consensus module invariants.

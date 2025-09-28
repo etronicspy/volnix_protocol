@@ -1,12 +1,12 @@
 package types
 
 import (
-	"context"
-
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
+
+	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 )
 
 // RegisterLegacyAminoCodec registers the consensus types on the LegacyAmino codec.
@@ -18,18 +18,11 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 
 // RegisterInterfaces registers the consensus types on the interface registry.
 func RegisterInterfaces(registry types.InterfaceRegistry) {
-	registry.RegisterImplementations((*sdk.Msg)(nil)) // Add message types here when they are implemented
+	registry.RegisterImplementations((*sdk.Msg)(nil),
+		&consensusv1.MsgSelectBlockCreator{},
+	)
 
-}
-
-// RegisterQueryHandlerClient registers the gRPC Gateway routes for consensus module.
-func RegisterQueryHandlerClient(ctx context.Context, mux *runtime.ServeMux, client interface{}) error {
-	// Register query handlers here when they are implemented
-	return nil
-}
-
-// NewQueryClient creates a new query client for consensus module.
-func NewQueryClient(client interface{}) interface{} {
-	// Return query client when implemented
-	return nil
+	registry.RegisterImplementations((*txtypes.MsgResponse)(nil),
+		&consensusv1.MsgSelectBlockCreatorResponse{},
+	)
 }

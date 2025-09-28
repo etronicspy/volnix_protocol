@@ -6,7 +6,6 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
-import "cosmos/base/v1beta1/coin.proto";
 
 // Params defines the parameters for the anteil module
 message Params {

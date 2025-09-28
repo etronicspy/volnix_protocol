@@ -105,6 +105,12 @@ func TestParamSetPairs(t *testing.T) {
 		"AntDenom",
 		"MaxOpenOrders",
 		"PricePrecision",
+		// New economic parameters
+		"MarketMakerRewardRate",
+		"StakingRewardRate",
+		"LiquidityPoolFee",
+		"MaxSlippage",
+		"MinLiquidityThreshold",
 	}
 
 	require.Len(t, pairs, len(expectedKeys))
