@@ -7,6 +7,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// NewLizenz creates a new ActivatedLizenz instance (alias for backward compatibility)
+func NewLizenz(validator string, amount string, identityHash string) *lizenzv1.ActivatedLizenz {
+	return NewActivatedLizenz(validator, amount, identityHash)
+}
+
 // NewActivatedLizenz creates a new ActivatedLizenz instance
 func NewActivatedLizenz(validator string, amount string, identityHash string) *lizenzv1.ActivatedLizenz {
 	now := timestamppb.Now()

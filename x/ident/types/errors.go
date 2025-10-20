@@ -25,4 +25,8 @@ var (
 
 	// ErrRoleChangeNotAllowed indicates that the role change is not allowed
 	ErrRoleChangeNotAllowed = errors.Register(ModuleName, 7, "role change not allowed")
+
+	// Migration errors
+	ErrRoleMigrationNotFound  = errors.Register(ModuleName, 8, "role migration not found")
+	ErrInvalidMigrationStatus = errors.Register(ModuleName, 9, "invalid migration status")
 )

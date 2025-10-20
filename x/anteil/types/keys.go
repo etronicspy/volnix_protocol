@@ -26,6 +26,9 @@ var (
 
 	// AuctionKeyPrefix defines the prefix for auction keys
 	AuctionKeyPrefix = []byte{0x04}
+
+	// BidKeyPrefix defines the prefix for bid keys
+	BidKeyPrefix = []byte{0x05}
 )
 
 // GetOrderKey returns the key for an order
@@ -46,4 +49,29 @@ func GetUserPositionKey(owner string) []byte {
 // GetAuctionKey returns the key for an auction
 func GetAuctionKey(auctionID string) []byte {
 	return append(AuctionKeyPrefix, []byte(auctionID)...)
+}
+
+// GetBidKey returns the key for a bid
+func GetBidKey(auctionID, bidID string) []byte {
+	return append(BidKeyPrefix, []byte(auctionID+"_"+bidID)...)
+}
+
+// GetOrderPrefix returns the order prefix
+func GetOrderPrefix() []byte {
+	return OrderKeyPrefix
+}
+
+// GetTradePrefix returns the trade prefix
+func GetTradePrefix() []byte {
+	return TradeKeyPrefix
+}
+
+// GetAuctionPrefix returns the auction prefix
+func GetAuctionPrefix() []byte {
+	return AuctionKeyPrefix
+}
+
+// GetBidPrefix returns the bid prefix
+func GetBidPrefix() []byte {
+	return BidKeyPrefix
 }

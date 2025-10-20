@@ -76,4 +76,20 @@ var (
 
 	// ErrMaxOrdersExceeded indicates that the user has exceeded maximum open orders
 	ErrMaxOrdersExceeded = errors.Register(ModuleName, 24, "maximum open orders exceeded")
+
+	// Trade errors
+	ErrTradeNotFound      = errors.Register(ModuleName, 25, "trade not found")
+	ErrTradeAlreadyExists = errors.Register(ModuleName, 26, "trade already exists")
+
+	// Auction errors
+	ErrAuctionAlreadyExists = errors.Register(ModuleName, 27, "auction already exists")
+	ErrAuctionNotClosed     = errors.Register(ModuleName, 28, "auction is not closed")
+	ErrAuctionExpired       = errors.Register(ModuleName, 29, "auction has expired")
+	ErrNoWinningBid         = errors.Register(ModuleName, 30, "no winning bid found")
+
+	// Position errors
+	ErrPositionNotFound = errors.Register(ModuleName, 31, "position not found")
+
+	// Bid errors
+	ErrBidNotFound = errors.Register(ModuleName, 32, "bid not found")
 )

@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"fmt"
-	"time"
 
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -77,6 +76,11 @@ func (k Keeper) SetOrder(ctx sdk.Context, order *anteilv1.Order) error {
 	return nil
 }
 
+// CreateOrder creates a new order (alias for SetOrder)
+func (k Keeper) CreateOrder(ctx sdk.Context, order *anteilv1.Order) error {
+	return k.SetOrder(ctx, order)
+}
+
 // GetOrder retrieves an order by ID
 func (k Keeper) GetOrder(ctx sdk.Context, orderID string) (*anteilv1.Order, error) {
 	store := ctx.KVStore(k.storeKey)
@@ -119,6 +123,18 @@ func (k Keeper) UpdateOrder(ctx sdk.Context, order *anteilv1.Order) error {
 	return nil
 }
 
+// CancelOrder cancels an existing order
+func (k Keeper) CancelOrder(ctx sdk.Context, orderID string) error {
+	order, err := k.GetOrder(ctx, orderID)
+	if err != nil {
+		return err
+	}
+
+	// Update order status to cancelled
+	order.Status = anteilv1.OrderStatus_ORDER_STATUS_CANCELLED
+	return k.UpdateOrder(ctx, order)
+}
+
 // DeleteOrder removes an order from the store
 func (k Keeper) DeleteOrder(ctx sdk.Context, orderID string) error {
 	store := ctx.KVStore(k.storeKey)
@@ -133,57 +149,83 @@ func (k Keeper) DeleteOrder(ctx sdk.Context, orderID string) error {
 }
 
 // GetAllOrders retrieves all orders
-func (k Keeper) GetAllOrders(ctx sdk.Context) []*anteilv1.Order {
+func (k Keeper) GetAllOrders(ctx sdk.Context) ([]*anteilv1.Order, error) {
 	store := ctx.KVStore(k.storeKey)
-	iterator := storetypes.KVStorePrefixIterator(store, anteiltypes.OrderKeyPrefix)
+	orderStore := anteiltypes.NewOrderStore(store)
 
+	var orders []*anteilv1.Order
+	iterator := orderStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
 			panic(fmt.Sprintf("failed to close iterator: %v", err))
 		}
 	}()
-	var orders []*anteilv1.Order
 
 	for ; iterator.Valid(); iterator.Next() {
 		var order anteilv1.Order
 		if err := k.cdc.Unmarshal(iterator.Value(), &order); err != nil {
-			continue
+			return nil, fmt.Errorf("failed to unmarshal order: %w", err)
 		}
 		orders = append(orders, &order)
 	}
 
-	return orders
-}
-
-// GetOrdersByOwner retrieves orders by owner
-func (k Keeper) GetOrdersByOwner(ctx sdk.Context, owner string) []*anteilv1.Order {
-	allOrders := k.GetAllOrders(ctx)
-	var ownerOrders []*anteilv1.Order
-
-	for _, order := range allOrders {
-		if order.GetOwner() == owner {
-			ownerOrders = append(ownerOrders, order)
-		}
-	}
-
-	return ownerOrders
-}
-
-// GetOrdersByStatus retrieves orders by status
-func (k Keeper) GetOrdersByStatus(ctx sdk.Context, status anteilv1.OrderStatus) []*anteilv1.Order {
-	allOrders := k.GetAllOrders(ctx)
-	var statusOrders []*anteilv1.Order
-
-	for _, order := range allOrders {
-		if order.GetStatus() == status {
-			statusOrders = append(statusOrders, order)
-		}
-	}
-
-	return statusOrders
+	return orders, nil
 }
 
 // Trade Management Methods
+
+// executeTrade executes a trade between two orders
+func (k Keeper) executeTrade(ctx sdk.Context, buyOrderID, sellOrderID string) error {
+	buyOrder, err := k.GetOrder(ctx, buyOrderID)
+	if err != nil {
+		return err
+	}
+
+	sellOrder, err := k.GetOrder(ctx, sellOrderID)
+	if err != nil {
+		return err
+	}
+
+	// Validate trade compatibility
+	if buyOrder.OrderSide != anteilv1.OrderSide_ORDER_SIDE_BUY {
+		return anteiltypes.ErrInvalidOrderType
+	}
+	if sellOrder.OrderSide != anteilv1.OrderSide_ORDER_SIDE_SELL {
+		return anteiltypes.ErrInvalidOrderType
+	}
+
+	// Execute the trade
+	trade := &anteilv1.Trade{
+		TradeId:     fmt.Sprintf("trade_%d", ctx.BlockHeight()),
+		BuyOrderId:  buyOrderID,
+		SellOrderId: sellOrderID,
+		Price:       buyOrder.Price, // Use buy order price
+		AntAmount:   buyOrder.AntAmount,
+	}
+
+	// Store the trade
+	if err := k.SetTrade(ctx, trade); err != nil {
+		return err
+	}
+
+	// Update order statuses
+	buyOrder.Status = anteilv1.OrderStatus_ORDER_STATUS_FILLED
+	sellOrder.Status = anteilv1.OrderStatus_ORDER_STATUS_FILLED
+
+	if err := k.UpdateOrder(ctx, buyOrder); err != nil {
+		return err
+	}
+	if err := k.UpdateOrder(ctx, sellOrder); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ExecuteTrade executes a trade between orders (public interface)
+func (k Keeper) ExecuteTrade(ctx sdk.Context, buyOrderID, sellOrderID string) error {
+	return k.executeTrade(ctx, buyOrderID, sellOrderID)
+}
 
 // SetTrade stores a trade in the store
 func (k Keeper) SetTrade(ctx sdk.Context, trade *anteilv1.Trade) error {
@@ -192,7 +234,12 @@ func (k Keeper) SetTrade(ctx sdk.Context, trade *anteilv1.Trade) error {
 	}
 
 	store := ctx.KVStore(k.storeKey)
-	tradeKey := anteiltypes.GetTradeKey(trade.GetTradeId())
+	tradeKey := anteiltypes.GetTradeKey(trade.TradeId)
+
+	// Check if trade already exists
+	if store.Has(tradeKey) {
+		return anteiltypes.ErrTradeAlreadyExists
+	}
 
 	// Store the trade
 	tradeBz, err := k.cdc.Marshal(trade)
@@ -210,7 +257,7 @@ func (k Keeper) GetTrade(ctx sdk.Context, tradeID string) (*anteilv1.Trade, erro
 	tradeKey := anteiltypes.GetTradeKey(tradeID)
 
 	if !store.Has(tradeKey) {
-		return nil, fmt.Errorf("trade not found")
+		return nil, anteiltypes.ErrTradeNotFound
 	}
 
 	tradeBz := store.Get(tradeKey)
@@ -223,88 +270,27 @@ func (k Keeper) GetTrade(ctx sdk.Context, tradeID string) (*anteilv1.Trade, erro
 }
 
 // GetAllTrades retrieves all trades
-func (k Keeper) GetAllTrades(ctx sdk.Context) []*anteilv1.Trade {
+func (k Keeper) GetAllTrades(ctx sdk.Context) ([]*anteilv1.Trade, error) {
 	store := ctx.KVStore(k.storeKey)
-	iterator := storetypes.KVStorePrefixIterator(store, anteiltypes.TradeKeyPrefix)
+	tradeStore := anteiltypes.NewTradeStore(store)
 
+	var trades []*anteilv1.Trade
+	iterator := tradeStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
 			panic(fmt.Sprintf("failed to close iterator: %v", err))
 		}
 	}()
-	var trades []*anteilv1.Trade
 
 	for ; iterator.Valid(); iterator.Next() {
 		var trade anteilv1.Trade
 		if err := k.cdc.Unmarshal(iterator.Value(), &trade); err != nil {
-			continue
+			return nil, fmt.Errorf("failed to unmarshal trade: %w", err)
 		}
 		trades = append(trades, &trade)
 	}
 
-	return trades
-}
-
-// UserPosition Management Methods
-
-// SetUserPosition stores a user position in the store
-func (k Keeper) SetUserPosition(ctx sdk.Context, position *anteilv1.UserPosition) error {
-	if err := anteiltypes.IsUserPositionValid(position); err != nil {
-		return err
-	}
-
-	store := ctx.KVStore(k.storeKey)
-	positionKey := anteiltypes.GetUserPositionKey(position.GetOwner())
-
-	// Store the position
-	positionBz, err := k.cdc.Marshal(position)
-	if err != nil {
-		return fmt.Errorf("failed to marshal user position: %w", err)
-	}
-
-	store.Set(positionKey, positionBz)
-	return nil
-}
-
-// GetUserPosition retrieves a user position by owner
-func (k Keeper) GetUserPosition(ctx sdk.Context, owner string) (*anteilv1.UserPosition, error) {
-	store := ctx.KVStore(k.storeKey)
-	positionKey := anteiltypes.GetUserPositionKey(owner)
-
-	if !store.Has(positionKey) {
-		return nil, fmt.Errorf("user position not found")
-	}
-
-	positionBz := store.Get(positionKey)
-	var position anteilv1.UserPosition
-	if err := k.cdc.Unmarshal(positionBz, &position); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal user position: %w", err)
-	}
-
-	return &position, nil
-}
-
-// GetAllUserPositions retrieves all user positions
-func (k Keeper) GetAllUserPositions(ctx sdk.Context) []*anteilv1.UserPosition {
-	store := ctx.KVStore(k.storeKey)
-	iterator := storetypes.KVStorePrefixIterator(store, anteiltypes.UserPositionKeyPrefix)
-
-	defer func() {
-		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
-		}
-	}()
-	var positions []*anteilv1.UserPosition
-
-	for ; iterator.Valid(); iterator.Next() {
-		var position anteilv1.UserPosition
-		if err := k.cdc.Unmarshal(iterator.Value(), &position); err != nil {
-			continue
-		}
-		positions = append(positions, &position)
-	}
-
-	return positions
+	return trades, nil
 }
 
 // Auction Management Methods
@@ -316,7 +302,12 @@ func (k Keeper) SetAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
 	}
 
 	store := ctx.KVStore(k.storeKey)
-	auctionKey := anteiltypes.GetAuctionKey(auction.GetAuctionId())
+	auctionKey := anteiltypes.GetAuctionKey(auction.AuctionId)
+
+	// Check if auction already exists
+	if store.Has(auctionKey) {
+		return anteiltypes.ErrAuctionAlreadyExists
+	}
 
 	// Store the auction
 	auctionBz, err := k.cdc.Marshal(auction)
@@ -326,6 +317,11 @@ func (k Keeper) SetAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
 
 	store.Set(auctionKey, auctionBz)
 	return nil
+}
+
+// CreateAuction creates a new auction (alias for SetAuction)
+func (k Keeper) CreateAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
+	return k.SetAuction(ctx, auction)
 }
 
 // GetAuction retrieves an auction by ID
@@ -346,459 +342,68 @@ func (k Keeper) GetAuction(ctx sdk.Context, auctionID string) (*anteilv1.Auction
 	return &auction, nil
 }
 
-// GetAllAuctions retrieves all auctions
-func (k Keeper) GetAllAuctions(ctx sdk.Context) []*anteilv1.Auction {
-	store := ctx.KVStore(k.storeKey)
-	iterator := storetypes.KVStorePrefixIterator(store, anteiltypes.AuctionKeyPrefix)
+// UpdateAuction updates an existing auction
+func (k Keeper) UpdateAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
+	if err := anteiltypes.IsAuctionValid(auction); err != nil {
+		return err
+	}
 
+	store := ctx.KVStore(k.storeKey)
+	auctionKey := anteiltypes.GetAuctionKey(auction.AuctionId)
+
+	// Check if auction exists
+	if !store.Has(auctionKey) {
+		return anteiltypes.ErrAuctionNotFound
+	}
+
+	// Store the updated auction
+	auctionBz, err := k.cdc.Marshal(auction)
+	if err != nil {
+		return fmt.Errorf("failed to marshal auction: %w", err)
+	}
+
+	store.Set(auctionKey, auctionBz)
+	return nil
+}
+
+// GetAllAuctions retrieves all auctions
+func (k Keeper) GetAllAuctions(ctx sdk.Context) ([]*anteilv1.Auction, error) {
+	store := ctx.KVStore(k.storeKey)
+	auctionStore := anteiltypes.NewAuctionStore(store)
+
+	var auctions []*anteilv1.Auction
+	iterator := auctionStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
 			panic(fmt.Sprintf("failed to close iterator: %v", err))
 		}
 	}()
-	var auctions []*anteilv1.Auction
 
 	for ; iterator.Valid(); iterator.Next() {
 		var auction anteilv1.Auction
 		if err := k.cdc.Unmarshal(iterator.Value(), &auction); err != nil {
-			continue
+			return nil, fmt.Errorf("failed to unmarshal auction: %w", err)
 		}
 		auctions = append(auctions, &auction)
 	}
 
-	return auctions
+	return auctions, nil
 }
 
-// GetAuctionsByStatus retrieves auctions by status
-func (k Keeper) GetAuctionsByStatus(ctx sdk.Context, status anteilv1.AuctionStatus) []*anteilv1.Auction {
-	allAuctions := k.GetAllAuctions(ctx)
-	var statusAuctions []*anteilv1.Auction
-
-	for _, auction := range allAuctions {
-		if auction.GetStatus() == status {
-			statusAuctions = append(statusAuctions, auction)
-		}
-	}
-
-	return statusAuctions
-}
-
-// OrderBook Management Methods
-
-// GetOrderBook retrieves the current order book
-func (k Keeper) GetOrderBook(ctx sdk.Context) *anteilv1.OrderBook {
-	openOrders := k.GetOrdersByStatus(ctx, anteilv1.OrderStatus_ORDER_STATUS_OPEN)
-
-	// Build order book from open orders
-	orderBook := &anteilv1.OrderBook{
-		BuyOrders:   []*anteilv1.OrderBookEntry{},
-		SellOrders:  []*anteilv1.OrderBookEntry{},
-		LastPrice:   "0",
-		Volume_24H:  "0",
-		TotalOrders: uint64(len(openOrders)),
-	}
-
-	// Aggregate buy and sell orders by price
-	buyOrders := make(map[string]*anteilv1.OrderBookEntry)
-	sellOrders := make(map[string]*anteilv1.OrderBookEntry)
-
-	for _, order := range openOrders {
-		if order.GetOrderSide() == anteilv1.OrderSide_ORDER_SIDE_BUY {
-			if entry, exists := buyOrders[order.GetPrice()]; exists {
-				// Aggregate at same price level
-				// In real implementation, this would use decimal arithmetic
-				entry.TotalAmount = order.GetAntAmount()
-				entry.OrderCount++
-			} else {
-				buyOrders[order.GetPrice()] = &anteilv1.OrderBookEntry{
-					Price:       order.GetPrice(),
-					TotalAmount: order.GetAntAmount(),
-					OrderCount:  1,
-				}
-			}
-		} else if order.GetOrderSide() == anteilv1.OrderSide_ORDER_SIDE_SELL {
-			if entry, exists := sellOrders[order.GetPrice()]; exists {
-				// Aggregate at same price level
-				entry.TotalAmount = order.GetAntAmount()
-				entry.OrderCount++
-			} else {
-				sellOrders[order.GetPrice()] = &anteilv1.OrderBookEntry{
-					Price:       order.GetPrice(),
-					TotalAmount: order.GetAntAmount(),
-					OrderCount:  1,
-				}
-			}
-		}
-	}
-
-	// Convert maps to slices and sort
-	// In real implementation, this would sort by price
-	for _, entry := range buyOrders {
-		orderBook.BuyOrders = append(orderBook.BuyOrders, entry)
-	}
-	for _, entry := range sellOrders {
-		orderBook.SellOrders = append(orderBook.SellOrders, entry)
-	}
-
-	return orderBook
-}
-
-// ========================================
-// MATCHING ENGINE - Core Trading Logic
-// ========================================
-
-// ProcessOrder processes a new order and attempts to match it with existing orders
-func (k Keeper) ProcessOrder(ctx sdk.Context, order *anteilv1.Order) (*anteilv1.Order, []*anteilv1.Trade, error) {
-	// Validate the order
-	if err := anteiltypes.IsOrderValid(order); err != nil {
-		return nil, nil, err
-	}
-
-	// Check if order can be partially or fully filled immediately
-	matchedTrades, remainingOrder := k.matchOrder(ctx, order)
-
-	if len(matchedTrades) > 0 {
-		// Execute matched trades
-		for _, trade := range matchedTrades {
-			if err := k.executeTrade(ctx, trade); err != nil {
-				return nil, nil, fmt.Errorf("failed to execute trade: %w", err)
-			}
-		}
-	}
-
-	// If there's a remaining order, add it to the order book
-	if remainingOrder != nil && remainingOrder.GetAntAmount() != "0" {
-		if err := k.SetOrder(ctx, remainingOrder); err != nil {
-			return nil, nil, fmt.Errorf("failed to add remaining order to book: %w", err)
-		}
-	}
-
-	return remainingOrder, matchedTrades, nil
-}
-
-// matchOrder attempts to match an order with existing orders in the book
-func (k Keeper) matchOrder(ctx sdk.Context, order *anteilv1.Order) ([]*anteilv1.Trade, *anteilv1.Order) {
-	var trades []*anteilv1.Trade
-	remainingAmount := order.GetAntAmount()
-
-	// Get opposite side orders for matching
-	var oppositeOrders []*anteilv1.Order
-	if order.GetOrderSide() == anteilv1.OrderSide_ORDER_SIDE_BUY {
-		oppositeOrders = k.getSellOrdersSortedByPrice(ctx, true) // ascending price
-	} else {
-		oppositeOrders = k.getBuyOrdersSortedByPrice(ctx, false) // descending price
-	}
-
-	// Try to match with each opposite order
-	for _, oppositeOrder := range oppositeOrders {
-		if remainingAmount == "0" {
-			break
-		}
-
-		// Check if orders can match
-		if k.canOrdersMatch(order, oppositeOrder) {
-			// Calculate match amount
-			matchAmount := k.calculateMatchAmount(remainingAmount, oppositeOrder.GetAntAmount())
-
-			// Create trade
-			trade := k.createTrade(order, oppositeOrder, matchAmount)
-			trades = append(trades, trade)
-
-			// Update remaining amounts
-			remainingAmount = k.subtractAmount(remainingAmount, matchAmount)
-			oppositeRemaining := k.subtractAmount(oppositeOrder.GetAntAmount(), matchAmount)
-
-			// Update or remove opposite order
-			if oppositeRemaining == "0" {
-				k.DeleteOrder(ctx, oppositeOrder.GetOrderId())
-			} else {
-				oppositeOrder.AntAmount = oppositeRemaining
-				k.UpdateOrder(ctx, oppositeOrder)
-			}
-		}
-	}
-
-	// Create remaining order if there's unfilled amount
-	var remainingOrder *anteilv1.Order
-	if remainingAmount != "0" {
-		remainingOrder = &anteilv1.Order{
-			OrderId:   order.GetOrderId(),
-			Owner:     order.GetOwner(),
-			OrderType: order.GetOrderType(),
-			OrderSide: order.GetOrderSide(),
-			AntAmount: remainingAmount,
-			Price:     order.GetPrice(),
-			Status:    anteilv1.OrderStatus_ORDER_STATUS_OPEN,
-			CreatedAt: order.GetCreatedAt(),
-			ExpiresAt: order.GetExpiresAt(),
-		}
-	}
-
-	return trades, remainingOrder
-}
-
-// canOrdersMatch checks if two orders can be matched
-func (k Keeper) canOrdersMatch(buyOrder, sellOrder *anteilv1.Order) bool {
-	// For now, simple price matching
-	// In production, this would use proper decimal arithmetic
-	buyPrice := buyOrder.GetPrice()
-	sellPrice := sellOrder.GetPrice()
-
-	// Buy order can match sell order if buy price >= sell price
-	return buyPrice >= sellPrice
-}
-
-// calculateMatchAmount calculates how much can be matched between two orders
-func (k Keeper) calculateMatchAmount(amount1, amount2 string) string {
-	// Simple string comparison for now
-	// In production, this would use proper decimal arithmetic
-	if amount1 <= amount2 {
-		return amount1
-	}
-	return amount2
-}
-
-// subtractAmount subtracts one amount from another
-func (k Keeper) subtractAmount(total, subtract string) string {
-	// Simple string manipulation for now
-	// In production, this would use proper decimal arithmetic
-	if total == subtract {
-		return "0"
-	}
-	// This is a placeholder - real implementation would parse and calculate
-	return "0"
-}
-
-// createTrade creates a new trade from two matching orders
-func (k Keeper) createTrade(order1, order2 *anteilv1.Order, amount string) *anteilv1.Trade {
-	// Determine buyer and seller
-	var buyer, seller string
-	var price string
-
-	if order1.GetOrderSide() == anteilv1.OrderSide_ORDER_SIDE_BUY {
-		buyer = order1.GetOwner()
-		seller = order2.GetOwner()
-		price = order1.GetPrice() // Use buyer's price (better for seller)
-	} else {
-		buyer = order2.GetOwner()
-		seller = order1.GetOwner()
-		price = order2.GetPrice() // Use buyer's price (better for seller)
-	}
-
-	trade := &anteilv1.Trade{
-		TradeId:      fmt.Sprintf("trade_%d", time.Now().UnixNano()),
-		BuyOrderId:   order1.GetOrderId(),
-		SellOrderId:  order2.GetOrderId(),
-		Buyer:        buyer,
-		Seller:       seller,
-		AntAmount:    amount,
-		Price:        price,
-		TotalValue:   amount, // Simplified - should calculate price * amount
-		ExecutedAt:   &timestamppb.Timestamp{Seconds: time.Now().Unix()},
-		IdentityHash: "", // Placeholder
-	}
-
-	return trade
-}
-
-// executeTrade executes a trade and updates user positions
-func (k Keeper) executeTrade(ctx sdk.Context, trade *anteilv1.Trade) error {
-	// Store the trade
-	if err := k.SetTrade(ctx, trade); err != nil {
-		return err
-	}
-
-	// Update user positions
-	if err := k.updateUserPosition(ctx, trade.GetBuyer(), trade.GetAntAmount(), "buy"); err != nil {
-		return err
-	}
-	if err := k.updateUserPosition(ctx, trade.GetSeller(), trade.GetAntAmount(), "sell"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// updateUserPosition updates a user's trading position
-func (k Keeper) updateUserPosition(ctx sdk.Context, user string, amount string, action string) error {
-	position, err := k.GetUserPosition(ctx, user)
+// ProcessAuctions processes active auctions
+func (k Keeper) ProcessAuctions(ctx sdk.Context) error {
+	auctions, err := k.GetAllAuctions(ctx)
 	if err != nil {
-		// Create new position if it doesn't exist
-		position = &anteilv1.UserPosition{
-			Owner:        user,
-			AntBalance:   "0",
-			LockedAnt:    "0",
-			AvailableAnt: "0",
-			OpenOrderIds: []string{},
-			TotalTrades:  "0",
-			TotalVolume:  "0",
-			LastActivity: &timestamppb.Timestamp{Seconds: time.Now().Unix()},
-		}
+		return err
 	}
 
-	// Update position based on action
-	// This is simplified - real implementation would use proper decimal arithmetic
-	if action == "buy" {
-		// User bought ANT
-		position.AntBalance = amount // Simplified
-		position.AvailableAnt = amount
-	} else if action == "sell" {
-		// User sold ANT
-		position.AntBalance = "0" // Simplified
-		position.AvailableAnt = "0"
-	}
-
-	// Store updated position
-	return k.SetUserPosition(ctx, position)
-}
-
-// getSellOrdersSortedByPrice gets sell orders sorted by price
-func (k Keeper) getSellOrdersSortedByPrice(ctx sdk.Context, ascending bool) []*anteilv1.Order {
-	orders := k.GetOrdersByStatus(ctx, anteilv1.OrderStatus_ORDER_STATUS_OPEN)
-	var sellOrders []*anteilv1.Order
-
-	for _, order := range orders {
-		if order.GetOrderSide() == anteilv1.OrderSide_ORDER_SIDE_SELL {
-			sellOrders = append(sellOrders, order)
-		}
-	}
-
-	// Sort by price (simplified - real implementation would use proper sorting)
-	// For now, just return as-is
-	return sellOrders
-}
-
-// getBuyOrdersSortedByPrice gets buy orders sorted by price
-func (k Keeper) getBuyOrdersSortedByPrice(ctx sdk.Context, descending bool) []*anteilv1.Order {
-	orders := k.GetOrdersByStatus(ctx, anteilv1.OrderStatus_ORDER_STATUS_OPEN)
-	var buyOrders []*anteilv1.Order
-
-	for _, order := range orders {
-		if order.GetOrderSide() == anteilv1.OrderSide_ORDER_SIDE_BUY {
-			buyOrders = append(buyOrders, order)
-		}
-	}
-
-	// Sort by price (simplified - real implementation would use proper sorting)
-	// For now, just return as-is
-	return buyOrders
-}
-
-// ========================================
-// BLOCK PROCESSORS - BeginBlocker/EndBlocker Logic
-// ========================================
-
-// BeginBlocker processes events at the beginning of each block
-func (k Keeper) BeginBlocker(ctx sdk.Context) error {
-	// Process expired orders
-	if err := k.processExpiredOrders(ctx); err != nil {
-		return fmt.Errorf("failed to process expired orders: %w", err)
-	}
-
-	// Create new auctions if needed
-	if err := k.createNewAuctions(ctx); err != nil {
-		return fmt.Errorf("failed to create new auctions: %w", err)
-	}
-
-	return nil
-}
-
-// EndBlocker processes events at the end of each block
-func (k Keeper) EndBlocker(ctx sdk.Context) error {
-	// Settle completed auctions
-	if err := k.settleCompletedAuctions(ctx); err != nil {
-		return fmt.Errorf("failed to settle auctions: %w", err)
-	}
-
-	// Update order book statistics
-	if err := k.updateOrderBookStats(ctx); err != nil {
-		return fmt.Errorf("failed to update order book stats: %w", err)
-	}
-
-	return nil
-}
-
-// processExpiredOrders cancels orders that have expired
-func (k Keeper) processExpiredOrders(ctx sdk.Context) error {
-	openOrders := k.GetOrdersByStatus(ctx, anteilv1.OrderStatus_ORDER_STATUS_OPEN)
-	currentTime := ctx.BlockTime()
-
-	for _, order := range openOrders {
-		// Check if order has expired
-		if order.GetExpiresAt() != nil {
-			expiryTime := order.GetExpiresAt().AsTime()
-			if currentTime.After(expiryTime) {
-				// Mark order as expired
-				order.Status = anteilv1.OrderStatus_ORDER_STATUS_EXPIRED
-
-				// Update order in store
-				if err := k.UpdateOrder(ctx, order); err != nil {
-					return fmt.Errorf("failed to update expired order: %w", err)
-				}
-
-				// Release locked ANT back to user
-				if err := k.releaseLockedAnt(ctx, order); err != nil {
-					return fmt.Errorf("failed to release locked ANT: %w", err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// createNewAuctions creates new auctions for block creation rights
-func (k Keeper) createNewAuctions(ctx sdk.Context) error {
-	// Check if we need to create a new auction
-	// This would typically be based on block height or time intervals
-	blockHeight := ctx.BlockHeight()
-
-	// Create auction every 100 blocks (example)
-	if blockHeight%100 == 0 {
-		currentTime := ctx.BlockTime()
-		auction := &anteilv1.Auction{
-			AuctionId:    fmt.Sprintf("auction_%d", blockHeight),
-			BlockHeight:  uint64(blockHeight + 100), // Target next auction block
-			StartTime:    &timestamppb.Timestamp{Seconds: currentTime.Unix()},
-			EndTime:      &timestamppb.Timestamp{Seconds: currentTime.Unix() + 3600}, // 1 hour duration
-			Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
-			Bids:         []*anteilv1.Bid{},
-			WinningBid:   "",
-			ReservePrice: "1000000", // Minimum price in uant
-			AntAmount:    "1000000", // Amount of ANT being auctioned
-		}
-
-		if err := k.SetAuction(ctx, auction); err != nil {
-			return fmt.Errorf("failed to create new auction: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// settleCompletedAuctions settles auctions that have ended
-func (k Keeper) settleCompletedAuctions(ctx sdk.Context) error {
-	openAuctions := k.GetAuctionsByStatus(ctx, anteilv1.AuctionStatus_AUCTION_STATUS_OPEN)
-	currentTime := ctx.BlockTime()
-
-	for _, auction := range openAuctions {
-		// Check if auction has ended
-		if auction.GetEndTime() != nil {
-			endTime := auction.GetEndTime().AsTime()
-			if currentTime.After(endTime) {
-				// Close the auction
+	for _, auction := range auctions {
+		if auction.Status == anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
+			// Check if auction has ended
+			if ctx.BlockTime().After(auction.EndTime.AsTime()) {
 				auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
-
-				// Find winning bid (highest bid above reserve price)
-				winningBid := k.findWinningBid(auction)
-				if winningBid != nil {
-					auction.WinningBid = winningBid.GetBidId()
-					auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_SETTLED
-				}
-
-				// Update auction in store
-				if err := k.SetAuction(ctx, auction); err != nil {
-					return fmt.Errorf("failed to update auction: %w", err)
+				if err := k.UpdateAuction(ctx, auction); err != nil {
+					return err
 				}
 			}
 		}
@@ -807,64 +412,188 @@ func (k Keeper) settleCompletedAuctions(ctx sdk.Context) error {
 	return nil
 }
 
-// findWinningBid finds the highest bid above reserve price
-func (k Keeper) findWinningBid(auction *anteilv1.Auction) *anteilv1.Bid {
-	var winningBid *anteilv1.Bid
-	var highestAmount string
-
-	for _, bid := range auction.GetBids() {
-		// Check if bid is above reserve price
-		if bid.GetAmount() >= auction.GetReservePrice() {
-			if winningBid == nil || bid.GetAmount() > highestAmount {
-				winningBid = bid
-				highestAmount = bid.GetAmount()
-			}
-		}
-	}
-
-	return winningBid
-}
-
-// updateOrderBookStats updates order book statistics
-func (k Keeper) updateOrderBookStats(ctx sdk.Context) error {
-	// Get current order book
-	orderBook := k.GetOrderBook(ctx)
-
-	// Update 24h volume (simplified - would need proper time tracking)
-	allTrades := k.GetAllTrades(ctx)
-	totalVolume := "0"
-
-	for _, trade := range allTrades {
-		// Simple string addition for now
-		// In production, this would use proper decimal arithmetic
-		totalVolume = trade.GetAntAmount() // Simplified
-	}
-
-	orderBook.Volume_24H = totalVolume
-
-	// Update last price from recent trades
-	if len(allTrades) > 0 {
-		latestTrade := allTrades[len(allTrades)-1]
-		orderBook.LastPrice = latestTrade.GetPrice()
+// BeginBlocker processes auctions and trades
+func (k Keeper) BeginBlocker(ctx sdk.Context) error {
+	// Process active auctions
+	if err := k.ProcessAuctions(ctx); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// releaseLockedAnt releases ANT that was locked in expired orders
-func (k Keeper) releaseLockedAnt(ctx sdk.Context, order *anteilv1.Order) error {
-	// Get user position
-	position, err := k.GetUserPosition(ctx, order.GetOwner())
+// PlaceBid places a bid on an auction
+func (k Keeper) PlaceBid(ctx sdk.Context, auctionID string, bidder string, amount string) error {
+	auction, err := k.GetAuction(ctx, auctionID)
 	if err != nil {
-		// User position doesn't exist, nothing to release
-		return nil
+		return err
 	}
 
-	// Release locked ANT back to available
-	// This is simplified - real implementation would use proper decimal arithmetic
-	position.LockedAnt = "0"
-	position.AvailableAnt = order.GetAntAmount() // Simplified
+	// Check if auction is still open
+	if auction.Status != anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
+		return anteiltypes.ErrAuctionClosed
+	}
 
-	// Update position
+	// Check if auction has ended
+	if ctx.BlockTime().After(auction.EndTime.AsTime()) {
+		return anteiltypes.ErrAuctionExpired
+	}
+
+	// Create bid
+	bid := &anteilv1.Bid{
+		BidId:       fmt.Sprintf("%s_%s_%d", auctionID, bidder, ctx.BlockHeight()),
+		Bidder:      bidder,
+		Amount:      amount,
+		SubmittedAt: timestamppb.Now(),
+	}
+
+	// Store bid
+	bidKey := anteiltypes.GetBidKey(auctionID, bid.BidId)
+	store := ctx.KVStore(k.storeKey)
+	bidBz, err := k.cdc.Marshal(bid)
+	if err != nil {
+		return err
+	}
+	store.Set(bidKey, bidBz)
+
+	// Update auction with new bid
+	if auction.WinningBid == "" {
+		auction.WinningBid = bid.BidId
+		if err := k.UpdateAuction(ctx, auction); err != nil {
+			return err
+		}
+	} else {
+		// Get current winning bid to compare amounts
+		currentWinningBid, err := k.GetBid(ctx, auctionID, auction.WinningBid)
+		if err == nil {
+			// Compare amounts as strings (simplified comparison)
+			if bid.Amount > currentWinningBid.Amount {
+				auction.WinningBid = bid.BidId
+				if err := k.UpdateAuction(ctx, auction); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetBid retrieves a bid by ID
+func (k Keeper) GetBid(ctx sdk.Context, auctionID, bidID string) (*anteilv1.Bid, error) {
+	store := ctx.KVStore(k.storeKey)
+	bidKey := anteiltypes.GetBidKey(auctionID, bidID)
+
+	if !store.Has(bidKey) {
+		return nil, anteiltypes.ErrBidNotFound
+	}
+
+	bidBz := store.Get(bidKey)
+	var bid anteilv1.Bid
+	if err := k.cdc.Unmarshal(bidBz, &bid); err != nil {
+		return nil, err
+	}
+
+	return &bid, nil
+}
+
+// SettleAuction settles an auction and distributes rewards
+func (k Keeper) SettleAuction(ctx sdk.Context, auctionID string) error {
+	auction, err := k.GetAuction(ctx, auctionID)
+	if err != nil {
+		return err
+	}
+
+	// Check if auction is closed
+	if auction.Status != anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED {
+		return anteiltypes.ErrAuctionNotClosed
+	}
+
+	// Get winning bid
+	if auction.WinningBid == "" {
+		return anteiltypes.ErrNoWinningBid
+	}
+
+	_, err = k.GetBid(ctx, auctionID, auction.WinningBid)
+	if err != nil {
+		return err
+	}
+
+	// Process settlement logic here
+	// For now, just mark as settled
+	auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_SETTLED
+	return k.UpdateAuction(ctx, auction)
+}
+
+// GetUserPosition retrieves user's position in the market
+func (k Keeper) GetUserPosition(ctx sdk.Context, user string) (*anteilv1.UserPosition, error) {
+	store := ctx.KVStore(k.storeKey)
+	positionKey := anteiltypes.GetUserPositionKey(user)
+
+	if !store.Has(positionKey) {
+		return nil, anteiltypes.ErrPositionNotFound
+	}
+
+	positionBz := store.Get(positionKey)
+	var position anteilv1.UserPosition
+	if err := k.cdc.Unmarshal(positionBz, &position); err != nil {
+		return nil, err
+	}
+
+	return &position, nil
+}
+
+// SetUserPosition sets user's position
+func (k Keeper) SetUserPosition(ctx sdk.Context, position *anteilv1.UserPosition) error {
+	store := ctx.KVStore(k.storeKey)
+	positionKey := anteiltypes.GetUserPositionKey(position.Owner)
+
+	positionBz, err := k.cdc.Marshal(position)
+	if err != nil {
+		return err
+	}
+	store.Set(positionKey, positionBz)
+
+	return nil
+}
+
+// UpdateUserPosition updates user's position
+func (k Keeper) UpdateUserPosition(ctx sdk.Context, user string, antBalance string, orderCount uint32) error {
+	position := &anteilv1.UserPosition{
+		Owner:        user,
+		AntBalance:   antBalance,
+		TotalTrades:  fmt.Sprintf("%d", orderCount),
+		LastActivity: timestamppb.Now(),
+	}
+
 	return k.SetUserPosition(ctx, position)
+}
+
+// GetOrdersByOwner retrieves all orders for a specific owner
+func (k Keeper) GetOrdersByOwner(ctx sdk.Context, owner string) ([]*anteilv1.Order, error) {
+	store := ctx.KVStore(k.storeKey)
+	prefix := anteiltypes.GetOrderPrefix()
+
+	var orders []*anteilv1.Order
+	iterator := store.Iterator(prefix, append(prefix, 0xFF))
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		var order anteilv1.Order
+		if err := k.cdc.Unmarshal(iterator.Value(), &order); err != nil {
+			continue
+		}
+		if order.Owner == owner {
+			orders = append(orders, &order)
+		}
+	}
+
+	return orders, nil
+}
+
+// EndBlocker processes end-of-block operations
+func (k Keeper) EndBlocker(ctx sdk.Context) error {
+	// Process any end-of-block logic here
+	// For now, just return nil
+	return nil
 }

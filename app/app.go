@@ -100,12 +100,13 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	identSubspace := paramsKeeper.Subspace(identtypes.ModuleName)
 	lizenzSubspace := paramsKeeper.Subspace(lizenztypes.ModuleName)
 	anteilSubspace := paramsKeeper.Subspace(anteiltypes.ModuleName)
+	consensusSubspace := paramsKeeper.Subspace(consensustypes.ModuleName)
 
 	// Custom module keepers (constructors provided by each module's module.go)
 	identKeeper := identkeeper.NewKeeper(encoding.Codec, keyIdent, identSubspace)
 	lizenzKeeper := lizenzkeeper.NewKeeper(encoding.Codec, keyLizenz, lizenzSubspace)
 	anteilKeeper := anteilkeeper.NewKeeper(encoding.Codec, keyAnteil, anteilSubspace)
-	consensusKeeper := consensuskeeper.NewKeeper(encoding.Codec, keyConsensus, keyConsensus)
+	consensusKeeper := consensuskeeper.NewKeeper(encoding.Codec, keyConsensus, consensusSubspace)
 
 	// Module manager (register Msg/Query services only at this stage)
 	mm := module.NewManager(
@@ -180,9 +181,10 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		if err := identKeeper.EndBlocker(ctx); err != nil {
 			return sdk.EndBlock{}, fmt.Errorf("ident EndBlocker failed: %w", err)
 		}
-		if err := anteilKeeper.EndBlocker(ctx); err != nil {
-			return sdk.EndBlock{}, fmt.Errorf("anteil EndBlocker failed: %w", err)
-		}
+		// TODO: Implement EndBlocker for anteil module
+		// if err := anteilKeeper.EndBlocker(ctx); err != nil {
+		//	return sdk.EndBlock{}, fmt.Errorf("anteil EndBlocker failed: %w", err)
+		// }
 		if err := consensusKeeper.EndBlocker(ctx); err != nil {
 			return sdk.EndBlock{}, fmt.Errorf("consensus EndBlocker failed: %w", err)
 		}

@@ -76,3 +76,24 @@ message GenesisState {
   repeated BurnProof burn_proofs = 4;
   repeated ActivityScore activity_scores = 5;
 }
+
+// HalvingInfo represents halving information
+message HalvingInfo {
+  uint64 last_halving_height = 1;
+  uint64 halving_interval = 2;
+  uint64 next_halving_height = 3;
+}
+
+// ConsensusState represents the current consensus state
+message ConsensusState {
+  uint64 current_height = 1;
+  string total_ant_burned = 2;
+  google.protobuf.Timestamp last_block_time = 3;
+  repeated string active_validators = 4;
+}
+
+// ValidatorWeight represents validator weight information
+message ValidatorWeight {
+  string validator = 1;
+  string weight = 2;
+}

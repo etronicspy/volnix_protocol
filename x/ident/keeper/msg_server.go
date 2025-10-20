@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"encoding/hex"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
@@ -41,7 +42,7 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 	// Create new verified account (using ZKP proof hash as identity hash)
 	hash := sha3.NewLegacyKeccak256()
 	hash.Write([]byte(req.ZkpProof))
-	identityHash := string(hash.Sum(nil))
+	identityHash := hex.EncodeToString(hash.Sum(nil))
 	account := types.NewVerifiedAccount(req.Address, identv1.Role_ROLE_CITIZEN, identityHash)
 
 	// Store the account

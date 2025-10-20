@@ -2,33 +2,36 @@ package types
 
 import (
 	"fmt"
-	
+
 	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 )
 
 // Type aliases for convenience
 type (
-	Validator     = consensusv1.Validator
+	Validator       = consensusv1.Validator
 	ValidatorStatus = consensusv1.ValidatorStatus
-	BlockCreator  = consensusv1.BlockCreator
-	BurnProof     = consensusv1.BurnProof
-	ActivityScore = consensusv1.ActivityScore
-	Params        = consensusv1.Params
-	GenesisState  = consensusv1.GenesisState
+	BlockCreator    = consensusv1.BlockCreator
+	BurnProof       = consensusv1.BurnProof
+	ActivityScore   = consensusv1.ActivityScore
+	HalvingInfo     = consensusv1.HalvingInfo
+	ConsensusState  = consensusv1.ConsensusState
+	ValidatorWeight = consensusv1.ValidatorWeight
+	Params          = consensusv1.Params
+	GenesisState    = consensusv1.GenesisState
 )
 
 // DefaultGenesis returns default genesis state
 func DefaultGenesis() *GenesisState {
 	return &GenesisState{
 		Params: &Params{
-			BaseBlockTime:              "5s",
-			HighActivityThreshold:      1000,
-			LowActivityThreshold:       100,
-			MinBurnAmount:              "1000000uvx",
-			MaxBurnAmount:              "1000000000uvx",
+			BaseBlockTime:               "5s",
+			HighActivityThreshold:       1000,
+			LowActivityThreshold:        100,
+			MinBurnAmount:               "1000000uvx",
+			MaxBurnAmount:               "1000000000uvx",
 			BlockCreatorSelectionRounds: 10,
-			ActivityDecayRate:          "0.95",
-			MoaPenaltyRate:             "0.1",
+			ActivityDecayRate:           "0.95",
+			MoaPenaltyRate:              "0.1",
 		},
 		Validators:     []*Validator{},
 		BlockCreators:  []*BlockCreator{},
@@ -48,19 +51,35 @@ func ValidateGenesis(gs *GenesisState) error {
 // DefaultParams returns default consensus parameters
 func DefaultParams() *Params {
 	return &Params{
-		BaseBlockTime:              "5s",
-		HighActivityThreshold:      1000,
-		LowActivityThreshold:       100,
-		MinBurnAmount:              "1000000uvx",
-		MaxBurnAmount:              "1000000000uvx",
+		BaseBlockTime:               "5s",
+		HighActivityThreshold:       1000,
+		LowActivityThreshold:        100,
+		MinBurnAmount:               "1000000uvx",
+		MaxBurnAmount:               "1000000000uvx",
 		BlockCreatorSelectionRounds: 10,
-		ActivityDecayRate:          "0.95",
-		MoaPenaltyRate:             "0.1",
+		ActivityDecayRate:           "0.95",
+		MoaPenaltyRate:              "0.1",
 	}
 }
 
 // ValidateParams performs basic validation on consensus parameters
 func ValidateParams(p *Params) error {
+	if p == nil {
+		return fmt.Errorf("params cannot be nil")
+	}
+	
+	if p.BaseBlockTime == "" {
+		return fmt.Errorf("base block time cannot be empty")
+	}
+	
+	if p.MinBurnAmount == "" {
+		return fmt.Errorf("min burn amount cannot be empty")
+	}
+	
+	if p.MaxBurnAmount == "" {
+		return fmt.Errorf("max burn amount cannot be empty")
+	}
+	
 	return nil
 }
 
@@ -94,6 +113,11 @@ func validateActivityDecayRate(i interface{}) error {
 	return nil
 }
 
+// validateBlockCreatorSelectionRounds validates the block creator selection rounds
+func validateBlockCreatorSelectionRounds(i interface{}) error {
+	return nil
+}
+
 // validateMoaPenaltyRate validates the MOA penalty rate
 func validateMoaPenaltyRate(i interface{}) error {
 	return nil
@@ -101,12 +125,12 @@ func validateMoaPenaltyRate(i interface{}) error {
 
 // Param keys
 var (
-	KeyBaseBlockTime              = []byte("BaseBlockTime")
-	KeyHighActivityThreshold      = []byte("HighActivityThreshold")
-	KeyLowActivityThreshold       = []byte("LowActivityThreshold")
-	KeyMinBurnAmount              = []byte("MinBurnAmount")
-	KeyMaxBurnAmount              = []byte("MaxBurnAmount")
+	KeyBaseBlockTime               = []byte("BaseBlockTime")
+	KeyHighActivityThreshold       = []byte("HighActivityThreshold")
+	KeyLowActivityThreshold        = []byte("LowActivityThreshold")
+	KeyMinBurnAmount               = []byte("MinBurnAmount")
+	KeyMaxBurnAmount               = []byte("MaxBurnAmount")
 	KeyBlockCreatorSelectionRounds = []byte("BlockCreatorSelectionRounds")
-	KeyActivityDecayRate          = []byte("ActivityDecayRate")
-	KeyMoaPenaltyRate             = []byte("MoaPenaltyRate")
+	KeyActivityDecayRate           = []byte("ActivityDecayRate")
+	KeyMoaPenaltyRate              = []byte("MoaPenaltyRate")
 )

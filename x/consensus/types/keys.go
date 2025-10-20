@@ -1,5 +1,7 @@
 package types
 
+import "fmt"
+
 const (
 	// ModuleName defines the module name
 	ModuleName = "consensus"
@@ -26,9 +28,50 @@ var (
 
 	// ActivityScoreKey defines the key for activity score data
 	ActivityScoreKey = "ActivityScore"
+
+	// HalvingInfoKey defines the key for halving information
+	HalvingInfoKey = []byte("HalvingInfo")
+
+	// ConsensusStateKey defines the key for consensus state
+	ConsensusStateKey = []byte("ConsensusState")
+
+	// ValidatorWeightKey defines the key for validator weight
+	ValidatorWeightKey = "ValidatorWeight"
+)
+
+// Key prefixes
+var (
+	KeyValidatorPrefix       = []byte(ValidatorKey)
+	KeyBlockCreatorPrefix    = []byte(BlockCreatorKey)
+	KeyValidatorWeightPrefix = []byte(ValidatorWeightKey)
 )
 
 // KeyPrefix returns the key prefix for the consensus module
 func KeyPrefix(key string) []byte {
 	return []byte(key)
+}
+
+// GetValidatorKey returns the key for a validator
+func GetValidatorKey(validator string) []byte {
+	return append(KeyValidatorPrefix, []byte(validator)...)
+}
+
+// GetBlockCreatorKey returns the key for a block creator
+func GetBlockCreatorKey(height uint64) []byte {
+	return append(KeyBlockCreatorPrefix, []byte(fmt.Sprintf("%d", height))...)
+}
+
+// GetValidatorWeightKey returns the key for a validator weight
+func GetValidatorWeightKey(validator string) []byte {
+	return append(KeyValidatorWeightPrefix, []byte(validator)...)
+}
+
+// KeyHalvingInfo returns the key for halving info
+func KeyHalvingInfo() []byte {
+	return HalvingInfoKey
+}
+
+// KeyConsensusState returns the key for consensus state
+func KeyConsensusState() []byte {
+	return ConsensusStateKey
 }

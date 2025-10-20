@@ -23,7 +23,7 @@ var _ consensusv1.QueryServer = QueryServer{}
 func (s QueryServer) Params(ctx context.Context, _ *consensusv1.QueryParamsRequest) (*consensusv1.QueryParamsResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	params := s.k.GetParams(sdkCtx)
-	return &consensusv1.QueryParamsResponse{Params: params}, nil
+	return &consensusv1.QueryParamsResponse{Params: &params}, nil
 }
 
 // Validators returns all validators tracked by the consensus module.
@@ -32,4 +32,3 @@ func (s QueryServer) Validators(ctx context.Context, _ *consensusv1.QueryValidat
 	validators := s.k.GetAllValidators(sdkCtx)
 	return &consensusv1.QueryValidatorsResponse{Validators: validators}, nil
 }
-

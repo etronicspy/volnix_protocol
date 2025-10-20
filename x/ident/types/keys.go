@@ -17,9 +17,17 @@ const (
 var (
 	// VerifiedAccountKeyPrefix defines the prefix for verified account keys
 	VerifiedAccountKeyPrefix = []byte{0x01}
+
+	// RoleMigrationKeyPrefix defines the prefix for role migration keys
+	RoleMigrationKeyPrefix = []byte{0x02}
 )
 
 // GetVerifiedAccountKey returns the key for a verified account
 func GetVerifiedAccountKey(address string) []byte {
 	return append(VerifiedAccountKeyPrefix, []byte(address)...)
+}
+
+// GetRoleMigrationKey returns the key for a role migration
+func GetRoleMigrationKey(fromAddress, toAddress string) []byte {
+	return append(RoleMigrationKeyPrefix, []byte(fromAddress+"_"+toAddress)...)
 }

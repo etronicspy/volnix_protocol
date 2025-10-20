@@ -2,7 +2,11 @@ package types
 
 import (
 	"fmt"
+	"strconv"
 	"time"
+
+	"cosmossdk.io/store/prefix"
+	storetypes "cosmossdk.io/store/types"
 
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -132,27 +136,16 @@ func IsTradeValid(trade *anteilv1.Trade) error {
 	return nil
 }
 
-// IsUserPositionValid checks if the user position is valid
-func IsUserPositionValid(position *anteilv1.UserPosition) error {
-	if position.Owner == "" {
-		return ErrEmptyOwner
-	}
-	if position.AntBalance == "" {
-		return ErrEmptyAntBalance
-	}
-	return nil
-}
-
 // IsAuctionValid checks if the auction is valid
 func IsAuctionValid(auction *anteilv1.Auction) error {
 	if auction.AuctionId == "" {
 		return ErrEmptyAuctionID
 	}
-	if auction.AntAmount == "" {
-		return ErrEmptyAntAmount
-	}
 	if auction.ReservePrice == "" {
 		return ErrEmptyReservePrice
+	}
+	if auction.AntAmount == "" {
+		return ErrEmptyAntAmount
 	}
 	return nil
 }
@@ -165,38 +158,42 @@ func IsBidValid(bid *anteilv1.Bid) error {
 	if bid.Amount == "" {
 		return ErrEmptyBidAmount
 	}
-	if bid.IdentityHash == "" {
-		return ErrEmptyIdentityHash
+	return nil
+}
+
+// IsUserPositionValid checks if the user position is valid
+func IsUserPositionValid(position *anteilv1.UserPosition) error {
+	if position.Owner == "" {
+		return ErrEmptyOwner
+	}
+	if position.AntBalance == "" {
+		return ErrEmptyAntBalance
 	}
 	return nil
 }
 
-// UpdateOrderStatus updates the order status
-func UpdateOrderStatus(order *anteilv1.Order, newStatus anteilv1.OrderStatus) {
-	order.Status = newStatus
+// NewOrderStore creates a new order store
+func NewOrderStore(store storetypes.KVStore) storetypes.KVStore {
+	return prefix.NewStore(store, OrderKeyPrefix)
 }
 
-// UpdateUserPosition updates the user position with new trade
-func UpdateUserPosition(position *anteilv1.UserPosition, trade *anteilv1.Trade, isBuyer bool) {
-	// Update total trades
-	currentTrades := parseUint64(position.TotalTrades)
-	position.TotalTrades = formatUint64(currentTrades + 1)
-
-	// Update total volume
-	currentVolume := parseUint64(position.TotalVolume)
-	tradeVolume := parseUint64(trade.TotalValue)
-	position.TotalVolume = formatUint64(currentVolume + tradeVolume)
-
-	// Update last activity
-	position.LastActivity = timestamppb.Now()
+// NewTradeStore creates a new trade store
+func NewTradeStore(store storetypes.KVStore) storetypes.KVStore {
+	return prefix.NewStore(store, TradeKeyPrefix)
 }
 
-// Helper functions for ID generation
+// NewAuctionStore creates a new auction store
+func NewAuctionStore(store storetypes.KVStore) storetypes.KVStore {
+	return prefix.NewStore(store, AuctionKeyPrefix)
+}
+
+// Helper functions
+
 func generateOrderID(owner string, timestamp time.Time) string {
 	return fmt.Sprintf("order_%s_%d", owner, timestamp.Unix())
 }
 
-func generateTradeID(buyOrderID string, sellOrderID string, timestamp time.Time) string {
+func generateTradeID(buyOrderID, sellOrderID string, timestamp time.Time) string {
 	return fmt.Sprintf("trade_%s_%s_%d", buyOrderID, sellOrderID, timestamp.Unix())
 }
 
@@ -204,24 +201,31 @@ func generateAuctionID(blockHeight uint64, timestamp time.Time) string {
 	return fmt.Sprintf("auction_%d_%d", blockHeight, timestamp.Unix())
 }
 
-func generateBidID(bidder string, auctionID string, timestamp time.Time) string {
+func generateBidID(bidder, auctionID string, timestamp time.Time) string {
 	return fmt.Sprintf("bid_%s_%s_%d", bidder, auctionID, timestamp.Unix())
 }
 
-// Helper functions for calculations
-func calculateTotalValue(antAmount string, price string) string {
-	// In real implementation, this would use decimal arithmetic
-	// For now, return a placeholder
-	return antAmount
+func calculateTotalValue(antAmount, price string) string {
+	// Simplified calculation - in real implementation this would use decimal arithmetic
+	return fmt.Sprintf("%s", antAmount) // Placeholder
 }
 
-// Helper functions for parsing and formatting
-func parseUint64(s string) uint64 {
-	// In real implementation, this would parse the string to uint64
-	// For now, return 0
-	return 0
+// UpdateOrderStatus updates the status of an order
+func UpdateOrderStatus(order *anteilv1.Order, status anteilv1.OrderStatus) {
+	order.Status = status
 }
 
-func formatUint64(u uint64) string {
-	return fmt.Sprintf("%d", u)
+// UpdateUserPosition updates user position based on trade
+func UpdateUserPosition(position *anteilv1.UserPosition, trade *anteilv1.Trade, isBuyer bool) {
+	// Update trade count
+	currentTrades, _ := strconv.ParseInt(position.TotalTrades, 10, 64)
+	position.TotalTrades = fmt.Sprintf("%d", currentTrades+1)
+
+	// Update volume
+	currentVolume, _ := strconv.ParseInt(position.TotalVolume, 10, 64)
+	tradeVolume, _ := strconv.ParseInt(trade.AntAmount, 10, 64)
+	position.TotalVolume = fmt.Sprintf("%d", currentVolume+tradeVolume)
+
+	// Update last activity
+	position.LastActivity = timestamppb.Now()
 }

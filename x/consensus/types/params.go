@@ -19,10 +19,18 @@ func NewConsensusParams(params *Params) *ConsensusParams {
 
 // ParamSetPairs get the params.ParamSet
 func (p *ConsensusParams) ParamSetPairs() paramtypes.ParamSetPairs {
+	if p.Params == nil {
+		p.Params = DefaultParams()
+	}
 	return paramtypes.ParamSetPairs{
 		paramtypes.NewParamSetPair(KeyBaseBlockTime, &p.BaseBlockTime, validateBaseBlockTime),
 		paramtypes.NewParamSetPair(KeyHighActivityThreshold, &p.HighActivityThreshold, validateHighActivityThreshold),
 		paramtypes.NewParamSetPair(KeyLowActivityThreshold, &p.LowActivityThreshold, validateLowActivityThreshold),
+		paramtypes.NewParamSetPair(KeyMinBurnAmount, &p.MinBurnAmount, validateMinBurnAmount),
+		paramtypes.NewParamSetPair(KeyMaxBurnAmount, &p.MaxBurnAmount, validateMaxBurnAmount),
+		paramtypes.NewParamSetPair(KeyBlockCreatorSelectionRounds, &p.BlockCreatorSelectionRounds, validateBlockCreatorSelectionRounds),
+		paramtypes.NewParamSetPair(KeyActivityDecayRate, &p.ActivityDecayRate, validateActivityDecayRate),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyRate, &p.MoaPenaltyRate, validateMoaPenaltyRate),
 	}
 }
 

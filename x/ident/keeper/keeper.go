@@ -357,3 +357,101 @@ func (k Keeper) validateRoleChange(ctx sdk.Context, oldRole, newRole identv1.Rol
 
 	return nil
 }
+
+// SetRoleMigration sets a role migration request
+func (k Keeper) SetRoleMigration(ctx sdk.Context, migration *identv1.RoleMigration) error {
+	store := ctx.KVStore(k.storeKey)
+	migrationKey := types.GetRoleMigrationKey(migration.FromAddress, migration.ToAddress)
+
+	migrationBz, err := k.cdc.Marshal(migration)
+	if err != nil {
+		return err
+	}
+	store.Set(migrationKey, migrationBz)
+
+	return nil
+}
+
+// GetRoleMigration retrieves a role migration by addresses
+func (k Keeper) GetRoleMigration(ctx sdk.Context, fromAddress, toAddress string) (*identv1.RoleMigration, error) {
+	store := ctx.KVStore(k.storeKey)
+	migrationKey := types.GetRoleMigrationKey(fromAddress, toAddress)
+
+	if !store.Has(migrationKey) {
+		return nil, types.ErrRoleMigrationNotFound
+	}
+
+	migrationBz := store.Get(migrationKey)
+	var migration identv1.RoleMigration
+	if err := k.cdc.Unmarshal(migrationBz, &migration); err != nil {
+		return nil, err
+	}
+
+	return &migration, nil
+}
+
+// ExecuteRoleMigration executes a role migration
+func (k Keeper) ExecuteRoleMigration(ctx sdk.Context, fromAddress, toAddress string) error {
+	migration, err := k.GetRoleMigration(ctx, fromAddress, toAddress)
+	if err != nil {
+		return err
+	}
+
+	// Check if migration is valid
+	if migration.IsCompleted {
+		return types.ErrInvalidMigrationStatus
+	}
+
+	// Get source account
+	sourceAccount, err := k.GetVerifiedAccount(ctx, fromAddress)
+	if err != nil {
+		return err
+	}
+
+	// Create target account with same role
+	targetAccount := &identv1.VerifiedAccount{
+		Address:              toAddress,
+		Role:                 sourceAccount.Role,
+		VerificationDate:     timestamppb.Now(),
+		LastActive:           timestamppb.Now(),
+		IsActive:             true,
+		IdentityHash:         migration.MigrationHash,
+		VerificationProvider: sourceAccount.VerificationProvider,
+	}
+
+	// Set target account
+	if err := k.SetVerifiedAccount(ctx, targetAccount); err != nil {
+		return err
+	}
+
+	// Deactivate source account
+	sourceAccount.IsActive = false
+	if err := k.UpdateVerifiedAccount(ctx, sourceAccount); err != nil {
+		return err
+	}
+
+	// Update migration status
+	migration.IsCompleted = true
+	migration.MigrationDate = timestamppb.Now()
+	return k.SetRoleMigration(ctx, migration)
+}
+
+// GetAllRoleMigrations returns all role migrations
+func (k Keeper) GetAllRoleMigrations(ctx sdk.Context) ([]*identv1.RoleMigration, error) {
+	store := ctx.KVStore(k.storeKey)
+	prefix := types.RoleMigrationKeyPrefix
+
+	var migrations []*identv1.RoleMigration
+	iterator := store.Iterator(prefix, append(prefix, 0xFF))
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		var migration identv1.RoleMigration
+		if err := k.cdc.Unmarshal(iterator.Value(), &migration); err != nil {
+			continue
+		}
+		migrations = append(migrations, &migration)
+	}
+
+	return migrations, nil
+}

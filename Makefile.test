@@ -1,0 +1,72 @@
+# Test Makefile for Volnix Protocol
+
+.PHONY: test test-unit test-integration test-security test-benchmark test-all test-coverage test-race test-verbose clean-test
+
+# Test targets
+test: test-unit
+
+test-unit:
+	@echo "Running unit tests..."
+	go test -v ./x/ident/keeper/... -run TestKeeperTestSuite
+	go test -v ./x/ident/keeper/... -run TestMsgServerTestSuite
+	go test -v ./x/ident/keeper/... -run TestQueryServerTestSuite
+	go test -v ./x/lizenz/keeper/... -run TestKeeperTestSuite
+	go test -v ./x/lizenz/keeper/... -run TestMsgServerTestSuite
+	go test -v ./x/anteil/keeper/... -run TestKeeperTestSuite
+	go test -v ./x/anteil/keeper/... -run TestMsgServerTestSuite
+	go test -v ./x/consensus/keeper/... -run TestKeeperTestSuite
+	go test -v ./x/consensus/keeper/... -run TestMsgServerTestSuite
+
+test-integration:
+	@echo "Running integration tests..."
+	go test -v ./tests/... -run TestIntegrationTestSuite
+
+test-security:
+	@echo "Running security tests..."
+	go test -v ./tests/... -run TestSecurityTestSuite
+
+test-benchmark:
+	@echo "Running benchmark tests..."
+	go test -v ./tests/... -run TestBenchmarkTestSuite -bench=.
+
+test-end-to-end:
+	@echo "Running end-to-end tests..."
+	go test -v ./tests/... -run TestEndToEndTestSuite
+
+test-all: test-unit test-integration test-security test-benchmark test-end-to-end
+
+test-coverage:
+	@echo "Running tests with coverage..."
+	go test -v -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+test-race:
+	@echo "Running tests with race detection..."
+	go test -v -race ./...
+
+test-verbose:
+	@echo "Running tests with verbose output..."
+	go test -v ./...
+
+clean-test:
+	@echo "Cleaning test artifacts..."
+	rm -f coverage.out coverage.html
+	go clean -testcache
+
+# Help target
+help:
+	@echo "Available test targets:"
+	@echo "  test           - Run unit tests"
+	@echo "  test-unit      - Run unit tests only"
+	@echo "  test-integration - Run integration tests"
+	@echo "  test-security  - Run security tests"
+	@echo "  test-benchmark - Run benchmark tests"
+	@echo "  test-end-to-end - Run end-to-end tests"
+	@echo "  test-all       - Run all tests"
+	@echo "  test-coverage  - Run tests with coverage report"
+	@echo "  test-race      - Run tests with race detection"
+	@echo "  test-verbose   - Run tests with verbose output"
+	@echo "  clean-test     - Clean test artifacts"
+	@echo "  help           - Show this help"
+

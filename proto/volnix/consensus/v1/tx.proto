@@ -9,6 +9,21 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 service Msg {
   // SelectBlockCreator selects the next block creator
   rpc SelectBlockCreator(MsgSelectBlockCreator) returns (MsgSelectBlockCreatorResponse);
+  
+  // UpdateConsensusState updates the consensus state
+  rpc UpdateConsensusState(MsgUpdateConsensusState) returns (MsgUpdateConsensusStateResponse);
+  
+  // SetValidatorWeight sets validator weight
+  rpc SetValidatorWeight(MsgSetValidatorWeight) returns (MsgSetValidatorWeightResponse);
+  
+  // ProcessHalving processes halving event
+  rpc ProcessHalving(MsgProcessHalving) returns (MsgProcessHalvingResponse);
+  
+  // SelectBlockProducer selects block producer
+  rpc SelectBlockProducer(MsgSelectBlockProducer) returns (MsgSelectBlockProducerResponse);
+  
+  // CalculateBlockTime calculates block time
+  rpc CalculateBlockTime(MsgCalculateBlockTime) returns (MsgCalculateBlockTimeResponse);
 }
 
 // MsgSelectBlockCreator defines a message to select the next block creator
@@ -21,4 +36,65 @@ message MsgSelectBlockCreator {
 // MsgSelectBlockCreatorResponse defines the response for MsgSelectBlockCreator
 message MsgSelectBlockCreatorResponse {
   string selected_validator = 1;
+}
+
+// MsgUpdateConsensusState defines a message to update consensus state
+message MsgUpdateConsensusState {
+  option (cosmos.msg.v1.signer) = "authority";
+  
+  string authority = 1;
+  uint64 current_height = 2;
+  string total_ant_burned = 3;
+  repeated string active_validators = 4;
+}
+
+// MsgUpdateConsensusStateResponse defines the response for MsgUpdateConsensusState
+message MsgUpdateConsensusStateResponse {}
+
+// MsgSetValidatorWeight defines a message to set validator weight
+message MsgSetValidatorWeight {
+  option (cosmos.msg.v1.signer) = "authority";
+  
+  string authority = 1;
+  string validator = 2;
+  string weight = 3;
+}
+
+// MsgSetValidatorWeightResponse defines the response for MsgSetValidatorWeight
+message MsgSetValidatorWeightResponse {}
+
+// MsgProcessHalving defines a message to process halving
+message MsgProcessHalving {
+  option (cosmos.msg.v1.signer) = "authority";
+  
+  string authority = 1;
+}
+
+// MsgProcessHalvingResponse defines the response for MsgProcessHalving
+message MsgProcessHalvingResponse {}
+
+// MsgSelectBlockProducer defines a message to select block producer
+message MsgSelectBlockProducer {
+  option (cosmos.msg.v1.signer) = "authority";
+  
+  string authority = 1;
+  repeated string validators = 2;
+}
+
+// MsgSelectBlockProducerResponse defines the response for MsgSelectBlockProducer
+message MsgSelectBlockProducerResponse {
+  string producer = 1;
+}
+
+// MsgCalculateBlockTime defines a message to calculate block time
+message MsgCalculateBlockTime {
+  option (cosmos.msg.v1.signer) = "authority";
+  
+  string authority = 1;
+  string ant_amount = 2;
+}
+
+// MsgCalculateBlockTimeResponse defines the response for MsgCalculateBlockTime
+message MsgCalculateBlockTimeResponse {
+  int64 block_time = 1;
 }

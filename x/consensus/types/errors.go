@@ -15,4 +15,8 @@ var (
 	ErrValidatorNotFound            = errors.Register(ModuleName, 7, "validator not found")
 	ErrNoActiveValidators           = errors.Register(ModuleName, 8, "no active validators available")
 	ErrZeroTotalPower               = errors.Register(ModuleName, 9, "total validator power is zero")
+	ErrNoValidators                 = errors.Register(ModuleName, 10, "no validators available")
+	ErrInvalidAntAmount             = errors.Register(ModuleName, 11, "invalid ANT amount")
+	ErrEmptyValidatorAddress        = errors.Register(ModuleName, 12, "empty validator address")
+	ErrUnauthorized                 = errors.Register(ModuleName, 13, "unauthorized")
 )
