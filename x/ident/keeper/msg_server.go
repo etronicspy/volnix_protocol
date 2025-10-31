@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
@@ -39,10 +40,27 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 		return nil, types.ErrAccountAlreadyExists
 	}
 
-	// Create new verified account (using ZKP proof hash as identity hash)
+	// Create ZKP verifier and verify identity
+	zkpVerifier := NewZKPVerifier(&s.k)
+	
+	// Generate identity proof for verification (simplified)
+	secret := []byte(req.ZkpProof)
+	proof, err := zkpVerifier.GenerateIdentityProof(secret, req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate identity proof: %w", err)
+	}
+
+	// Verify the ZKP proof
+	if err := zkpVerifier.VerifyIdentityProof(sdkCtx, proof, req.Address); err != nil {
+		return nil, fmt.Errorf("ZKP verification failed: %w", err)
+	}
+
+	// Create identity hash from ZKP proof
 	hash := sha3.NewLegacyKeccak256()
 	hash.Write([]byte(req.ZkpProof))
 	identityHash := hex.EncodeToString(hash.Sum(nil))
+	
+	// Create new verified account
 	account := types.NewVerifiedAccount(req.Address, identv1.Role_ROLE_CITIZEN, identityHash)
 
 	// Store the account

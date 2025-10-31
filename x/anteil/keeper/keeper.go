@@ -593,7 +593,33 @@ func (k Keeper) GetOrdersByOwner(ctx sdk.Context, owner string) ([]*anteilv1.Ord
 
 // EndBlocker processes end-of-block operations
 func (k Keeper) EndBlocker(ctx sdk.Context) error {
-	// Process any end-of-block logic here
-	// For now, just return nil
+	// Create economic engine
+	engine := NewEconomicEngine(&k)
+
+	// Process order matching
+	if err := engine.ProcessOrderMatching(ctx); err != nil {
+		// Log error but continue
+		ctx.Logger().Error("Failed to process order matching", "error", err)
+	}
+
+	// Process auctions
+	if err := engine.ProcessAuctions(ctx); err != nil {
+		// Log error but continue
+		ctx.Logger().Error("Failed to process auctions", "error", err)
+	}
+
+	// Process market making
+	if err := engine.ProcessMarketMaking(ctx); err != nil {
+		// Log error but continue
+		ctx.Logger().Error("Failed to process market making", "error", err)
+	}
+
 	return nil
 }
+// GetBidsByAuction returns all bids for a specific auction
+func (k Keeper) GetBidsByAuction(ctx sdk.Context, auctionID string) ([]*anteilv1.Bid, error) {
+	// For now, return empty slice - in real implementation would use proper indexing
+	// This is a simplified version for demo purposes
+	return []*anteilv1.Bid{}, nil
+}
+

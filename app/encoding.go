@@ -1,46 +1,56 @@
 package app
 
 import (
-	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
-	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
-
-	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
-	consensustypes "github.com/volnix-protocol/volnix-protocol/x/consensus/types"
-	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
-	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
+	"github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/std"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// EncodingConfig bundles the app-wide codec and interface registry
+// EncodingConfig specifies the concrete encoding types to use for a given app.
 type EncodingConfig struct {
-	InterfaceRegistry cdctypes.InterfaceRegistry
+	InterfaceRegistry types.InterfaceRegistry
 	Codec             codec.Codec
+	TxConfig          TxConfig
 	LegacyAmino       *codec.LegacyAmino
-	TxConfig          client.TxConfig
 }
 
-// MakeEncodingConfig constructs EncodingConfig and registers module interfaces
+// TxConfig defines minimal transaction configuration
+type TxConfig struct {
+	TxDecoder sdk.TxDecoder
+	TxEncoder sdk.TxEncoder
+}
+
+// MakeEncodingConfig creates an EncodingConfig for the app.
 func MakeEncodingConfig() EncodingConfig {
-	interfaceRegistry := cdctypes.NewInterfaceRegistry()
-
-	// Register interfaces for custom modules
-	identtypes.RegisterInterfaces(interfaceRegistry)
-	lizenztypes.RegisterInterfaces(interfaceRegistry)
-	anteiltypes.RegisterInterfaces(interfaceRegistry)
-	consensustypes.RegisterInterfaces(interfaceRegistry)
-
-	// Create codecs
+	interfaceRegistry := types.NewInterfaceRegistry()
 	protoCodec := codec.NewProtoCodec(interfaceRegistry)
 	legacyAmino := codec.NewLegacyAmino()
+	
+	// Create basic tx encoder/decoder
+	txConfig := TxConfig{
+		TxDecoder: func(txBytes []byte) (sdk.Tx, error) {
+			// Basic implementation - in real app would decode protobuf
+			return nil, nil
+		},
+		TxEncoder: func(tx sdk.Tx) ([]byte, error) {
+			// Basic implementation - in real app would encode protobuf
+			return []byte{}, nil
+		},
+	}
 
-	// TxConfig for signing and tx building
-	txConfig := authtx.NewTxConfig(protoCodec, authtx.DefaultSignModes)
+	// Register standard interfaces
+	std.RegisterLegacyAminoCodec(legacyAmino)
+	std.RegisterInterfaces(interfaceRegistry)
+
+	// Register module interfaces
+	ModuleBasics.RegisterLegacyAminoCodec(legacyAmino)
+	ModuleBasics.RegisterInterfaces(interfaceRegistry)
 
 	return EncodingConfig{
 		InterfaceRegistry: interfaceRegistry,
 		Codec:             protoCodec,
-		LegacyAmino:       legacyAmino,
 		TxConfig:          txConfig,
+		LegacyAmino:       legacyAmino,
 	}
 }

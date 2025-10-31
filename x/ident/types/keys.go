@@ -20,6 +20,9 @@ var (
 
 	// RoleMigrationKeyPrefix defines the prefix for role migration keys
 	RoleMigrationKeyPrefix = []byte{0x02}
+
+	// NullifierKeyPrefix defines the prefix for nullifier keys
+	NullifierKeyPrefix = []byte{0x03}
 )
 
 // GetVerifiedAccountKey returns the key for a verified account
@@ -30,4 +33,9 @@ func GetVerifiedAccountKey(address string) []byte {
 // GetRoleMigrationKey returns the key for a role migration
 func GetRoleMigrationKey(fromAddress, toAddress string) []byte {
 	return append(RoleMigrationKeyPrefix, []byte(fromAddress+"_"+toAddress)...)
+}
+
+// GetNullifierKey returns the key for a nullifier
+func GetNullifierKey(nullifier []byte) []byte {
+	return append(NullifierKeyPrefix, nullifier...)
 }

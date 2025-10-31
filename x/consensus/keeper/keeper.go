@@ -445,10 +445,12 @@ func (k Keeper) BeginBlocker(ctx sdk.Context) error {
 	}
 
 	// Get current total ANT burned
-	// TODO: Implement when ConsensusState type is available in protobuf
-	totalAntBurned := "0" // Placeholder
+	totalAntBurned, err := k.calculateTotalBurnedTokens(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to calculate total burned tokens: %w", err)
+	}
 
-	err := k.UpdateConsensusState(ctx, currentHeight, totalAntBurned, activeValidators)
+	err = k.UpdateConsensusState(ctx, currentHeight, totalAntBurned, activeValidators)
 	if err != nil {
 		return err
 	}
@@ -476,10 +478,12 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 	}
 
 	// Get current total ANT burned
-	// TODO: Implement when ConsensusState type is available in protobuf
-	totalAntBurned := "0" // Placeholder
+	totalAntBurned, err := k.calculateTotalBurnedTokens(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to calculate total burned tokens: %w", err)
+	}
 
-	err := k.UpdateConsensusState(ctx, currentHeight, totalAntBurned, activeValidators)
+	err = k.UpdateConsensusState(ctx, currentHeight, totalAntBurned, activeValidators)
 	if err != nil {
 		return err
 	}
@@ -500,23 +504,23 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState types.GenesisState) {
 	}
 
 	// Set default halving info
-	// TODO: Implement when HalvingInfo type is available in protobuf
-	// halvingInfo := &consensusv1.HalvingInfo{
-	//	LastHalvingHeight: 0,
-	//	HalvingInterval:   100000,
-	//	NextHalvingHeight: 100000,
-	// }
-	// k.SetHalvingInfo(ctx, halvingInfo)
+	halvingInfo := types.HalvingInfo{
+		LastHalvingHeight: 0,
+		HalvingInterval:   210000,
+		NextHalvingHeight: 210000,
+	}
+	err := k.SetHalvingInfo(ctx, halvingInfo)
+	if err != nil {
+		// Log error but don't fail genesis
+		ctx.Logger().Error("failed to set default halving info", "error", err)
+	}
 
 	// Set default consensus state
-	// TODO: Implement when ConsensusState type is available in protobuf
-	// consensusState := &consensusv1.ConsensusState{
-	//	CurrentHeight:    0,
-	//	TotalAntBurned:   "0",
-	//	LastBlockTime:    timestamppb.Now(),
-	//	ActiveValidators: []string{},
-	// }
-	// k.SetConsensusState(ctx, consensusState)
+	err = k.UpdateConsensusState(ctx, 0, "0", []string{})
+	if err != nil {
+		// Log error but don't fail genesis
+		ctx.Logger().Error("failed to set default consensus state", "error", err)
+	}
 }
 
 // ExportGenesis exports genesis state
@@ -543,3 +547,26 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) types.GenesisState {
 		ActivityScores: []*consensusv1.ActivityScore{},
 	}
 }
+// calculateTotalBurnedTokens calculates the total amount of ANT tokens burned
+func (k Keeper) calculateTotalBurnedTokens(ctx sdk.Context) (string, error) {
+	// Get all validator weights
+	weights, err := k.GetAllValidatorWeights(ctx)
+	if err != nil {
+		return "0", fmt.Errorf("failed to get validator weights: %w", err)
+	}
+
+	// Sum up all burned tokens (using weight as proxy for burned tokens)
+	totalBurned := 0.0
+	for _, weight := range weights {
+		if weight.Weight != "" && weight.Weight != "0" {
+			weightFloat, err := strconv.ParseFloat(weight.Weight, 64)
+			if err != nil {
+				continue // Skip invalid weights
+			}
+			totalBurned += weightFloat
+		}
+	}
+
+	return fmt.Sprintf("%.8f", totalBurned), nil
+}
+

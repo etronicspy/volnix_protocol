@@ -67,12 +67,12 @@ type VolnixApp struct {
 }
 
 func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig) *VolnixApp {
-	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder())
+	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder)
 	bapp.SetVersion("0.1.0")
 	// Provide interface registry so Msg/Query services can be registered safely
 	bapp.SetInterfaceRegistry(encoding.InterfaceRegistry)
 	// Minimal Tx encoder to match TxConfig
-	bapp.SetTxEncoder(encoding.TxConfig.TxEncoder())
+	bapp.SetTxEncoder(encoding.TxConfig.TxEncoder)
 
 	// Store keys
 	keyParams := storetypes.NewKVStoreKey(paramtypes.StoreKey)
@@ -181,10 +181,9 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		if err := identKeeper.EndBlocker(ctx); err != nil {
 			return sdk.EndBlock{}, fmt.Errorf("ident EndBlocker failed: %w", err)
 		}
-		// TODO: Implement EndBlocker for anteil module
-		// if err := anteilKeeper.EndBlocker(ctx); err != nil {
-		//	return sdk.EndBlock{}, fmt.Errorf("anteil EndBlocker failed: %w", err)
-		// }
+		if err := anteilKeeper.EndBlocker(ctx); err != nil {
+			return sdk.EndBlock{}, fmt.Errorf("anteil EndBlocker failed: %w", err)
+		}
 		if err := consensusKeeper.EndBlocker(ctx); err != nil {
 			return sdk.EndBlock{}, fmt.Errorf("consensus EndBlocker failed: %w", err)
 		}

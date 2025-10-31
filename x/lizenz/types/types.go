@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
@@ -118,6 +119,48 @@ func CalculateMOA(activityData string, params Params) (string, error) {
 	// - Network participation
 	// - Time-based factors
 
-	// For now, return a placeholder value
-	return "100.0", nil
+	// For now, return a simplified MOA value based on activity data length
+	if len(activityData) > 10 {
+		return "85.5", nil // High activity
+	} else if len(activityData) > 5 {
+		return "65.0", nil // Medium activity
+	}
+	return "45.0", nil // Low activity
+}
+// CalculateLizenzPrice calculates the price of a license based on various factors
+func CalculateLizenzPrice(licenseType string, duration int64) (string, error) {
+	// Calculate license price based on multiple factors
+	basePrice := 100.0 // Base price of 100 LZN
+	
+	// Factor 1: Market demand (simplified)
+	demandMultiplier := 1.2 // 1.2x multiplier
+	
+	// Factor 2: License duration
+	durationDays := float64(30) // Default 30 days
+	if duration > 0 {
+		durationDays = float64(duration)
+	}
+	durationMultiplier := durationDays / 30.0 // Scale by duration
+	
+	// Factor 3: License type premium
+	typeMultiplier := 1.0
+	switch licenseType {
+	case "premium":
+		typeMultiplier = 1.5 // 1.5x for premium
+	case "enterprise":
+		typeMultiplier = 2.0 // 2x for enterprise
+	default:
+		typeMultiplier = 1.0 // 1x for basic
+	}
+	
+	// Calculate final price
+	finalPrice := basePrice * demandMultiplier * durationMultiplier * typeMultiplier
+	
+	// Ensure minimum price
+	minPrice := 10.0
+	if finalPrice < minPrice {
+		finalPrice = minPrice
+	}
+	
+	return fmt.Sprintf("%.2f", finalPrice), nil
 }

@@ -206,8 +206,22 @@ func generateBidID(bidder, auctionID string, timestamp time.Time) string {
 }
 
 func calculateTotalValue(antAmount, price string) string {
-	// Simplified calculation - in real implementation this would use decimal arithmetic
-	return fmt.Sprintf("%s", antAmount) // Placeholder
+	// Use simplified arithmetic for now (in production use decimal library)
+	antFloat, err := strconv.ParseFloat(antAmount, 64)
+	if err != nil {
+		return "0" // Return zero on error
+	}
+	
+	priceFloat, err := strconv.ParseFloat(price, 64)
+	if err != nil {
+		return "0" // Return zero on error
+	}
+	
+	// Calculate total value = amount * price
+	totalValue := antFloat * priceFloat
+	
+	// Return with proper precision (8 decimal places)
+	return fmt.Sprintf("%.8f", totalValue)
 }
 
 // UpdateOrderStatus updates the status of an order

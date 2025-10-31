@@ -1,118 +1,186 @@
-BINDIR ?= bin
-APP    ?= volnixd
+# Volnix Protocol Makefile
 
-.PHONY: all build install tidy test proto-gen clean init start testnet dev-build dev-test check status help
+# Build variables
+BINARY_NAME=volnixd
+VERSION=0.1.0-alpha
+BUILD_DIR=./build
+GO_VERSION=1.21
 
+# Colors for output
+RED=\033[0;31m
+GREEN=\033[0;32m
+YELLOW=\033[1;33m
+BLUE=\033[0;34m
+PURPLE=\033[0;35m
+CYAN=\033[0;36m
+NC=\033[0m # No Color
+
+.PHONY: help build install test clean run init start status keys version
+
+# Default target
 all: build
 
-build:
-	@mkdir -p $(BINDIR)
-	go build -ldflags "-s -w -X main.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo dev)" -o $(BINDIR)/$(APP) ./cmd/volnixd
+help: ## Show this help message
+	@echo "$(CYAN)🚀 Volnix Protocol - Build Commands$(NC)"
+	@echo "$(CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "$(YELLOW)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-install:
-	go install -ldflags "-s -w -X main.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo dev)" ./cmd/volnixd
+build: ## Build the volnixd binary
+	@echo "$(GREEN)🔨 Building Volnix Protocol...$(NC)"
+	@go build -o $(BINARY_NAME) ./cmd/volnixd
+	@echo "$(GREEN)✅ Build completed: $(BINARY_NAME)$(NC)"
 
-tidy:
-	go mod tidy
+build-linux: ## Build for Linux
+	@echo "$(GREEN)🔨 Building for Linux...$(NC)"
+	@GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux ./cmd/volnixd
+	@echo "$(GREEN)✅ Linux build completed: $(BINARY_NAME)-linux$(NC)"
 
-test:
-	go test ./...
+build-windows: ## Build for Windows
+	@echo "$(GREEN)🔨 Building for Windows...$(NC)"
+	@GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME).exe ./cmd/volnixd
+	@echo "$(GREEN)✅ Windows build completed: $(BINARY_NAME).exe$(NC)"
 
-proto-gen: buf-check
-	cd proto && buf dep update && buf lint && buf generate
+build-darwin: ## Build for macOS
+	@echo "$(GREEN)🔨 Building for macOS...$(NC)"
+	@GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin ./cmd/volnixd
+	@echo "$(GREEN)✅ macOS build completed: $(BINARY_NAME)-darwin$(NC)"
 
-buf-check:
-	@command -v buf >/dev/null 2>&1 || { echo "buf not found. Install from https://buf.build/docs/installation"; exit 1; }
+build-all: build-linux build-windows build-darwin ## Build for all platforms
+	@echo "$(GREEN)🎉 All platform builds completed!$(NC)"
 
-clean:
-	rm -rf $(BINDIR)
+install: build ## Install the binary to GOPATH/bin
+	@echo "$(GREEN)📦 Installing $(BINARY_NAME)...$(NC)"
+	@go install ./cmd/volnixd
+	@echo "$(GREEN)✅ Installation completed$(NC)"
 
-# Новые команды для полноценного запуска
+test: ## Run all tests
+	@echo "$(BLUE)🧪 Running tests...$(NC)"
+	@go test ./... -v
 
-init:
-	@echo "🚀 Initializing Volnix node..."
-	@if [ ! -f "$(BINDIR)/$(APP)" ]; then \
-		echo "❌ Binary not found. Run 'make build' first."; \
-		exit 1; \
-	fi
-	@./$(BINDIR)/$(APP) init volnix-node
+test-unit: ## Run unit tests only
+	@echo "$(BLUE)🧪 Running unit tests...$(NC)"
+	@go test ./x/*/keeper -v
+	@go test ./x/*/types -v
 
-start:
-	@echo "📡 Starting Volnix node..."
-	@if [ ! -f "$(BINDIR)/$(APP)" ]; then \
-		echo "❌ Binary not found. Run 'make build' first."; \
-		exit 1; \
-	fi
-	@if [ ! -d "$(HOME)/.volnix/config" ]; then \
-		echo "❌ Node not initialized. Run 'make init' first."; \
-		exit 1; \
-	fi
-	@./$(BINDIR)/$(APP) start
+test-integration: ## Run integration tests
+	@echo "$(BLUE)🧪 Running integration tests...$(NC)"
+	@go test ./tests -v -run Integration
 
-testnet:
-	@echo "🌐 Starting Volnix testnet..."
-	@if [ ! -f "$(BINDIR)/$(APP)" ]; then \
-		echo "❌ Binary not found. Run 'make build' first."; \
-		exit 1; \
-	fi
-	@cd testnet && ./start.sh
+test-coverage: ## Run tests with coverage
+	@echo "$(BLUE)🧪 Running tests with coverage...$(NC)"
+	@go test ./... -coverprofile=coverage.out
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "$(GREEN)✅ Coverage report generated: coverage.html$(NC)"
 
-# Команды для разработки
+clean: ## Clean build artifacts
+	@echo "$(YELLOW)🧹 Cleaning build artifacts...$(NC)"
+	@rm -f $(BINARY_NAME) $(BINARY_NAME).exe $(BINARY_NAME)-linux $(BINARY_NAME)-darwin
+	@rm -f coverage.out coverage.html
+	@rm -rf $(BUILD_DIR)
+	@echo "$(GREEN)✅ Clean completed$(NC)"
 
-dev-build:
-	@echo "🔨 Building for development..."
-	go build -race -o $(BINDIR)/$(APP) ./cmd/volnixd
+deps: ## Download and tidy dependencies
+	@echo "$(BLUE)📦 Managing dependencies...$(NC)"
+	@go mod download
+	@go mod tidy
+	@echo "$(GREEN)✅ Dependencies updated$(NC)"
 
-dev-test:
-	@echo "🧪 Running tests with race detection..."
-	go test -race ./...
+fmt: ## Format Go code
+	@echo "$(BLUE)🎨 Formatting code...$(NC)"
+	@go fmt ./...
+	@echo "$(GREEN)✅ Code formatted$(NC)"
 
-# Команды для проверки
+lint: ## Run linter
+	@echo "$(BLUE)🔍 Running linter...$(NC)"
+	@golangci-lint run
+	@echo "$(GREEN)✅ Linting completed$(NC)"
 
-check: tidy test build
-	@echo "✅ All checks passed!"
+# Node management commands
+init: build ## Initialize a new node
+	@echo "$(PURPLE)🚀 Initializing Volnix node...$(NC)"
+	@./$(BINARY_NAME) init testnode
 
-status:
-	@echo "📊 Volnix Protocol Status:"
-	@echo "Binary: $(shell if [ -f "$(BINDIR)/$(APP)" ]; then echo "✅ Built"; else echo "❌ Not built"; fi)"
-	@echo "Node: $(shell if [ -d "$(HOME)/.volnix/config" ]; then echo "✅ Initialized"; else echo "❌ Not initialized"; fi)"
-	@echo "Process: $(shell if pgrep -f volnixd >/dev/null; then echo "✅ Running"; else echo "❌ Not running"; fi)"
+start: build ## Start the node
+	@echo "$(PURPLE)🚀 Starting Volnix node...$(NC)"
+	@./$(BINARY_NAME) start
 
-test-current:
-	@echo "🧪 Testing current functionality..."
-	@if [ -f "./scripts/test_current_functionality.sh" ]; then \
-		./scripts/test_current_functionality.sh; \
-	else \
-		echo "❌ Test script not found"; \
-		exit 1; \
-	fi
+status: build ## Show node status
+	@echo "$(PURPLE)📊 Checking node status...$(NC)"
+	@./$(BINARY_NAME) status
 
-help:
-	@echo "🚀 Волникс Протокол - Available Commands:"
+version: build ## Show version information
+	@./$(BINARY_NAME) version
+
+keys-add: build ## Add a new key (usage: make keys-add NAME=mykey)
+	@echo "$(PURPLE)🔑 Adding new key: $(NAME)$(NC)"
+	@./$(BINARY_NAME) keys add $(NAME)
+
+keys-list: build ## List all keys
+	@echo "$(PURPLE)🔑 Listing keys...$(NC)"
+	@./$(BINARY_NAME) keys list
+
+# Development commands
+dev-setup: deps fmt ## Setup development environment
+	@echo "$(GREEN)🛠️  Development environment setup completed$(NC)"
+
+dev-test: fmt test ## Format code and run tests
+	@echo "$(GREEN)✅ Development testing completed$(NC)"
+
+dev-build: fmt build ## Format code and build
+	@echo "$(GREEN)✅ Development build completed$(NC)"
+
+# Testnet commands
+testnet-start: build ## Start testnet (Windows)
+	@echo "$(CYAN)🌐 Starting testnet...$(NC)"
+	@cd testnet && start.bat
+
+testnet-start-unix: build ## Start testnet (Linux/macOS)
+	@echo "$(CYAN)🌐 Starting testnet...$(NC)"
+	@cd testnet && chmod +x start.sh && ./start.sh
+
+# Docker commands (future)
+docker-build: ## Build Docker image
+	@echo "$(BLUE)🐳 Building Docker image...$(NC)"
+	@echo "$(YELLOW)⚠️  Docker support coming soon$(NC)"
+
+docker-run: ## Run in Docker container
+	@echo "$(BLUE)🐳 Running in Docker...$(NC)"
+	@echo "$(YELLOW)⚠️  Docker support coming soon$(NC)"
+
+# Release commands
+release: clean build-all test ## Prepare release build
+	@echo "$(GREEN)🎉 Release build completed!$(NC)"
+	@echo "$(GREEN)📦 Binaries ready:$(NC)"
+	@ls -la $(BINARY_NAME)*
+
+# Info commands
+info: ## Show project information
+	@echo "$(CYAN)🚀 Volnix Protocol$(NC)"
+	@echo "$(CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(YELLOW)Version:$(NC) $(VERSION)"
+	@echo "$(YELLOW)Go Version:$(NC) $(shell go version)"
+	@echo "$(YELLOW)Build Target:$(NC) $(BINARY_NAME)"
 	@echo ""
-	@echo "Build & Install:"
-	@echo "  build        - Build the binary"
-	@echo "  install      - Install binary to GOPATH"
-	@echo "  clean        - Remove built binaries"
+	@echo "$(BLUE)🏗️  Architecture:$(NC)"
+	@echo "  • Cosmos SDK v0.53.x"
+	@echo "  • CometBFT v0.38.x"
+	@echo "  • GoLevelDB storage"
 	@echo ""
-	@echo "Development:"
-	@echo "  tidy         - Tidy Go modules"
-	@echo "  test         - Run tests"
-	@echo "  proto-gen    - Generate protobuf code"
-	@echo "  dev-build    - Build with race detection"
-	@echo "  dev-test     - Test with race detection"
+	@echo "$(BLUE)📦 Modules:$(NC)"
+	@echo "  • ident - Identity & ZKP verification"
+	@echo "  • lizenz - LZN license management"
+	@echo "  • anteil - ANT internal market"
+	@echo "  • consensus - PoVB consensus"
 	@echo ""
-	@echo "Node Management:"
-	@echo "  init         - Initialize a new node"
-	@echo "  start        - Start the node"
-	@echo "  testnet      - Start testnet"
-	@echo ""
-	@echo "Testing:"
-	@echo "  test-current - Test current ABCI server functionality"
-	@echo ""
-	@echo "Utilities:"
-	@echo "  check        - Run all checks (tidy, test, build)"
-	@echo "  status       - Show current status"
-	@echo "  help         - Show this help message"
+	@echo "$(BLUE)🌟 Features:$(NC)"
+	@echo "  • Hybrid PoVB Consensus"
+	@echo "  • ZKP Identity Verification"
+	@echo "  • Three-tier Economy (WRT/LZN/ANT)"
+	@echo "  • High Performance (10,000+ TPS)"
 
+# Quick commands
+quick-start: build init ## Quick start: build and initialize
+	@echo "$(GREEN)🎉 Quick start completed! Run 'make start' to begin$(NC)"
 
+quick-test: fmt test-unit ## Quick test: format and run unit tests
+	@echo "$(GREEN)✅ Quick testing completed$(NC)"
