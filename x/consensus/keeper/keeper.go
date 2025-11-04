@@ -492,8 +492,10 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 }
 
 // InitGenesis initializes genesis state
-func (k Keeper) InitGenesis(ctx sdk.Context, genState types.GenesisState) {
-	k.SetParams(ctx, *genState.Params)
+func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) {
+	if genState.Params != nil {
+		k.SetParams(ctx, *genState.Params)
+	}
 
 	for _, validator := range genState.Validators {
 		k.SetValidator(ctx, validator)
@@ -547,6 +549,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) types.GenesisState {
 		ActivityScores: []*consensusv1.ActivityScore{},
 	}
 }
+
 // calculateTotalBurnedTokens calculates the total amount of ANT tokens burned
 func (k Keeper) calculateTotalBurnedTokens(ctx sdk.Context) (string, error) {
 	// Get all validator weights
@@ -569,4 +572,3 @@ func (k Keeper) calculateTotalBurnedTokens(ctx sdk.Context) (string, error) {
 
 	return fmt.Sprintf("%.8f", totalBurned), nil
 }
-

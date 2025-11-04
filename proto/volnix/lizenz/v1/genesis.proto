@@ -6,12 +6,13 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 
 import "volnix/lizenz/v1/types.proto";
 
+// GenesisState defines the lizenz module's genesis state
 message GenesisState {
   Params params = 1;
-  repeated ActivatedLizenz activated = 2;
-  repeated DeactivatingLizenz deactivating = 3;
+  repeated ActivatedLizenz activated_lizenz = 2;
+  repeated DeactivatingLizenz deactivating_lizenz = 3;
   repeated MOAStatus moa_statuses = 4;
+  repeated ValidatorIntegration validator_integrations = 5;
+  repeated CrossModuleEvent cross_module_events = 6;
+  repeated ModuleDependency module_dependencies = 7;
 }
-
-
-

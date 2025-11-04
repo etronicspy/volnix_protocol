@@ -3,10 +3,11 @@ package volnix.consensus.v1;
 
 import "cosmos/msg/v1/msg.proto";
 
-option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1;consensusv1";
 
 // Msg defines the consensus Msg service.
 service Msg {
+  option (cosmos.msg.v1.service) = true;
   // SelectBlockCreator selects the next block creator
   rpc SelectBlockCreator(MsgSelectBlockCreator) returns (MsgSelectBlockCreatorResponse);
   

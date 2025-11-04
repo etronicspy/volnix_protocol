@@ -9,4 +9,3 @@ plugins:
   - plugin: buf.build/grpc-ecosystem/gateway:v2.19.1
     out: gen/go
     opt: paths=source_relative
-

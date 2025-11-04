@@ -3,7 +3,7 @@ package volnix.consensus.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1;consensusv1";
 
 // Validator represents a validator in the PoVB consensus system
 message Validator {
@@ -68,14 +68,7 @@ message Params {
   string moa_penalty_rate = 8;
 }
 
-// GenesisState defines the consensus module's genesis state
-message GenesisState {
-  Params params = 1;
-  repeated Validator validators = 2;
-  repeated BlockCreator block_creators = 3;
-  repeated BurnProof burn_proofs = 4;
-  repeated ActivityScore activity_scores = 5;
-}
+// GenesisState moved to genesis.proto to avoid duplication
 
 // HalvingInfo represents halving information
 message HalvingInfo {

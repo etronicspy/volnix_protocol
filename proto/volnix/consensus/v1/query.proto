@@ -4,7 +4,7 @@ package volnix.consensus.v1;
 import "google/api/annotations.proto";
 import "volnix/consensus/v1/types.proto";
 
-option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1";
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1;consensusv1";
 
 // Query defines the gRPC querier service.
 service Query {

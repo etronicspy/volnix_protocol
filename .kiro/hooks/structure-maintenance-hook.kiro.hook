@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "name": "Project Structure Maintenance",
+  "description": "Monitors key structural files and directories to ensure the project maintains its defined organization and structure",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "PROJECT_STRUCTURE.md",
+      "go.mod",
+      "Makefile",
+      "app/**",
+      "x/**",
+      "proto/**",
+      "cmd/**"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the recent changes to ensure they align with the project's defined structure as documented in PROJECT_STRUCTURE.md. Check that new files are placed in appropriate directories, module organization follows Go conventions, and the overall architecture remains consistent. If any structural violations are detected, provide specific recommendations to maintain proper project organization."
+  }
+}

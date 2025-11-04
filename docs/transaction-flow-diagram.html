@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volnix Protocol - Transaction Processing</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .diagram-container {
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+        }
+        .mermaid {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+        .timeline {
+            background: white;
+            padding: 30px;
+            margin: 20px 0;
+            border-radius: 10px;
+            text-align: left;
+        }
+        .timeline h3 {
+            color: #6c5ce7;
+            margin-top: 0;
+        }
+        .phase {
+            display: flex;
+            align-items: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9ff;
+            border-radius: 8px;
+            border-left: 4px solid #6c5ce7;
+        }
+        .phase-number {
+            background: #6c5ce7;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        .phase-content {
+            flex: 1;
+        }
+        .phase-title {
+            font-weight: bold;
+            color: #6c5ce7;
+            margin-bottom: 5px;
+        }
+        .phase-description {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .performance-box {
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .performance-box h4 {
+            margin-top: 0;
+            font-size: 1.3em;
+        }
+        .perf-metric {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 10px 15px;
+            margin: 5px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .footer {
+            background: #6c5ce7;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔄 Transaction Processing</h1>
+            <p>Конвейер обработки транзакций в Volnix Protocol</p>
+        </div>
+        
+        <div class="diagram-container">
+            <div class="mermaid">
+sequenceDiagram
+    participant Client as 📱 Client
+    participant API as 🌐 API Gateway
+    participant App as 🏗️ Volnix App
+    participant Modules as 🔧 Custom Modules
+    participant CometBFT as 🔥 CometBFT
+    participant Network as 🌐 P2P Network
+    
+    Client->>API: 📤 Submit Transaction
+    API->>App: 🔀 Route Transaction
+    App->>App: ✅ Validate Basic Format
+    App->>Modules: 🔐 Execute AnteHandler
+    Modules->>Modules: 🔑 Check Signatures
+    Modules->>Modules: 👤 Validate Permissions
+    App->>CometBFT: 📝 Add to Mempool
+    
+    Note over CometBFT: ⚖️ Consensus Round
+    CometBFT->>Network: 📋 Propose Block
+    Network->>CometBFT: 🗳️ Vote on Block
+    CometBFT->>App: 📦 Deliver Block
+    
+    App->>Modules: ⚡ Execute Transactions
+    Modules->>Modules: 💾 Update State
+    Modules->>App: 📊 Return Results
+    App->>CometBFT: ✅ Commit State
+    CometBFT->>Client: 📋 Transaction Result
+            </div>
+            
+            <div class="timeline">
+                <h3>📋 Этапы обработки транзакции</h3>
+                
+                <div class="phase">
+                    <div class="phase-number">1</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Отправка транзакции</div>
+                        <div class="phase-description">Клиент отправляет подписанную транзакцию через API Gateway (REST/gRPC/RPC)</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">2</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Маршрутизация</div>
+                        <div class="phase-description">API Gateway направляет транзакцию в основное приложение Volnix</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">3</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Базовая валидация</div>
+                        <div class="phase-description">Проверка формата, размера и базовых параметров транзакции</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">4</div>
+                    <div class="phase-content">
+                        <div class="phase-title">AnteHandler</div>
+                        <div class="phase-description">Выполнение предварительных проверок: подписи, комиссии, nonce</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">5</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Проверка разрешений</div>
+                        <div class="phase-description">Валидация прав пользователя через модуль ident (роли, ZKP)</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">6</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Добавление в Mempool</div>
+                        <div class="phase-description">Транзакция добавляется в пул ожидающих транзакций CometBFT</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">7</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Консенсус</div>
+                        <div class="phase-description">Валидаторы участвуют в раунде консенсуса PoVB для создания блока</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">8</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Исполнение</div>
+                        <div class="phase-description">Выполнение транзакций в блоке и обновление состояния модулей</div>
+                    </div>
+                </div>
+                
+                <div class="phase">
+                    <div class="phase-number">9</div>
+                    <div class="phase-content">
+                        <div class="phase-title">Коммит</div>
+                        <div class="phase-description">Фиксация нового состояния и отправка результата клиенту</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="performance-box">
+                <h4>⚡ Характеристики производительности</h4>
+                <div class="perf-metric">Валидация: &lt;1мс</div>
+                <div class="perf-metric">Консенсус: 3-5с</div>
+                <div class="perf-metric">Исполнение: &lt;100мс</div>
+                <div class="perf-metric">Пропускная способность: 10,000+ TPS</div>
+                <div class="perf-metric">Финальность: Мгновенная</div>
+                <div class="perf-metric">Размер блока: 1-2MB</div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Оптимизированный конвейер обработки обеспечивает высокую производительность и безопасность</p>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            sequence: {
+                useMaxWidth: true,
+                htmlLabels: true
+            }
+        });
+    </script>
+</body>
+</html>

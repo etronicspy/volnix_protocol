@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package volnix.consensus.v1;
+
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1;consensusv1";
+
+import "volnix/consensus/v1/types.proto";
+
+// GenesisState defines the consensus module's genesis state
+message GenesisState {
+  Params params = 1;
+  repeated Validator validators = 2;
+  repeated BlockCreator block_creators = 3;
+  repeated BurnProof burn_proofs = 4;
+  repeated ActivityScore activity_scores = 5;
+  HalvingInfo halving_info = 6;
+  ConsensusState consensus_state = 7;
+  repeated ValidatorWeight validator_weights = 8;
+}

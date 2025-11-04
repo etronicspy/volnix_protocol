@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volnix Protocol - PoVB Consensus Flow</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .diagram-container {
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+        }
+        .mermaid {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+        .description {
+            background: white;
+            padding: 30px;
+            margin: 20px 0;
+            border-radius: 10px;
+            text-align: left;
+        }
+        .description h3 {
+            color: #c0392b;
+            margin-top: 0;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 15px;
+            background: #fff5f5;
+            border-radius: 8px;
+            border-left: 4px solid #e74c3c;
+        }
+        .step strong {
+            color: #c0392b;
+        }
+        .innovation-box {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .innovation-box h4 {
+            margin-top: 0;
+            font-size: 1.3em;
+        }
+        .footer {
+            background: #c0392b;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚖️ PoVB Consensus</h1>
+            <p>Proof-of-Verified-Burn - Гибридный консенсус Volnix Protocol</p>
+        </div>
+        
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "Block Creation Cycle"
+        START[🚀 New Round Start]
+        BURN[🔥 ANT Burn Verification]
+        AUCTION[🎯 Blind Auction Process]
+        SELECT[👑 Block Creator Selection]
+        PROPOSE[📝 Block Proposal]
+        VOTE[🗳️ Validator Voting]
+        COMMIT[✅ Block Commit]
+        REWARD[💰 Reward Distribution]
+    end
+    
+    subgraph "Validator Pool"
+        ACTIVE[🟢 Active Validators<br/>LZN Licensed]
+        STANDBY[🟡 Standby Validators<br/>MOA Compliant]
+        INACTIVE[🔴 Inactive Validators<br/>Penalized]
+    end
+    
+    subgraph "Economic Mechanics"
+        ANTBURN[🔥 ANT Token Burning]
+        HALVING[📉 Halving Schedule]
+        DYNAMIC[⏱️ Dynamic Block Time]
+        MARKET[📈 Internal ANT Market]
+    end
+    
+    START --> BURN
+    BURN --> AUCTION
+    AUCTION --> SELECT
+    SELECT --> PROPOSE
+    PROPOSE --> VOTE
+    VOTE --> COMMIT
+    COMMIT --> REWARD
+    REWARD --> START
+    
+    ACTIVE --> SELECT
+    STANDBY --> ACTIVE
+    INACTIVE --> STANDBY
+    
+    ANTBURN --> AUCTION
+    HALVING --> ANTBURN
+    DYNAMIC --> START
+    MARKET --> ANTBURN
+            </div>
+            
+            <div class="description">
+                <h3>🔄 Этапы консенсуса PoVB</h3>
+                
+                <div class="step">
+                    <strong>1. New Round Start:</strong> Начало нового раунда консенсуса. Система определяет текущие параметры сети и активных валидаторов.
+                </div>
+                
+                <div class="step">
+                    <strong>2. ANT Burn Verification:</strong> Проверка сожженных ANT токенов валидаторами. Количество сожженных токенов влияет на вероятность выбора.
+                </div>
+                
+                <div class="step">
+                    <strong>3. Blind Auction Process:</strong> Слепой аукцион среди валидаторов. Участники подают заявки, не зная предложения других.
+                </div>
+                
+                <div class="step">
+                    <strong>4. Block Creator Selection:</strong> Алгоритм выбирает создателя блока на основе сожженных ANT, стейка WRT и случайности.
+                </div>
+                
+                <div class="step">
+                    <strong>5. Block Proposal:</strong> Выбранный валидатор предлагает новый блок с транзакциями из mempool.
+                </div>
+                
+                <div class="step">
+                    <strong>6. Validator Voting:</strong> Остальные валидаторы голосуют за предложенный блок (prevote и precommit).
+                </div>
+                
+                <div class="step">
+                    <strong>7. Block Commit:</strong> При достижении консенсуса (>2/3 голосов) блок фиксируется в блокчейне.
+                </div>
+                
+                <div class="step">
+                    <strong>8. Reward Distribution:</strong> Распределение наград между валидаторами и возврат к началу цикла.
+                </div>
+            </div>
+            
+            <div class="innovation-box">
+                <h4>🚀 Инновации PoVB</h4>
+                <p><strong>Гибридная безопасность:</strong> Сочетание экономической безопасности стейкинга с дефляционным давлением сжигания токенов.</p>
+                <p><strong>Защита от Сивиллы:</strong> ZKP верификация идентичности предотвращает создание множественных валидаторов одним лицом.</p>
+                <p><strong>Динамическая производительность:</strong> Время блока автоматически адаптируется к активности сети (3-5 секунд).</p>
+                <p><strong>Экономическая устойчивость:</strong> Внутренний рынок ANT создает естественное ценообразование и ликвидность.</p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>PoVB - Уникальный консенсус, сочетающий лучшее от PoS и инновационное сжигание токенов</p>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+</body>
+</html>

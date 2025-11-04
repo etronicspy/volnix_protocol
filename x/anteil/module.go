@@ -25,14 +25,8 @@ var _ module.AppModuleBasic = AppModuleBasic{}
 func (AppModuleBasic) Name() string                                  { return atypes.ModuleName }
 func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino) {}
 func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
-	// Register message interfaces
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&anteilv1.MsgPlaceOrder{},
-		&anteilv1.MsgCancelOrder{},
-		&anteilv1.MsgUpdateOrder{},
-		&anteilv1.MsgPlaceBid{},
-		&anteilv1.MsgSettleAuction{},
-	)
+	// Interface registration temporarily disabled for integration testing
+	// anteilv1.RegisterInterfaces(registry)
 }
 
 func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {
@@ -60,8 +54,9 @@ var _ module.AppModule = AppModule{}
 func NewAppModule(k *keeper.Keeper) AppModule { return AppModule{keeper: k} }
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
-	anteilv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
-	anteilv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
+	// Services temporarily disabled for integration testing
+	// anteilv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
+	// anteilv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
 }
 
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {

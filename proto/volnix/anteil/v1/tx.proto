@@ -2,10 +2,12 @@ syntax = "proto3";
 package volnix.anteil.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1;anteilv1";
+import "cosmos/msg/v1/msg.proto";
 import "volnix/anteil/v1/types.proto";
 
 // Msg defines the Msg service for anteil module
 service Msg {
+  option (cosmos.msg.v1.service) = true;
   rpc PlaceOrder(MsgPlaceOrder) returns (MsgPlaceOrderResponse);
   rpc CancelOrder(MsgCancelOrder) returns (MsgCancelOrderResponse);
   rpc UpdateOrder(MsgUpdateOrder) returns (MsgUpdateOrderResponse);

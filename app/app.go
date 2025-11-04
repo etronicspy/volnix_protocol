@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,9 +18,6 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	// custom modules
-	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
-	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
-	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil"
 	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus"
@@ -108,6 +106,8 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	anteilKeeper := anteilkeeper.NewKeeper(encoding.Codec, keyAnteil, anteilSubspace)
 	consensusKeeper := consensuskeeper.NewKeeper(encoding.Codec, keyConsensus, consensusSubspace)
 
+	// Interface registration temporarily disabled for CometBFT integration
+
 	// Module manager (register Msg/Query services only at this stage)
 	mm := module.NewManager(
 		ident.NewAppModule(identKeeper),
@@ -135,22 +135,13 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	}
 
 	// Register interfaces first
-	encoding.InterfaceRegistry.RegisterImplementations((*sdk.Msg)(nil),
-		&anteilv1.MsgPlaceOrder{},
-		&anteilv1.MsgCancelOrder{},
-		&anteilv1.MsgUpdateOrder{},
-		&anteilv1.MsgPlaceBid{},
-		&anteilv1.MsgSettleAuction{},
+	basicManager := module.NewBasicManager(
+		ident.AppModuleBasic{},
+		lizenz.AppModuleBasic{},
+		anteil.AppModuleBasic{},
+		consensus.ConsensusAppModuleBasic{},
 	)
-	encoding.InterfaceRegistry.RegisterImplementations((*sdk.Msg)(nil),
-		&identv1.MsgVerifyIdentity{},
-		&identv1.MsgMigrateRole{},
-		&identv1.MsgChangeRole{},
-	)
-	encoding.InterfaceRegistry.RegisterImplementations((*sdk.Msg)(nil),
-		&lizenzv1.MsgActivateLZN{},
-		&lizenzv1.MsgDeactivateLZN{},
-	)
+	basicManager.RegisterInterfaces(encoding.InterfaceRegistry)
 
 	// Register Msg/Query services
 	configurator := module.NewConfigurator(encoding.Codec, bapp.MsgServiceRouter(), bapp.GRPCQueryRouter())
@@ -252,6 +243,11 @@ func (app *VolnixApp) GetModuleManager() *module.Manager {
 	return app.mm
 }
 
+// ModuleManager returns the app module manager (alias for compatibility).
+func (app *VolnixApp) ModuleManager() *module.Manager {
+	return app.mm
+}
+
 // GetConsensusKeeper returns the consensus keeper.
 func (app *VolnixApp) GetConsensusKeeper() *consensuskeeper.Keeper {
 	return app.consensusKeeper
@@ -268,15 +264,34 @@ func GetMaccPerms() map[string][]string {
 	return make(map[string][]string)
 }
 
-// initParamsKeeper init params keeper and its subspaces
-func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper {
-	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
+// initParamsKeeper function removed - not used in current implementation
 
-	// Create subspaces for custom modules
-	paramsKeeper.Subspace(identtypes.ModuleName)
-	paramsKeeper.Subspace(lizenztypes.ModuleName)
-	paramsKeeper.Subspace(anteiltypes.ModuleName)
-	paramsKeeper.Subspace(consensustypes.ModuleName)
+// ABCI methods for CometBFT compatibility
 
-	return paramsKeeper
+// ApplySnapshotChunk implements the ABCI interface with context
+func (app *VolnixApp) ApplySnapshotChunk(ctx context.Context, req *abci.RequestApplySnapshotChunk) (*abci.ResponseApplySnapshotChunk, error) {
+	// For now, return a simple response - snapshot functionality can be added later
+	return &abci.ResponseApplySnapshotChunk{
+		Result: abci.ResponseApplySnapshotChunk_ACCEPT,
+	}, nil
+}
+
+// LoadSnapshotChunk implements the ABCI interface with context
+func (app *VolnixApp) LoadSnapshotChunk(ctx context.Context, req *abci.RequestLoadSnapshotChunk) (*abci.ResponseLoadSnapshotChunk, error) {
+	// For now, return empty chunk - snapshot functionality can be added later
+	return &abci.ResponseLoadSnapshotChunk{}, nil
+}
+
+// ListSnapshots implements the ABCI interface with context
+func (app *VolnixApp) ListSnapshots(ctx context.Context, req *abci.RequestListSnapshots) (*abci.ResponseListSnapshots, error) {
+	// For now, return empty list - snapshot functionality can be added later
+	return &abci.ResponseListSnapshots{}, nil
+}
+
+// OfferSnapshot implements the ABCI interface with context
+func (app *VolnixApp) OfferSnapshot(ctx context.Context, req *abci.RequestOfferSnapshot) (*abci.ResponseOfferSnapshot, error) {
+	// For now, reject snapshots - snapshot functionality can be added later
+	return &abci.ResponseOfferSnapshot{
+		Result: abci.ResponseOfferSnapshot_REJECT,
+	}, nil
 }

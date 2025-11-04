@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	anteilkeeper "github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
 	consensuskeeper "github.com/volnix-protocol/volnix-protocol/x/consensus/keeper"
 	identkeeper "github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
@@ -241,17 +242,19 @@ func (k Keeper) GetModuleHealth(moduleName string) (*types.ModuleIntegration, er
 func (k Keeper) GetAllModulesHealth() map[string]*types.ModuleIntegration {
 	return k.integrationManager.Modules
 }
+
 // getAnteilUserPosition retrieves user position from anteil module
 func (k Keeper) getAnteilUserPosition(ctx sdk.Context, userAddress string) (*anteilv1.UserPosition, error) {
 	// Create a mock user position for now
 	// In production, this would query the actual anteil keeper
 	position := &anteilv1.UserPosition{
-		User:           userAddress,
-		TotalAntAmount: "1000.0",
-		AvgBuyPrice:    "1.5",
-		TotalValue:     "1500.0",
-		LastUpdated:    ctx.BlockTime().Unix(),
+		Owner:        userAddress,
+		AntBalance:   "1000.0",
+		LockedAnt:    "100.0",
+		AvailableAnt: "900.0",
+		TotalTrades:  "5",
+		TotalVolume:  "5000.0",
 	}
-	
+
 	return position, nil
 }

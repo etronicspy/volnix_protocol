@@ -25,13 +25,8 @@ var _ module.AppModuleBasic = AppModuleBasic{}
 func (AppModuleBasic) Name() string                                  { return lztypes.ModuleName }
 func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino) {}
 func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
-	// Register the protobuf types
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&lizenzv1.MsgActivateLZN{},
-		&lizenzv1.MsgDeactivateLZN{},
-	)
-
-	// Do not register msgservice descriptor here; BaseApp wires services via RegisterServices
+	// Interface registration temporarily disabled for integration testing
+	// lizenzv1.RegisterInterfaces(registry)
 }
 
 func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {
@@ -59,8 +54,9 @@ var _ module.AppModule = AppModule{}
 func NewAppModule(k *keeper.Keeper) AppModule { return AppModule{keeper: k} }
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
-	lizenzv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
-	lizenzv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
+	// Services temporarily disabled for integration testing
+	// lizenzv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
+	// lizenzv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
 }
 
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {

@@ -3,7 +3,6 @@ package app
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -39,13 +38,7 @@ func MakeEncodingConfig() EncodingConfig {
 		},
 	}
 
-	// Register standard interfaces
-	std.RegisterLegacyAminoCodec(legacyAmino)
-	std.RegisterInterfaces(interfaceRegistry)
-
-	// Register module interfaces
-	ModuleBasics.RegisterLegacyAminoCodec(legacyAmino)
-	ModuleBasics.RegisterInterfaces(interfaceRegistry)
+	// No interface registration for minimal version
 
 	return EncodingConfig{
 		InterfaceRegistry: interfaceRegistry,

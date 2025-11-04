@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volnix Protocol - System Architecture</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .diagram-container {
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+        }
+        .mermaid {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+        .description {
+            background: white;
+            padding: 30px;
+            margin: 20px 0;
+            border-radius: 10px;
+            text-align: left;
+        }
+        .description h3 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .layer {
+            margin: 15px 0;
+            padding: 10px;
+            background: #f1f3f4;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+        .layer strong {
+            color: #2c3e50;
+        }
+        .footer {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Volnix Protocol</h1>
+            <p>Системная архитектура блокчейн-платформы</p>
+        </div>
+        
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "External Layer"
+        USERS[👥 Users & Applications]
+        EXCHANGES[🏦 Exchanges & Partners]
+        DEVS[👨‍💻 Developers & dApps]
+    end
+    
+    subgraph "Interface Layer"
+        WUI[📱 Wallet UI<br/>React + TypeScript]
+        BE[🔍 Blockchain Explorer<br/>HTML/JS + PowerShell]
+        CLI[⌨️ CLI Tools<br/>volnixd commands]
+        SDK[🛠️ Developer SDK<br/>CosmJS Integration]
+    end
+    
+    subgraph "API Gateway Layer"
+        REST[🌐 REST API<br/>Port 1317]
+        GRPC[⚡ gRPC API<br/>Port 9090]
+        GRPCWEB[🌍 gRPC-Web<br/>Port 9091]
+        RPC[📡 RPC Server<br/>Port 26657]
+    end
+    
+    subgraph "Application Layer"
+        APP[🏗️ Volnix App<br/>Cosmos SDK v0.53.4]
+        ABCI[🔗 ABCI Interface<br/>Application-Consensus Bridge]
+        MM[📋 Module Manager<br/>Lifecycle & Routing]
+    end
+    
+    subgraph "Custom Modules"
+        IDENT[🆔 x/ident<br/>Identity & ZKP<br/>Role Management]
+        LIZENZ[📜 x/lizenz<br/>License Management<br/>MOA Monitoring]
+        ANTEIL[💹 x/anteil<br/>Internal Market<br/>ANT Trading]
+        CONSENSUS[⚖️ x/consensus<br/>PoVB Logic<br/>Validator Selection]
+    end
+    
+    subgraph "Consensus Layer"
+        COMETBFT[🔥 CometBFT v0.38.17<br/>Byzantine Fault Tolerant<br/>Consensus Engine]
+        MEMPOOL[📝 Transaction Mempool<br/>Pending Transactions]
+        VALIDATOR[👑 Validator Set<br/>Active Block Creators]
+    end
+    
+    subgraph "Storage Layer"
+        STATE[💾 State Store<br/>GoLevelDB<br/>Current State]
+        BLOCKS[📦 Block Store<br/>GoLevelDB<br/>Historical Blocks]
+        IAVL[🌳 IAVL Tree<br/>Merkle Proofs<br/>State Verification]
+    end
+    
+    subgraph "Network Layer"
+        P2P[🌐 P2P Network<br/>Port 26656<br/>Inter-node Communication]
+        SYNC[🔄 State Sync<br/>Fast Synchronization]
+        GOSSIP[📢 Block Gossip<br/>Block Propagation]
+    end
+    
+    USERS --> WUI
+    USERS --> BE
+    DEVS --> CLI
+    DEVS --> SDK
+    EXCHANGES --> REST
+    
+    WUI --> REST
+    BE --> RPC
+    CLI --> APP
+    SDK --> GRPC
+    
+    REST --> APP
+    GRPC --> APP
+    GRPCWEB --> APP
+    RPC --> APP
+    
+    APP --> ABCI
+    APP --> MM
+    MM --> IDENT
+    MM --> LIZENZ
+    MM --> ANTEIL
+    MM --> CONSENSUS
+    
+    ABCI --> COMETBFT
+    COMETBFT --> MEMPOOL
+    COMETBFT --> VALIDATOR
+    
+    IDENT --> STATE
+    LIZENZ --> STATE
+    ANTEIL --> STATE
+    CONSENSUS --> STATE
+    
+    STATE --> IAVL
+    COMETBFT --> BLOCKS
+    
+    COMETBFT --> P2P
+    P2P --> SYNC
+    P2P --> GOSSIP
+            </div>
+            
+            <div class="description">
+                <h3>📋 Описание архитектурных слоев</h3>
+                
+                <div class="layer">
+                    <strong>External Layer (Внешний слой):</strong> Пользователи, биржи, разработчики и внешние приложения, которые взаимодействуют с протоколом Volnix.
+                </div>
+                
+                <div class="layer">
+                    <strong>Interface Layer (Слой интерфейсов):</strong> Пользовательские интерфейсы включая веб-кошелек, блокчейн-эксплорер, CLI инструменты и SDK для разработчиков.
+                </div>
+                
+                <div class="layer">
+                    <strong>API Gateway Layer (Слой API шлюзов):</strong> Различные протоколы связи - REST API для веб-приложений, gRPC для высокопроизводительных приложений, и RPC для стандартного взаимодействия с блокчейном.
+                </div>
+                
+                <div class="layer">
+                    <strong>Application Layer (Слой приложений):</strong> Основное приложение Volnix на базе Cosmos SDK, ABCI интерфейс для связи с консенсусом, и менеджер модулей для управления жизненным циклом.
+                </div>
+                
+                <div class="layer">
+                    <strong>Custom Modules (Пользовательские модули):</strong> Уникальные модули протокола Volnix - управление идентичностью (ident), лицензии (lizenz), внутренний рынок (anteil), и консенсус PoVB (consensus).
+                </div>
+                
+                <div class="layer">
+                    <strong>Consensus Layer (Слой консенсуса):</strong> CometBFT движок консенсуса, пул транзакций (mempool) и набор активных валидаторов.
+                </div>
+                
+                <div class="layer">
+                    <strong>Storage Layer (Слой хранения):</strong> Хранилище состояния и блоков на базе GoLevelDB, плюс IAVL деревья для криптографических доказательств.
+                </div>
+                
+                <div class="layer">
+                    <strong>Network Layer (Сетевой слой):</strong> P2P сеть для межузлового взаимодействия, синхронизация состояния и распространение блоков.
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Volnix Protocol - Суверенный блокчейн первого уровня с гибридным консенсусом PoVB</p>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+</body>
+</html>

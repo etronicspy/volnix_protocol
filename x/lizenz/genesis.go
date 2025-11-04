@@ -9,8 +9,8 @@ import (
 
 func DefaultGenesis() *lizenzv1.GenesisState {
 	return &lizenzv1.GenesisState{
-		Params:    lztypes.DefaultParams().ToProto(),
-		Activated: []*lizenzv1.ActivatedLizenz{},
+		Params:          lztypes.DefaultParams().ToProto(),
+		ActivatedLizenz: []*lizenzv1.ActivatedLizenz{},
 	}
 }
 
@@ -37,7 +37,7 @@ func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *lizenzv1.GenesisSt
 func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *lizenzv1.GenesisState {
 	params := k.GetParams(ctx)
 	return &lizenzv1.GenesisState{
-		Params:    params.ToProto(),
-		Activated: []*lizenzv1.ActivatedLizenz{},
+		Params:          params.ToProto(),
+		ActivatedLizenz: []*lizenzv1.ActivatedLizenz{},
 	}
 }

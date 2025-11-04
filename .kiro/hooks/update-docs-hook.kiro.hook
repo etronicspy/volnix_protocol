@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "name": "Documentation Updater",
+  "description": "Automatically updates project documentation when source code files are modified to keep docs in sync with implementation",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "app/*.go",
+      "x/*/*.go",
+      "cmd/*/*.go",
+      "proto/volnix/*",
+      "*.md",
+      "docs/*.md"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the recent file changes and update the relevant documentation files (README.md, docs/*.md, PROJECT_STRUCTURE.md, etc.) to reflect any new features, API changes, configuration updates, or structural modifications. Ensure documentation remains accurate and comprehensive."
+  }
+}

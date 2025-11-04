@@ -5,10 +5,12 @@ package volnix.ident.v1;
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
 import "cosmos/base/v1beta1/coin.proto";
+import "cosmos/msg/v1/msg.proto";
 import "volnix/ident/v1/types.proto";
 
 // Msg defines the Msg service for ident module
 service Msg {
+  option (cosmos.msg.v1.service) = true;
   rpc VerifyIdentity(MsgVerifyIdentity) returns (MsgVerifyIdentityResponse);
   rpc MigrateRole(MsgMigrateRole) returns (MsgMigrateRoleResponse);
   rpc ChangeRole(MsgChangeRole) returns (MsgChangeRoleResponse);

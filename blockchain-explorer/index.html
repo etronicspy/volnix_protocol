@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volnix Blockchain Explorer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .network-overview {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            text-align: center;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .block-item, .tx-item, .validator-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            transition: background 0.2s ease;
+        }
+
+        .block-item:hover, .tx-item:hover, .validator-item:hover {
+            background: #f9fafb;
+        }
+
+        .block-item:last-child, .tx-item:last-child, .validator-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-active {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .status-inactive {
+            color: #ef4444;
+            font-weight: 600;
+        }
+
+        .hash {
+            font-family: monospace;
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .module-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .module-card {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .module-card.active {
+            border-color: #10b981;
+            background: #f0fdf4;
+        }
+
+        .consensus-info {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .success {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #166534;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Volnix Blockchain Explorer</h1>
+            <p>Real-time network monitoring and blockchain analysis</p>
+        </div>
+
+        <div class="network-overview">
+            <h3>🌐 Network Status: <span id="network-status">Connected</span></h3>
+            <p id="network-info">Chain ID: volnix-testnet-1 • 3 Validators Active • Block Height: <span id="block-height">12,345</span></p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="total-blocks">12,345</div>
+                <div class="stat-label">Total Blocks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-txs">45,678</div>
+                <div class="stat-label">Total Transactions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="active-validators">3</div>
+                <div class="stat-label">Active Validators</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="burned-ant">1,250</div>
+                <div class="stat-label">ANT Burned (PoVB)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avg-block-time">5.2s</div>
+                <div class="stat-label">Avg Block Time</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="network-hash">98.5%</div>
+                <div class="stat-label">Network Health</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('blocks')">📦 Blocks</button>
+            <button class="tab" onclick="showTab('transactions')">💸 Transactions</button>
+            <button class="tab" onclick="showTab('validators')">👑 Validators</button>
+            <button class="tab" onclick="showTab('modules')">🔧 Modules</button>
+            <button class="tab" onclick="showTab('consensus')">⚖️ Consensus</button>
+        </div>
+
+        <div id="blocks-tab" class="tab-content active">
+            <div class="card">
+                <h3 style="margin-bottom: 20px;">📦 Latest Blocks</h3>
+                <input type="text" class="search-box" placeholder="Search by block height or hash..." id="block-search">
+                
+                <div id="blocks-list">
+                    <div class="block-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Block #12,345</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Hash: <span class="hash">0x1a2b3c4d5e6f7890abcdef...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">2 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600;">25 txs</div>
+                            <div style="color: #6b7280; font-size: 14px;">Validator: Node-1</div>
+                            <button class="button" onclick="viewBlock(12345)">View</button>
+                        </div>
+                    </div>
+
+                    <div class="block-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Block #12,344</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Hash: <span class="hash">0x9f8e7d6c5b4a39281726...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">7 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600;">18 txs</div>
+                            <div style="color: #6b7280; font-size: 14px;">Validator: Node-0</div>
+                            <button class="button" onclick="viewBlock(12344)">View</button>
+                        </div>
+                    </div>
+
+                    <div class="block-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Block #12,343</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Hash: <span class="hash">0x5a4b3c2d1e0f98765432...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">12 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600;">31 txs</div>
+                            <div style="color: #6b7280; font-size: 14px;">Validator: Node-2</div>
+                            <button class="button" onclick="viewBlock(12343)">View</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="transactions-tab" class="tab-content">
+            <div class="card">
+                <h3 style="margin-bottom: 20px;">💸 Recent Transactions</h3>
+                <input type="text" class="search-box" placeholder="Search by transaction hash or address..." id="tx-search">
+                
+                <div id="transactions-list">
+                    <div class="tx-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Transfer</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Hash: <span class="hash">0xabc123def456789...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">Block #12,345 • 2 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600; color: #10b981;">100.50 WRT</div>
+                            <div style="color: #6b7280; font-size: 14px;">Fee: 0.001 WRT</div>
+                            <div style="color: #10b981; font-size: 12px; font-weight: 600;">✅ Success</div>
+                        </div>
+                    </div>
+
+                    <div class="tx-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Stake LZN</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Hash: <span class="hash">0xdef789abc123456...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">Block #12,344 • 7 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600; color: #8b5cf6;">250.00 LZN</div>
+                            <div style="color: #6b7280; font-size: 14px;">Validator: Node-1</div>
+                            <div style="color: #10b981; font-size: 12px; font-weight: 600;">✅ Success</div>
+                        </div>
+                    </div>
+
+                    <div class="tx-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">ANT Burn (PoVB)</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Hash: <span class="hash">0x789abc456def123...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">Block #12,343 • 12 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600; color: #ef4444;">150.00 ANT</div>
+                            <div style="color: #6b7280; font-size: 14px;">Consensus Burn</div>
+                            <div style="color: #10b981; font-size: 12px; font-weight: 600;">✅ Success</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="validators-tab" class="tab-content">
+            <div class="card">
+                <h3 style="margin-bottom: 20px;">👑 Network Validators</h3>
+                
+                <div id="validators-list">
+                    <div class="validator-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Node-0 (Validator)</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Address: <span class="hash">volnix1validator0abc123...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">Port: 26650 • Uptime: 99.8%</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="status-active">🟢 Active</div>
+                            <div style="color: #6b7280; font-size: 14px;">Staked: 1,000 LZN</div>
+                            <div style="color: #6b7280; font-size: 14px;">Blocks: 4,123</div>
+                        </div>
+                    </div>
+
+                    <div class="validator-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Node-1 (Validator)</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Address: <span class="hash">volnix1validator1def456...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">Port: 26651 • Uptime: 99.9%</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="status-active">🟢 Active</div>
+                            <div style="color: #6b7280; font-size: 14px;">Staked: 1,500 LZN</div>
+                            <div style="color: #6b7280; font-size: 14px;">Blocks: 4,567</div>
+                        </div>
+                    </div>
+
+                    <div class="validator-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Node-2 (Validator)</div>
+                            <div style="color: #6b7280; font-size: 14px;">
+                                Address: <span class="hash">volnix1validator2ghi789...</span>
+                            </div>
+                            <div style="color: #9ca3af; font-size: 12px;">Port: 26652 • Uptime: 99.7%</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="status-active">🟢 Active</div>
+                            <div style="color: #6b7280; font-size: 14px;">Staked: 1,200 LZN</div>
+                            <div style="color: #6b7280; font-size: 14px;">Blocks: 3,655</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="modules-tab" class="tab-content">
+            <div class="card">
+                <h3 style="margin-bottom: 20px;">🔧 Protocol Modules Status</h3>
+                
+                <div class="module-status">
+                    <div class="module-card active">
+                        <div style="font-size: 32px; margin-bottom: 12px;">🔐</div>
+                        <h4>Identity (ident)</h4>
+                        <div class="status-active" style="margin: 8px 0;">✅ Active</div>
+                        <p style="font-size: 14px; color: #6b7280;">ZKP identity verification system</p>
+                        <div style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
+                            Verified Users: 1,234 • Success Rate: 98.5%
+                        </div>
+                    </div>
+
+                    <div class="module-card active">
+                        <div style="font-size: 32px; margin-bottom: 12px;">📜</div>
+                        <h4>Lizenz (lizenz)</h4>
+                        <div class="status-active" style="margin: 8px 0;">✅ Active</div>
+                        <p style="font-size: 14px; color: #6b7280;">License activation and MOA tracking</p>
+                        <div style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
+                            Active Licenses: 567 • Total Staked: 45,678 LZN
+                        </div>
+                    </div>
+
+                    <div class="module-card active">
+                        <div style="font-size: 32px; margin-bottom: 12px;">💰</div>
+                        <h4>Anteil (anteil)</h4>
+                        <div class="status-active" style="margin: 8px 0;">✅ Active</div>
+                        <p style="font-size: 14px; color: #6b7280;">ANT rights trading and distribution</p>
+                        <div style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
+                            Market Orders: 89 • Volume: 12,345 ANT
+                        </div>
+                    </div>
+
+                    <div class="module-card active">
+                        <div style="font-size: 32px; margin-bottom: 12px;">⚖️</div>
+                        <h4>Consensus (consensus)</h4>
+                        <div class="status-active" style="margin: 8px 0;">✅ Active</div>
+                        <p style="font-size: 14px; color: #6b7280;">PoVB consensus mechanism</p>
+                        <div style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
+                            Total Burned: 1,250 ANT • Efficiency: 99.2%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="consensus-tab" class="tab-content">
+            <div class="consensus-info">
+                <h3>⚖️ Proof of Value Burn (PoVB) Consensus</h3>
+                <p>Validators compete by burning ANT tokens to create blocks and secure the network</p>
+            </div>
+
+            <div class="card">
+                <h3 style="margin-bottom: 20px;">🔥 Recent Burn Activity</h3>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                    <div style="background: #fef3c7; padding: 16px; border-radius: 8px;">
+                        <h4 style="color: #92400e;">Current Round</h4>
+                        <div style="color: #78350f; margin-top: 8px;">
+                            <div>Round #2,468</div>
+                            <div>Time Remaining: 3m 45s</div>
+                            <div>Leading: Node-1 (150 ANT burned)</div>
+                        </div>
+                    </div>
+
+                    <div style="background: #ecfdf5; padding: 16px; border-radius: 8px;">
+                        <h4 style="color: #065f46;">Total Statistics</h4>
+                        <div style="color: #047857; margin-top: 8px;">
+                            <div>Total ANT Burned: 1,250</div>
+                            <div>Rounds Completed: 2,467</div>
+                            <div>Network Security: 99.2%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="burn-history">
+                    <div class="tx-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Node-1 Burn</div>
+                            <div style="color: #6b7280; font-size: 14px;">Round #2,467 • Block #12,345</div>
+                            <div style="color: #9ca3af; font-size: 12px;">2 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600; color: #ef4444;">150.00 ANT</div>
+                            <div style="color: #10b981; font-size: 12px; font-weight: 600;">🏆 Winner</div>
+                        </div>
+                    </div>
+
+                    <div class="tx-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Node-2 Burn</div>
+                            <div style="color: #6b7280; font-size: 14px;">Round #2,467 • Block #12,344</div>
+                            <div style="color: #9ca3af; font-size: 12px;">7 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600; color: #ef4444;">120.00 ANT</div>
+                            <div style="color: #6b7280; font-size: 12px;">Participant</div>
+                        </div>
+                    </div>
+
+                    <div class="tx-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">Node-0 Burn</div>
+                            <div style="color: #6b7280; font-size: 14px;">Round #2,467 • Block #12,343</div>
+                            <div style="color: #9ca3af; font-size: 12px;">12 minutes ago</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 600; color: #ef4444;">100.00 ANT</div>
+                            <div style="color: #6b7280; font-size: 12px;">Participant</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="refresh-btn" onclick="refreshData()" title="Refresh Data">
+        🔄
+    </button>
+
+    <script>
+        let refreshInterval;
+
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function viewBlock(blockNumber) {
+            alert(`Viewing Block #${blockNumber}\n\nThis would open detailed block information including:\n• All transactions in the block\n• Validator information\n• Block hash and metadata\n• Gas usage and fees`);
+        }
+
+        function refreshData() {
+            // Simulate data refresh
+            const refreshBtn = document.querySelector('.refresh-btn');
+            refreshBtn.innerHTML = '⏳';
+            refreshBtn.style.transform = 'rotate(360deg)';
+            
+            setTimeout(() => {
+                // Update block height
+                const currentHeight = parseInt(document.getElementById('block-height').textContent.replace(',', ''));
+                document.getElementById('block-height').textContent = (currentHeight + Math.floor(Math.random() * 3) + 1).toLocaleString();
+                
+                // Update total blocks
+                document.getElementById('total-blocks').textContent = (currentHeight + Math.floor(Math.random() * 3) + 1).toLocaleString();
+                
+                // Update total transactions
+                const currentTxs = parseInt(document.getElementById('total-txs').textContent.replace(',', ''));
+                document.getElementById('total-txs').textContent = (currentTxs + Math.floor(Math.random() * 10) + 5).toLocaleString();
+                
+                // Update burned ANT
+                const currentBurned = parseInt(document.getElementById('burned-ant').textContent.replace(',', ''));
+                document.getElementById('burned-ant').textContent = (currentBurned + Math.floor(Math.random() * 50) + 10).toLocaleString();
+                
+                refreshBtn.innerHTML = '🔄';
+                refreshBtn.style.transform = 'scale(1)';
+                
+                // Show success message
+                showNotification('Data refreshed successfully!', 'success');
+            }, 1500);
+        }
+
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = type;
+            notification.textContent = message;
+            notification.style.position = 'fixed';
+            notification.style.top = '20px';
+            notification.style.right = '20px';
+            notification.style.zIndex = '1000';
+            notification.style.minWidth = '250px';
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        function startAutoRefresh() {
+            refreshInterval = setInterval(() => {
+                refreshData();
+            }, 30000); // Refresh every 30 seconds
+        }
+
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+        }
+
+        // Search functionality
+        document.getElementById('block-search').addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const blocks = document.querySelectorAll('#blocks-list .block-item');
+            
+            blocks.forEach(block => {
+                const text = block.textContent.toLowerCase();
+                block.style.display = text.includes(searchTerm) ? 'flex' : 'none';
+            });
+        });
+
+        document.getElementById('tx-search').addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const txs = document.querySelectorAll('#transactions-list .tx-item');
+            
+            txs.forEach(tx => {
+                const text = tx.textContent.toLowerCase();
+                tx.style.display = text.includes(searchTerm) ? 'flex' : 'none';
+            });
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            startAutoRefresh();
+            showNotification('Blockchain Explorer loaded successfully!', 'success');
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            stopAutoRefresh();
+        });
+    </script>
+</body>
+</html>

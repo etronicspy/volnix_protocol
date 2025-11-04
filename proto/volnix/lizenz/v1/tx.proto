@@ -4,10 +4,11 @@ package volnix.lizenz.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1;lizenzv1";
 
-// Types are defined in types.proto
+import "cosmos/msg/v1/msg.proto";
 
 // Msg defines the Msg service for lizenz module
 service Msg {
+  option (cosmos.msg.v1.service) = true;
   rpc ActivateLZN(MsgActivateLZN) returns (MsgActivateLZNResponse);
   rpc DeactivateLZN(MsgDeactivateLZN) returns (MsgDeactivateLZNResponse);
 }

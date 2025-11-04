@@ -4,58 +4,98 @@ package volnix.lizenz.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1;lizenzv1";
 
+import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "volnix/lizenz/v1/types.proto";
 
+// Query defines the gRPC querier service for lizenz module
 service Query {
-  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
-  rpc Activated(QueryActivatedRequest) returns (QueryActivatedResponse);
-  rpc Deactivating(QueryDeactivatingRequest) returns (QueryDeactivatingResponse);
-  rpc MOA(QueryMOARequest) returns (QueryMOAResponse);
-  rpc ValidatorLZN(QueryValidatorLZNRequest) returns (QueryValidatorLZNResponse);
+  // Params queries the parameters of the lizenz module
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/params";
+  }
+  
+  // ActivatedLizenz queries activated LZN for a validator
+  rpc ActivatedLizenz(QueryActivatedLizenzRequest) returns (QueryActivatedLizenzResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/activated/{validator}";
+  }
+  
+  // AllActivatedLizenz queries all activated LZN licenses
+  rpc AllActivatedLizenz(QueryAllActivatedLizenzRequest) returns (QueryAllActivatedLizenzResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/activated";
+  }
+  
+  // DeactivatingLizenz queries deactivating LZN for a validator
+  rpc DeactivatingLizenz(QueryDeactivatingLizenzRequest) returns (QueryDeactivatingLizenzResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/deactivating/{validator}";
+  }
+  
+  // MOAStatus queries MOA status for a validator
+  rpc MOAStatus(QueryMOAStatusRequest) returns (QueryMOAStatusResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/moa_status/{validator}";
+  }
+  
+  // ValidatorIntegration queries integration status for a validator
+  rpc ValidatorIntegration(QueryValidatorIntegrationRequest) returns (QueryValidatorIntegrationResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/integration/{validator}";
+  }
 }
 
+// QueryParamsRequest is request type for the Query/Params RPC method
 message QueryParamsRequest {}
 
+// QueryParamsResponse is response type for the Query/Params RPC method
 message QueryParamsResponse {
-  string json = 1; // JSON string of Params
+  Params params = 1;
 }
 
-message QueryActivatedRequest {
-  cosmos.base.query.v1beta1.PageRequest pagination = 1;
-}
-
-message QueryActivatedResponse {
-  repeated ActivatedLizenz items = 1;
-  cosmos.base.query.v1beta1.PageResponse pagination = 2;
-}
-
-message QueryDeactivatingRequest {
-  cosmos.base.query.v1beta1.PageRequest pagination = 1;
-}
-
-message QueryDeactivatingResponse {
-  repeated DeactivatingLizenz items = 1;
-  cosmos.base.query.v1beta1.PageResponse pagination = 2;
-}
-
-message QueryMOARequest {
+// QueryActivatedLizenzRequest is request type for the Query/ActivatedLizenz RPC method
+message QueryActivatedLizenzRequest {
   string validator = 1;
 }
 
-message QueryMOAResponse {
-  MOAStatus status = 1;
+// QueryActivatedLizenzResponse is response type for the Query/ActivatedLizenz RPC method
+message QueryActivatedLizenzResponse {
+  ActivatedLizenz activated_lizenz = 1;
 }
 
-message QueryValidatorLZNRequest {
+// QueryAllActivatedLizenzRequest is request type for the Query/AllActivatedLizenz RPC method
+message QueryAllActivatedLizenzRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryAllActivatedLizenzResponse is response type for the Query/AllActivatedLizenz RPC method
+message QueryAllActivatedLizenzResponse {
+  repeated ActivatedLizenz activated_lizenz = 1;
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryDeactivatingLizenzRequest is request type for the Query/DeactivatingLizenz RPC method
+message QueryDeactivatingLizenzRequest {
   string validator = 1;
 }
 
-message QueryValidatorLZNResponse {
-  ActivatedLizenz activated = 1;
-  repeated DeactivatingLizenz deactivating = 2;
-  MOAStatus moa_status = 3;
+// QueryDeactivatingLizenzResponse is response type for the Query/DeactivatingLizenz RPC method
+message QueryDeactivatingLizenzResponse {
+  DeactivatingLizenz deactivating_lizenz = 1;
 }
 
+// QueryMOAStatusRequest is request type for the Query/MOAStatus RPC method
+message QueryMOAStatusRequest {
+  string validator = 1;
+}
 
+// QueryMOAStatusResponse is response type for the Query/MOAStatus RPC method
+message QueryMOAStatusResponse {
+  MOAStatus moa_status = 1;
+}
 
+// QueryValidatorIntegrationRequest is request type for the Query/ValidatorIntegration RPC method
+message QueryValidatorIntegrationRequest {
+  string validator = 1;
+}
+
+// QueryValidatorIntegrationResponse is response type for the Query/ValidatorIntegration RPC method
+message QueryValidatorIntegrationResponse {
+  ValidatorIntegration validator_integration = 1;
+}

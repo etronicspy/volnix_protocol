@@ -12,7 +12,6 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
-	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/client/cli"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/keeper"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
@@ -33,7 +32,9 @@ func (ConsensusAppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) 
 
 // RegisterInterfaces registers the consensus module's interface types.
 func (ConsensusAppModuleBasic) RegisterInterfaces(reg codectypes.InterfaceRegistry) {
-	types.RegisterInterfaces(reg)
+	// Interface registration temporarily disabled for integration testing
+	// types.RegisterInterfaces(reg)
+	// consensusv1.RegisterInterfaces(reg)
 }
 
 // DefaultGenesis returns default genesis state as raw bytes for the consensus module.
@@ -83,8 +84,9 @@ func NewConsensusAppModule(cdc codec.Codec, keeper keeper.Keeper) ConsensusAppMo
 
 // RegisterServices registers a gRPC query service to respond to the module-specific gRPC queries.
 func (am ConsensusAppModule) RegisterServices(cfg module.Configurator) {
-	consensusv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
-	consensusv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
+	// Services temporarily disabled for integration testing
+	// consensusv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
+	// consensusv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
 }
 
 // RegisterInvariants registers the consensus module invariants.
@@ -97,7 +99,7 @@ func (am ConsensusAppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, g
 	var genState types.GenesisState
 	cdc.MustUnmarshalJSON(gs, &genState)
 
-	am.keeper.InitGenesis(ctx, genState)
+	am.keeper.InitGenesis(ctx, &genState)
 }
 
 // ExportGenesis returns the exported genesis state as raw bytes for the consensus module.

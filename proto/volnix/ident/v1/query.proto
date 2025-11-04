@@ -4,49 +4,84 @@ package volnix.ident.v1;
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1;identv1";
 
+import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "volnix/ident/v1/types.proto";
 
+// Query defines the gRPC querier service for ident module
 service Query {
-  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
-  rpc VerifiedAccount(QueryVerifiedAccountRequest) returns (QueryVerifiedAccountResponse);
-  rpc VerifiedAccounts(QueryVerifiedAccountsRequest) returns (QueryVerifiedAccountsResponse);
-  rpc VerifiedAccountsByRole(QueryVerifiedAccountsByRoleRequest) returns (QueryVerifiedAccountsByRoleResponse);
+  // Params queries the parameters of the ident module
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/volnix/ident/v1/params";
+  }
+  
+  // VerifiedAccount queries a verified account by address
+  rpc VerifiedAccount(QueryVerifiedAccountRequest) returns (QueryVerifiedAccountResponse) {
+    option (google.api.http).get = "/volnix/ident/v1/verified_account/{address}";
+  }
+  
+  // VerifiedAccounts queries all verified accounts
+  rpc VerifiedAccounts(QueryVerifiedAccountsRequest) returns (QueryVerifiedAccountsResponse) {
+    option (google.api.http).get = "/volnix/ident/v1/verified_accounts";
+  }
+  
+  // IdentityVerification queries identity verification by address
+  rpc IdentityVerification(QueryIdentityVerificationRequest) returns (QueryIdentityVerificationResponse) {
+    option (google.api.http).get = "/volnix/ident/v1/identity_verification/{address}";
+  }
+  
+  // VerificationProviders queries all verification providers
+  rpc VerificationProviders(QueryVerificationProvidersRequest) returns (QueryVerificationProvidersResponse) {
+    option (google.api.http).get = "/volnix/ident/v1/verification_providers";
+  }
 }
 
+// QueryParamsRequest is request type for the Query/Params RPC method
 message QueryParamsRequest {}
 
+// QueryParamsResponse is response type for the Query/Params RPC method
 message QueryParamsResponse {
-  // Params placeholder JSON/string; real structure will be in genesis.proto/types later
-  string json = 1;
+  Params params = 1;
 }
 
+// QueryVerifiedAccountRequest is request type for the Query/VerifiedAccount RPC method
 message QueryVerifiedAccountRequest {
   string address = 1;
 }
 
+// QueryVerifiedAccountResponse is response type for the Query/VerifiedAccount RPC method
 message QueryVerifiedAccountResponse {
-  volnix.ident.v1.VerifiedAccount account = 1;
+  VerifiedAccount verified_account = 1;
 }
 
+// QueryVerifiedAccountsRequest is request type for the Query/VerifiedAccounts RPC method
 message QueryVerifiedAccountsRequest {
   cosmos.base.query.v1beta1.PageRequest pagination = 1;
 }
 
+// QueryVerifiedAccountsResponse is response type for the Query/VerifiedAccounts RPC method
 message QueryVerifiedAccountsResponse {
-  repeated volnix.ident.v1.VerifiedAccount accounts = 1;
+  repeated VerifiedAccount verified_accounts = 1;
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
 
-message QueryVerifiedAccountsByRoleRequest {
-  Role role = 1;
-  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+// QueryIdentityVerificationRequest is request type for the Query/IdentityVerification RPC method
+message QueryIdentityVerificationRequest {
+  string address = 1;
 }
 
-message QueryVerifiedAccountsByRoleResponse {
-  repeated volnix.ident.v1.VerifiedAccount accounts = 1;
+// QueryIdentityVerificationResponse is response type for the Query/IdentityVerification RPC method
+message QueryIdentityVerificationResponse {
+  IdentityVerification identity_verification = 1;
+}
+
+// QueryVerificationProvidersRequest is request type for the Query/VerificationProviders RPC method
+message QueryVerificationProvidersRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryVerificationProvidersResponse is response type for the Query/VerificationProviders RPC method
+message QueryVerificationProvidersResponse {
+  repeated VerificationProvider verification_providers = 1;
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
-
-
-
