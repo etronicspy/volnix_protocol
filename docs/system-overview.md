@@ -8,7 +8,7 @@ Volnix Protocol is a sovereign Layer-1 blockchain built on Cosmos SDK with a hyb
 
 - **Hybrid PoVB Consensus**: Unique combination of staking and token burning for block creation
 - **ZKP Identity Verification**: Zero-knowledge proofs for privacy-preserving identity management
-- **Three-Tier Economy**: WRT (value/governance), LZN (mining licenses), ANT (performance rights)
+- **Three-Tier Economy**: WRT (value/governance), LZN (mining licenses), ANT (performance rights) - [Detailed Economic Model](economic-model.md)
 - **Cosmos Ecosystem Integration**: Full compatibility with IBC and Cosmos infrastructure
 - **Energy Efficiency**: 99.9% reduction in energy consumption vs. traditional PoW
 
@@ -396,6 +396,22 @@ graph TB
 - **Zero-Knowledge Rollups**: Layer-2 scaling solutions
 - **AI Integration**: Machine learning for consensus optimization
 - **Quantum Resistance**: Post-quantum cryptography implementation
+
+## Related Documentation
+
+### Economic Model
+- **[Economic Model Overview](economic-model.md)**: Comprehensive description of the three-tier token system and dual-circuit economy
+- **[Economic Model Diagrams](economic-model-diagrams.md)**: Visual representations of token flows and economic interactions
+- **[Mathematical Formulas](economic-formulas.md)**: Detailed mathematical models and calculations for all economic mechanisms
+
+### Technical Architecture
+- **[Core Architecture](core-architecture.md)**: Detailed technical architecture and module interactions
+- **[Consensus Mechanism](povb-consensus-diagram.html)**: PoVB consensus algorithm and implementation
+- **[Module Documentation](../x/)**: Individual module specifications and APIs
+
+### Infrastructure
+- **[Network Topology](network-topology-diagram.html)**: Network architecture and deployment configurations
+- **[Technology Stack](technology-stack.md)**: Complete technology stack and dependencies
 
 ---
 
