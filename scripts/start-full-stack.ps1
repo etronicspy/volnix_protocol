@@ -60,7 +60,7 @@ function Build-Project {
         
         # Сборка основного бинарника
         Write-Host "Building volnixd binary..." -ForegroundColor $Yellow
-        go build -o bin/volnixd.exe ./cmd/volnixd
+        go build -o build/volnixd.exe ./cmd/volnixd
         if ($LASTEXITCODE -ne 0) {
             Write-Host "❌ Failed to build volnixd" -ForegroundColor $Red
             exit 1
@@ -94,7 +94,7 @@ function Initialize-Node {
     
     if (-not (Test-Path ".volnix")) {
         Write-Host "Initializing new node: $Moniker" -ForegroundColor $Yellow
-        .\bin\volnixd.exe init $Moniker --chain-id $ChainId
+        .\build\volnixd.exe init $Moniker --chain-id $ChainId
         if ($LASTEXITCODE -ne 0) {
             Write-Host "❌ Failed to initialize node" -ForegroundColor $Red
             exit 1
@@ -111,7 +111,7 @@ function Initialize-Node {
 function Install-WalletDependencies {
     Write-Host "📦 Installing Wallet UI dependencies..." -ForegroundColor $Yellow
     
-    Push-Location "wallet-ui"
+    Push-Location "frontend/wallet-ui"
     try {
         if (-not (Test-Path "node_modules")) {
             npm install
@@ -134,14 +134,14 @@ function Start-BlockchainNode {
     Write-Host "🌐 Starting blockchain node..." -ForegroundColor $Yellow
     
     # Запуск в фоновом режиме
-    $nodeProcess = Start-Process -FilePath ".\bin\volnixd.exe" -ArgumentList "start" -PassThru -WindowStyle Hidden
+    $nodeProcess = Start-Process -FilePath ".\build\volnixd.exe" -ArgumentList "start" -PassThru -WindowStyle Hidden
     
     # Ожидание запуска
     Start-Sleep -Seconds 5
     
     # Проверка статуса
     try {
-        $status = .\bin\volnixd.exe status 2>$null
+        $status = .\build\volnixd.exe status 2>$null
         Write-Host "✅ Blockchain node started (PID: $($nodeProcess.Id))" -ForegroundColor $Green
         Write-Host "🔗 RPC endpoint: http://localhost:26657" -ForegroundColor $Cyan
         Write-Host "🌐 P2P endpoint: tcp://localhost:26656" -ForegroundColor $Cyan
@@ -156,7 +156,7 @@ function Start-BlockchainNode {
 function Start-WalletUI {
     Write-Host "💰 Starting Wallet UI..." -ForegroundColor $Yellow
     
-    Push-Location "wallet-ui"
+    Push-Location "frontend/wallet-ui"
     try {
         # Запуск в фоновом режиме
         $walletProcess = Start-Process -FilePath "npm" -ArgumentList "start" -PassThru -WindowStyle Hidden
@@ -175,7 +175,7 @@ function Start-WalletUI {
 function Start-BlockchainExplorer {
     Write-Host "🔍 Starting Blockchain Explorer..." -ForegroundColor $Yellow
     
-    Push-Location "blockchain-explorer"
+    Push-Location "frontend/blockchain-explorer"
     try {
         # Запуск в фоновом режиме
         $explorerProcess = Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File start-explorer.ps1" -PassThru -WindowStyle Hidden
@@ -202,9 +202,9 @@ function Show-Status {
     Write-Host "  🔍 Explorer:        http://localhost:8080" -ForegroundColor $Green
     Write-Host ""
     Write-Host "🔧 Available Commands:" -ForegroundColor $Cyan
-    Write-Host "  .\bin\volnixd.exe status                    # Check node status"
-    Write-Host "  .\bin\volnixd.exe keys list                 # List wallet keys"
-    Write-Host "  .\bin\volnixd.exe query bank balances <addr> # Check balance"
+    Write-Host "  .\build\volnixd.exe status                    # Check node status"
+    Write-Host "  .\build\volnixd.exe keys list                 # List wallet keys"
+    Write-Host "  .\build\volnixd.exe query bank balances <addr> # Check balance"
     Write-Host ""
     Write-Host "📚 Quick Start:" -ForegroundColor $Cyan
     Write-Host "  1. Open Wallet UI:    http://localhost:3000"

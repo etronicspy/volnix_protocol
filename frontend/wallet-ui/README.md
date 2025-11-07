@@ -34,7 +34,7 @@ npm run build
 ## Структура проекта
 
 ```
-wallet-ui/
+frontend/wallet-ui/
 ├── src/
 │   ├── components/          # React компоненты
 │   │   ├── WalletConnect.tsx    # Подключение кошелька

@@ -76,8 +76,8 @@ Write-Host "-------------------------" -ForegroundColor Yellow
 if (-not (Test-FileExists "go.mod" "Go module")) { $allGood = $false }
 if (-not (Test-FileExists "cmd/volnixd/main.go" "Main volnixd source")) { $allGood = $false }
 if (-not (Test-FileExists "cmd/volnixd-standalone/main.go" "Standalone source")) { $allGood = $false }
-if (-not (Test-FileExists "wallet-ui/package.json" "Wallet UI config")) { $allGood = $false }
-if (-not (Test-FileExists "blockchain-explorer/index.html" "Explorer files")) { $allGood = $false }
+if (-not (Test-FileExists "frontend/wallet-ui/package.json" "Wallet UI config")) { $allGood = $false }
+if (-not (Test-FileExists "frontend/blockchain-explorer/index.html" "Explorer files")) { $allGood = $false }
 
 Write-Host ""
 Write-Host "🔨 Checking Build Status" -ForegroundColor Yellow
@@ -102,7 +102,7 @@ try {
 }
 
 # Проверка зависимостей npm
-if (Test-Path "wallet-ui/node_modules") {
+if (Test-Path "frontend/wallet-ui/node_modules") {
     Write-Host "✅ npm dependencies: Installed" -ForegroundColor Green
 } else {
     Write-Host "ℹ️  npm dependencies: Need installation" -ForegroundColor Blue
@@ -172,4 +172,4 @@ if ($allGood -and $portsOk) {
 }
 
 Write-Host ""
-Write-Host "📚 For detailed instructions, see: QUICK_START_GUIDE.md" -ForegroundColor Cyan
+Write-Host "📚 For detailed instructions, see: README.md or deprecated/guides/QUICK_START_GUIDE.md" -ForegroundColor Cyan

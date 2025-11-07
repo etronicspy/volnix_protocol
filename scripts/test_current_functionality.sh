@@ -89,7 +89,7 @@ else
 fi
 
 # Check if binary exists
-if [ -f "./bin/volnixd" ]; then
+if [ -f "./build/volnixd" ]; then
     print_status "OK" "volnixd binary found"
 else
     print_status "ERROR" "volnixd binary not found. Run 'make build' first"
@@ -100,7 +100,7 @@ fi
 echo ""
 echo "📊 Binary Information"
 echo "--------------------"
-./bin/volnixd version
+./build/volnixd version
 
 # Test 1: Initialize node
 echo ""
@@ -115,7 +115,7 @@ fi
 
 # Initialize new node
 print_status "INFO" "Initializing new node..."
-./bin/volnixd init testnode
+./build/volnixd init testnode
 
 # Check if files were created
 if [ -f "$HOME/.volnix/config/genesis.json" ]; then
@@ -139,7 +139,7 @@ echo "-----------------------"
 
 # Start node in background
 print_status "INFO" "Starting node..."
-./bin/volnixd start > /tmp/volnixd.log 2>&1 &
+./build/volnixd start > /tmp/volnixd.log 2>&1 &
 NODE_PID=$!
 
 # Wait for node to start
@@ -179,7 +179,7 @@ echo "-----------------------"
 
 # Test keys command
 print_status "INFO" "Testing keys command..."
-./bin/volnixd keys add testkey > /tmp/keys.log 2>&1
+./build/volnixd keys add testkey > /tmp/keys.log 2>&1
 if [ $? -eq 0 ]; then
     print_status "OK" "Keys command works"
 else
@@ -188,7 +188,7 @@ fi
 
 # Test tx command (should show help)
 print_status "INFO" "Testing tx command..."
-./bin/volnixd tx --help > /tmp/tx.log 2>&1
+./build/volnixd tx --help > /tmp/tx.log 2>&1
 if [ $? -eq 0 ]; then
     print_status "OK" "Tx command help works"
 else
@@ -198,7 +198,7 @@ fi
 
 # Test query command (should show help)
 print_status "INFO" "Testing query command..."
-./bin/volnixd query --help > /tmp/query.log 2>&1
+./build/volnixd query --help > /tmp/query.log 2>&1
 if [ $? -eq 0 ]; then
     print_status "OK" "Query command help works"
 else

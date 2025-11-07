@@ -328,7 +328,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 #### Шаг 2: Запуск эксплорера
 ```powershell
 # Переход в директорию эксплорера
-cd blockchain-explorer
+cd frontend/blockchain-explorer
 
 # Запуск сервера
 powershell -ExecutionPolicy Bypass -File start-explorer.ps1

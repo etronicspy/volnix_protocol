@@ -79,7 +79,7 @@ npm --version   # Должно показать версию npm
 ### Шаг 2: Запуск Web UI
 ```powershell
 # Переход в директорию кошелька
-cd wallet-ui
+cd frontend/wallet-ui
 
 # Установка зависимостей (первый раз)
 npm install
@@ -228,7 +228,7 @@ npm start
 ### 2. **Установите Node.js** для Web UI:
 - Скачайте с https://nodejs.org/
 - Установите версию 18 LTS
-- Запустите `npm start` в папке wallet-ui
+- Запустите `npm start` в папке frontend/wallet-ui
 
 ### 3. **Интегрируйте с блокчейном**:
 - Кошелек готов к работе с вашей сетью
@@ -246,7 +246,7 @@ npm start
 
 ### Проблемы с Web UI:
 - Установите Node.js 18+
-- Запустите `npm install` в папке wallet-ui
+- Запустите `npm install` в папке frontend/wallet-ui
 - Проверьте порт 3000 (должен быть свободен)
 
 ---

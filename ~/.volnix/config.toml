@@ -1,5 +1,0 @@
-chain_id = "test-volnix"
-moniker = "test-node"
-rpc_laddr = "tcp://127.0.0.1:26657"
-p2p_laddr = "tcp://127.0.0.1:26656"
-proxy_app = "tcp://127.0.0.1:26658"

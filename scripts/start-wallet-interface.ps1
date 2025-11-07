@@ -56,12 +56,12 @@ Start-Sleep -Seconds 5
 
 # 4. Запуск Blockchain Explorer
 Write-Host "🔍 Starting Blockchain Explorer..." -ForegroundColor Cyan
-$explorerProcess = Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File blockchain-explorer/start-explorer.ps1" -PassThru -WindowStyle Hidden
+$explorerProcess = Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File frontend/blockchain-explorer/start-explorer.ps1" -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 2
 
 # 5. Запуск Wallet Web Interface
 Write-Host "💰 Starting Wallet Web Interface..." -ForegroundColor Cyan
-$walletProcess = Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File wallet-web/server.ps1" -PassThru -WindowStyle Hidden
+$walletProcess = Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File frontend/wallet-ui/start-server.ps1" -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 3
 
 Write-Host ""

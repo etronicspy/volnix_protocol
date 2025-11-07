@@ -67,7 +67,7 @@
 ```powershell
 # Скачать и установить Node.js 18+ с https://nodejs.org/
 # После установки:
-cd wallet-ui
+cd frontend/wallet-ui
 npm install
 npm start
 ```

@@ -1,0 +1,78 @@
+# Binaries
+build/
+*.exe
+
+# Config files
+~/.volnix/
+.volnix/
+config.toml
+genesis.json
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+*.prof
+
+# Dependency directories
+vendor/
+
+# Go specific
+go.work
+go.work.sum
+
+# Node.js dependencies (frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log*
+
+# IDE and editor files
+.vscode/
+.idea/
+.kiro/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+
+# Protobuf generated files
+proto/gen/
+
+# Local environment files
+.env
+.env.local
+.env.*.local

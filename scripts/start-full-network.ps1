@@ -48,7 +48,7 @@ function Start-Monitoring {
     
     # Запуск blockchain explorer
     Write-Host "🔍 Starting Blockchain Explorer..." -ForegroundColor Cyan
-    Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File blockchain-explorer/start-explorer.ps1" -WindowStyle Hidden
+    Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File frontend/blockchain-explorer/start-explorer.ps1" -WindowStyle Hidden
     
     Start-Sleep -Seconds 3
     

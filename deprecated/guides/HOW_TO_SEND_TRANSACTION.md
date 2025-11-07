@@ -136,7 +136,7 @@ if (Test-Path .volnix/transactions) {
 ### Если у вас установлен Node.js:
 ```powershell
 # Перейти в папку wallet-ui
-cd wallet-ui
+cd frontend/wallet-ui
 
 # Установить зависимости (первый раз)
 npm install

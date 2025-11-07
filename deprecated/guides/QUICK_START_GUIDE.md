@@ -85,7 +85,7 @@ make build
 #### Шаг 4: Запуск Wallet UI
 ```powershell
 # Переход в директорию wallet-ui
-cd wallet-ui
+cd frontend/wallet-ui
 
 # Установка зависимостей (первый раз)
 npm install
@@ -97,7 +97,7 @@ npm start
 #### Шаг 5: Запуск Blockchain Explorer
 ```powershell
 # Переход в директорию blockchain-explorer
-cd blockchain-explorer
+cd frontend/blockchain-explorer
 
 # Запуск explorer
 powershell -ExecutionPolicy Bypass -File start-explorer.ps1
@@ -294,7 +294,7 @@ go build -o volnixd.exe ./cmd/volnixd
 npm cache clean --force
 
 # Удаление node_modules и переустановка
-cd wallet-ui
+cd frontend/wallet-ui
 Remove-Item -Recurse -Force node_modules
 npm install
 ```

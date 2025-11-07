@@ -6,24 +6,24 @@ Write-Host "==============================" -ForegroundColor Cyan
 
 # 1. Сборка проекта
 Write-Host "🔨 Building project..." -ForegroundColor Yellow
-go build -o bin/volnixd.exe ./cmd/volnixd
+go build -o build/volnixd.exe ./cmd/volnixd
 
 # 2. Инициализация узла (если нужно)
 if (-not (Test-Path ".volnix")) {
     Write-Host "🏗️ Initializing node..." -ForegroundColor Yellow
-    .\bin\volnixd.exe init testnode --chain-id volnix-testnet
+    .\build\volnixd.exe init testnode --chain-id volnix-testnet
 }
 
 # 3. Запуск блокчейн узла
 Write-Host "🌐 Starting blockchain node..." -ForegroundColor Yellow
-Start-Process -FilePath ".\bin\volnixd.exe" -ArgumentList "start" -WindowStyle Hidden
+Start-Process -FilePath ".\build\volnixd.exe" -ArgumentList "start" -WindowStyle Hidden
 
 # Ожидание запуска узла
 Start-Sleep -Seconds 5
 
 # 4. Запуск Wallet UI
 Write-Host "💰 Starting Wallet UI..." -ForegroundColor Yellow
-Push-Location "wallet-ui"
+Push-Location "frontend/wallet-ui"
 if (-not (Test-Path "node_modules")) {
     npm install
 }
@@ -32,7 +32,7 @@ Pop-Location
 
 # 5. Запуск Blockchain Explorer
 Write-Host "🔍 Starting Blockchain Explorer..." -ForegroundColor Yellow
-Push-Location "blockchain-explorer"
+Push-Location "frontend/blockchain-explorer"
 Start-Process -FilePath "powershell" -ArgumentList "-ExecutionPolicy Bypass -File start-explorer.ps1" -WindowStyle Hidden
 Pop-Location
 

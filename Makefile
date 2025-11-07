@@ -3,7 +3,7 @@
 # Build variables
 BINARY_NAME=volnixd
 VERSION=0.1.0-alpha
-BUILD_DIR=./bin
+BUILD_DIR=./build
 GO_VERSION=1.21
 
 # Colors for output

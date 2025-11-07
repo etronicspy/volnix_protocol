@@ -20,26 +20,28 @@ Package Manager: npm
 ### Структура проекта
 
 ```
-volnix-wallet-ui/
-├── public/
-│   └── index.html              # HTML шаблон
-├── src/
-│   ├── components/             # React компоненты
-│   │   ├── WalletConnect.tsx   # Подключение кошелька
-│   │   ├── Balance.tsx         # Отображение балансов
-│   │   ├── SendTokens.tsx      # Отправка токенов
-│   │   ├── TransactionHistory.tsx # История транзакций
-│   │   ├── WalletTypes.tsx     # Управление типами кошельков
-│   │   └── ValidatorManagement.tsx # Управление валидаторами
-│   ├── types/
-│   │   └── wallet.ts           # TypeScript определения
-│   ├── App.tsx                 # Главный компонент приложения
-│   ├── index.tsx               # Точка входа
-│   ├── index.css               # Глобальные стили
-│   └── react-app-env.d.ts      # TypeScript конфигурация
-├── package.json                # Зависимости и скрипты
-├── tsconfig.json              # TypeScript конфигурация
-└── README.md                  # Документация проекта
+volnix-protocol/
+└── frontend/                   # Frontend приложения
+    └── wallet-ui/              # Веб-интерфейс кошелька
+        ├── public/
+        │   └── index.html              # HTML шаблон
+        ├── src/
+        │   ├── components/             # React компоненты
+        │   │   ├── WalletConnect.tsx   # Подключение кошелька
+        │   │   ├── Balance.tsx         # Отображение балансов
+        │   │   ├── SendTokens.tsx      # Отправка токенов
+        │   │   ├── TransactionHistory.tsx # История транзакций
+        │   │   ├── WalletTypes.tsx     # Управление типами кошельков
+        │   │   └── ValidatorManagement.tsx # Управление валидаторами
+        │   ├── types/
+        │   │   └── wallet.ts           # TypeScript определения
+        │   ├── App.tsx                 # Главный компонент приложения
+        │   ├── index.tsx               # Точка входа
+        │   ├── index.css               # Глобальные стили
+        │   └── react-app-env.d.ts      # TypeScript конфигурация
+        ├── package.json                # Зависимости и скрипты
+        ├── tsconfig.json              # TypeScript конфигурация
+        └── README.md                  # Документация проекта
 ```
 
 ### Архитектурные принципы
@@ -485,8 +487,8 @@ interface AnalyticsIntegration {
 
 ```bash
 # Клонирование репозитория
-git clone https://github.com/volnix-protocol/wallet-ui.git
-cd wallet-ui
+git clone https://github.com/volnix-protocol/volnix-protocol.git
+cd volnix-protocol/frontend/wallet-ui
 
 # Установка зависимостей
 npm install
