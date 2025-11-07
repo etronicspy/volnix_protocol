@@ -60,7 +60,7 @@ function Build-Project {
         
         # Сборка основного бинарника
         Write-Host "Building volnixd binary..." -ForegroundColor $Yellow
-        go build -o volnixd.exe ./cmd/volnixd
+        go build -o bin/volnixd.exe ./cmd/volnixd
         if ($LASTEXITCODE -ne 0) {
             Write-Host "❌ Failed to build volnixd" -ForegroundColor $Red
             exit 1
@@ -94,7 +94,7 @@ function Initialize-Node {
     
     if (-not (Test-Path ".volnix")) {
         Write-Host "Initializing new node: $Moniker" -ForegroundColor $Yellow
-        .\volnixd.exe init $Moniker --chain-id $ChainId
+        .\bin\volnixd.exe init $Moniker --chain-id $ChainId
         if ($LASTEXITCODE -ne 0) {
             Write-Host "❌ Failed to initialize node" -ForegroundColor $Red
             exit 1
@@ -134,14 +134,14 @@ function Start-BlockchainNode {
     Write-Host "🌐 Starting blockchain node..." -ForegroundColor $Yellow
     
     # Запуск в фоновом режиме
-    $nodeProcess = Start-Process -FilePath ".\volnixd.exe" -ArgumentList "start" -PassThru -WindowStyle Hidden
+    $nodeProcess = Start-Process -FilePath ".\bin\volnixd.exe" -ArgumentList "start" -PassThru -WindowStyle Hidden
     
     # Ожидание запуска
     Start-Sleep -Seconds 5
     
     # Проверка статуса
     try {
-        $status = .\volnixd.exe status 2>$null
+        $status = .\bin\volnixd.exe status 2>$null
         Write-Host "✅ Blockchain node started (PID: $($nodeProcess.Id))" -ForegroundColor $Green
         Write-Host "🔗 RPC endpoint: http://localhost:26657" -ForegroundColor $Cyan
         Write-Host "🌐 P2P endpoint: tcp://localhost:26656" -ForegroundColor $Cyan
@@ -202,9 +202,9 @@ function Show-Status {
     Write-Host "  🔍 Explorer:        http://localhost:8080" -ForegroundColor $Green
     Write-Host ""
     Write-Host "🔧 Available Commands:" -ForegroundColor $Cyan
-    Write-Host "  .\volnixd.exe status                    # Check node status"
-    Write-Host "  .\volnixd.exe keys list                 # List wallet keys"
-    Write-Host "  .\volnixd.exe query bank balances <addr> # Check balance"
+    Write-Host "  .\bin\volnixd.exe status                    # Check node status"
+    Write-Host "  .\bin\volnixd.exe keys list                 # List wallet keys"
+    Write-Host "  .\bin\volnixd.exe query bank balances <addr> # Check balance"
     Write-Host ""
     Write-Host "📚 Quick Start:" -ForegroundColor $Cyan
     Write-Host "  1. Open Wallet UI:    http://localhost:3000"

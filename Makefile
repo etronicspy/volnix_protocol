@@ -3,7 +3,7 @@
 # Build variables
 BINARY_NAME=volnixd
 VERSION=0.1.0-alpha
-BUILD_DIR=./build
+BUILD_DIR=./bin
 GO_VERSION=1.21
 
 # Colors for output
@@ -27,23 +27,27 @@ help: ## Show this help message
 
 build: ## Build the volnixd binary
 	@echo "$(GREEN)🔨 Building Volnix Protocol...$(NC)"
-	@go build -o $(BINARY_NAME) ./cmd/volnixd
-	@echo "$(GREEN)✅ Build completed: $(BINARY_NAME)$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/volnixd
+	@echo "$(GREEN)✅ Build completed: $(BUILD_DIR)/$(BINARY_NAME)$(NC)"
 
 build-linux: ## Build for Linux
 	@echo "$(GREEN)🔨 Building for Linux...$(NC)"
-	@GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME)-linux ./cmd/volnixd
-	@echo "$(GREEN)✅ Linux build completed: $(BINARY_NAME)-linux$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	@GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux ./cmd/volnixd
+	@echo "$(GREEN)✅ Linux build completed: $(BUILD_DIR)/$(BINARY_NAME)-linux$(NC)"
 
 build-windows: ## Build for Windows
 	@echo "$(GREEN)🔨 Building for Windows...$(NC)"
-	@GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME).exe ./cmd/volnixd
-	@echo "$(GREEN)✅ Windows build completed: $(BINARY_NAME).exe$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	@GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME).exe ./cmd/volnixd
+	@echo "$(GREEN)✅ Windows build completed: $(BUILD_DIR)/$(BINARY_NAME).exe$(NC)"
 
 build-darwin: ## Build for macOS
 	@echo "$(GREEN)🔨 Building for macOS...$(NC)"
-	@GOOS=darwin GOARCH=amd64 go build -o $(BINARY_NAME)-darwin ./cmd/volnixd
-	@echo "$(GREEN)✅ macOS build completed: $(BINARY_NAME)-darwin$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	@GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin ./cmd/volnixd
+	@echo "$(GREEN)✅ macOS build completed: $(BUILD_DIR)/$(BINARY_NAME)-darwin$(NC)"
 
 build-all: build-linux build-windows build-darwin ## Build for all platforms
 	@echo "$(GREEN)🎉 All platform builds completed!$(NC)"
@@ -74,9 +78,8 @@ test-coverage: ## Run tests with coverage
 
 clean: ## Clean build artifacts
 	@echo "$(YELLOW)🧹 Cleaning build artifacts...$(NC)"
-	@rm -f $(BINARY_NAME) $(BINARY_NAME).exe $(BINARY_NAME)-linux $(BINARY_NAME)-darwin
-	@rm -f coverage.out coverage.html
 	@rm -rf $(BUILD_DIR)
+	@rm -f coverage.out coverage.html
 	@echo "$(GREEN)✅ Clean completed$(NC)"
 
 deps: ## Download and tidy dependencies
@@ -98,26 +101,26 @@ lint: ## Run linter
 # Node management commands
 init: build ## Initialize a new node
 	@echo "$(PURPLE)🚀 Initializing Volnix node...$(NC)"
-	@./$(BINARY_NAME) init testnode
+	@$(BUILD_DIR)/$(BINARY_NAME) init testnode
 
 start: build ## Start the node
 	@echo "$(PURPLE)🚀 Starting Volnix node...$(NC)"
-	@./$(BINARY_NAME) start
+	@$(BUILD_DIR)/$(BINARY_NAME) start
 
 status: build ## Show node status
 	@echo "$(PURPLE)📊 Checking node status...$(NC)"
-	@./$(BINARY_NAME) status
+	@$(BUILD_DIR)/$(BINARY_NAME) status
 
 version: build ## Show version information
-	@./$(BINARY_NAME) version
+	@$(BUILD_DIR)/$(BINARY_NAME) version
 
 keys-add: build ## Add a new key (usage: make keys-add NAME=mykey)
 	@echo "$(PURPLE)🔑 Adding new key: $(NAME)$(NC)"
-	@./$(BINARY_NAME) keys add $(NAME)
+	@$(BUILD_DIR)/$(BINARY_NAME) keys add $(NAME)
 
 keys-list: build ## List all keys
 	@echo "$(PURPLE)🔑 Listing keys...$(NC)"
-	@./$(BINARY_NAME) keys list
+	@$(BUILD_DIR)/$(BINARY_NAME) keys list
 
 # Development commands
 dev-setup: deps fmt ## Setup development environment
@@ -151,7 +154,7 @@ docker-run: ## Run in Docker container
 release: clean build-all test ## Prepare release build
 	@echo "$(GREEN)🎉 Release build completed!$(NC)"
 	@echo "$(GREEN)📦 Binaries ready:$(NC)"
-	@ls -la $(BINARY_NAME)*
+	@ls -la $(BUILD_DIR)/
 
 # Info commands
 info: ## Show project information

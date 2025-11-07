@@ -6,17 +6,17 @@ Write-Host "==============================" -ForegroundColor Cyan
 
 # 1. Сборка проекта
 Write-Host "🔨 Building project..." -ForegroundColor Yellow
-go build -o volnixd.exe ./cmd/volnixd
+go build -o bin/volnixd.exe ./cmd/volnixd
 
 # 2. Инициализация узла (если нужно)
 if (-not (Test-Path ".volnix")) {
     Write-Host "🏗️ Initializing node..." -ForegroundColor Yellow
-    .\volnixd.exe init testnode --chain-id volnix-testnet
+    .\bin\volnixd.exe init testnode --chain-id volnix-testnet
 }
 
 # 3. Запуск блокчейн узла
 Write-Host "🌐 Starting blockchain node..." -ForegroundColor Yellow
-Start-Process -FilePath ".\volnixd.exe" -ArgumentList "start" -WindowStyle Hidden
+Start-Process -FilePath ".\bin\volnixd.exe" -ArgumentList "start" -WindowStyle Hidden
 
 # Ожидание запуска узла
 Start-Sleep -Seconds 5

@@ -51,7 +51,7 @@ Write-Host "🚀 Starting services..." -ForegroundColor Yellow
 
 # 3. Запуск блокчейн узла
 Write-Host "🌐 Starting blockchain node..." -ForegroundColor Cyan
-$nodeProcess = Start-Process -FilePath ".\volnixd.exe" -ArgumentList "start" -PassThru -WindowStyle Hidden
+$nodeProcess = Start-Process -FilePath ".\bin\volnixd.exe" -ArgumentList "start" -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 5
 
 # 4. Запуск Blockchain Explorer
