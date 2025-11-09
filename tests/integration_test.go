@@ -4,14 +4,18 @@ import (
 	"testing"
 	"time"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"cosmossdk.io/log"
+	"cosmossdk.io/store"
+	"cosmossdk.io/store/metrics"
 	storetypes "cosmossdk.io/store/types"
+	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/std"
-	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
@@ -69,8 +73,18 @@ func (suite *IntegrationTestSuite) SetupTest() {
 	suite.consensusStoreKey = storetypes.NewKVStoreKey("test_consensus")
 	tKey := storetypes.NewTransientStoreKey("test_transient_store")
 
-	// Create test context
-	suite.ctx = testutil.DefaultContext(suite.identStoreKey, tKey)
+	// Create test context with all store keys
+	db := dbm.NewMemDB()
+	cms := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
+	cms.MountStoreWithDB(suite.identStoreKey, storetypes.StoreTypeIAVL, db)
+	cms.MountStoreWithDB(suite.lizenzStoreKey, storetypes.StoreTypeIAVL, db)
+	cms.MountStoreWithDB(suite.anteilStoreKey, storetypes.StoreTypeIAVL, db)
+	cms.MountStoreWithDB(suite.consensusStoreKey, storetypes.StoreTypeIAVL, db)
+	cms.MountStoreWithDB(tKey, storetypes.StoreTypeTransient, db)
+	err := cms.LoadLatestVersion()
+	require.NoError(suite.T(), err)
+
+	suite.ctx = sdk.NewContext(cms, cmtproto.Header{}, false, log.NewNopLogger())
 
 	// Create params keeper and subspaces
 	paramsKeeper := paramskeeper.NewKeeper(suite.cdc, codec.NewLegacyAmino(), suite.identStoreKey, tKey)
@@ -91,8 +105,11 @@ func (suite *IntegrationTestSuite) SetupTest() {
 	suite.anteilKeeper = anteilkeeper.NewKeeper(suite.cdc, suite.anteilStoreKey, suite.anteilParamStore)
 	suite.consensusKeeper = consensuskeeper.NewKeeper(suite.cdc, suite.consensusStoreKey, suite.consensusParamStore)
 
-	// Set default params
-	suite.identKeeper.SetParams(suite.ctx, identtypes.DefaultParams())
+	// Set default params with increased limits for testing
+	identParams := identtypes.DefaultParams()
+	identParams.MaxIdentitiesPerAddress = 100 // Increase limit for testing
+	suite.identKeeper.SetParams(suite.ctx, identParams)
+
 	suite.lizenzKeeper.SetParams(suite.ctx, lizenztypes.DefaultParams())
 	suite.anteilKeeper.SetParams(suite.ctx, anteiltypes.DefaultParams())
 	suite.consensusKeeper.SetParams(suite.ctx, *consensustypes.DefaultParams())
