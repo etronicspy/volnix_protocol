@@ -440,8 +440,14 @@ func (suite *KeeperTestSuite) TestDeleteDeactivatingLizenz() {
 
 // Test BeginBlocker - CheckInactiveLizenz
 func (suite *KeeperTestSuite) TestBeginBlocker_InactiveLizenz() {
-	// Create lizenz with old last activity
-	oldTime := time.Now().Add(-200 * 24 * time.Hour) // 200 days ago
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Create lizenz with old last activity (older than InactivityPeriod)
+	params := suite.keeper.GetParams(suite.ctx)
+	oldTime := currentTime.Add(-params.InactivityPeriod - 24*time.Hour) // 1 day past threshold
+
 	lizenz := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator",
 		Amount:               "1000000",
@@ -472,8 +478,17 @@ func (suite *KeeperTestSuite) TestBeginBlocker_InactiveLizenz() {
 
 // Test ProcessDeactivatingLizenz
 func (suite *KeeperTestSuite) TestProcessDeactivatingLizenz() {
-	// Create deactivating lizenz with past end date
-	pastTime := time.Now().Add(-1 * 24 * time.Hour) // 1 day ago
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Get deactivation period from params
+	params := suite.keeper.GetParams(suite.ctx)
+
+	// Create deactivating lizenz with end date older than deactivation threshold
+	// DeactivationEnd should be before (currentTime - DeactivationPeriod)
+	pastTime := currentTime.Add(-params.DeactivationPeriod - 24*time.Hour) // 1 day past threshold
+
 	lizenz := &lizenzv1.DeactivatingLizenz{
 		Validator:         "cosmos1validator",
 		Amount:            "1000000",

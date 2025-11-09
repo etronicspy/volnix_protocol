@@ -199,6 +199,8 @@ func (k Keeper) executeTrade(ctx sdk.Context, buyOrderID, sellOrderID string) er
 		TradeId:     fmt.Sprintf("trade_%d", ctx.BlockHeight()),
 		BuyOrderId:  buyOrderID,
 		SellOrderId: sellOrderID,
+		Buyer:       buyOrder.Owner,
+		Seller:      sellOrder.Owner,
 		Price:       buyOrder.Price, // Use buy order price
 		AntAmount:   buyOrder.AntAmount,
 	}
@@ -616,10 +618,10 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 
 	return nil
 }
+
 // GetBidsByAuction returns all bids for a specific auction
 func (k Keeper) GetBidsByAuction(ctx sdk.Context, auctionID string) ([]*anteilv1.Bid, error) {
 	// For now, return empty slice - in real implementation would use proper indexing
 	// This is a simplified version for demo purposes
 	return []*anteilv1.Bid{}, nil
 }
-

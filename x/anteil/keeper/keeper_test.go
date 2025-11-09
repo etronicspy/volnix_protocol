@@ -194,7 +194,7 @@ func (suite *KeeperTestSuite) TestDeleteOrder() {
 
 func (suite *KeeperTestSuite) TestGetAllOrders() {
 	// Create multiple orders
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		order := &anteilv1.Order{
 			OrderId:      "order" + string(rune(i)),
 			Owner:        "cosmos1test",
@@ -217,7 +217,7 @@ func (suite *KeeperTestSuite) TestGetAllOrders() {
 
 func (suite *KeeperTestSuite) TestGetOrdersByOwner() {
 	// Create orders for different owners
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		order := &anteilv1.Order{
 			OrderId:      "order_owner1_" + string(rune(i)),
 			Owner:        "cosmos1owner1",
@@ -233,7 +233,7 @@ func (suite *KeeperTestSuite) TestGetOrdersByOwner() {
 		require.NoError(suite.T(), err)
 	}
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		order := &anteilv1.Order{
 			OrderId:      "order_owner2_" + string(rune(i)),
 			Owner:        "cosmos1owner2",
@@ -349,6 +349,8 @@ func (suite *KeeperTestSuite) TestSetTrade() {
 		TradeId:     "trade1",
 		BuyOrderId:  "buy1",
 		SellOrderId: "sell1",
+		Buyer:       "cosmos1buyer",
+		Seller:      "cosmos1seller",
 		Price:       "1.5",
 		AntAmount:   "1000000",
 		ExecutedAt:  timestamppb.Now(),
@@ -365,11 +367,13 @@ func (suite *KeeperTestSuite) TestSetTrade() {
 
 func (suite *KeeperTestSuite) TestGetAllTrades() {
 	// Create multiple trades
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		trade := &anteilv1.Trade{
 			TradeId:     "trade" + string(rune(i)),
 			BuyOrderId:  "buy" + string(rune(i)),
 			SellOrderId: "sell" + string(rune(i)),
+			Buyer:       "cosmos1buyer" + string(rune(i)),
+			Seller:      "cosmos1seller" + string(rune(i)),
 			Price:       "1.5",
 			AntAmount:   "1000000",
 			ExecutedAt:  timestamppb.Now(),
@@ -389,6 +393,7 @@ func (suite *KeeperTestSuite) TestSetAuction() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -409,6 +414,7 @@ func (suite *KeeperTestSuite) TestSetAuction_Duplicate() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -429,6 +435,7 @@ func (suite *KeeperTestSuite) TestUpdateAuction() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -451,11 +458,12 @@ func (suite *KeeperTestSuite) TestUpdateAuction() {
 
 func (suite *KeeperTestSuite) TestGetAllAuctions() {
 	// Create multiple auctions
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		auction := &anteilv1.Auction{
 			AuctionId:    "auction" + string(rune(i)),
 			BlockHeight:  uint64(1000 + i),
 			ReservePrice: "1000000",
+			AntAmount:    "1000000",
 			StartTime:    timestamppb.Now(),
 			EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 			Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -475,6 +483,7 @@ func (suite *KeeperTestSuite) TestPlaceBid() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -499,6 +508,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_AuctionClosed() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED,
@@ -515,17 +525,31 @@ func (suite *KeeperTestSuite) TestPlaceBid_AuctionClosed() {
 }
 
 func (suite *KeeperTestSuite) TestSettleAuction() {
+	// Set block time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
 	auction := &anteilv1.Auction{
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
-		StartTime:    timestamppb.Now(),
-		EndTime:      timestamppb.New(time.Now().Add(-1 * time.Hour)), // Past end time
-		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED,
-		WinningBid:   "bid1",
+		AntAmount:    "1000000",
+		StartTime:    timestamppb.New(currentTime.Add(-25 * time.Hour)),
+		EndTime:      timestamppb.New(currentTime.Add(-1 * time.Hour)), // Past end time
+		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
+		WinningBid:   "",
 	}
 
 	err := suite.keeper.SetAuction(suite.ctx, auction)
+	require.NoError(suite.T(), err)
+
+	// Place a bid
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder", "1500000")
+	require.NoError(suite.T(), err)
+
+	// Close the auction
+	auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
+	err = suite.keeper.UpdateAuction(suite.ctx, auction)
 	require.NoError(suite.T(), err)
 
 	// Settle auction
@@ -543,6 +567,7 @@ func (suite *KeeperTestSuite) TestSettleAuction_NotClosed() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -602,12 +627,17 @@ func (suite *KeeperTestSuite) TestUpdateUserPosition() {
 
 // Test ProcessAuctions
 func (suite *KeeperTestSuite) TestProcessAuctions() {
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
 	// Create open auction with past end time
-	pastTime := time.Now().Add(-1 * time.Hour)
+	pastTime := currentTime.Add(-1 * time.Hour)
 	auction := &anteilv1.Auction{
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.New(pastTime.Add(-24 * time.Hour)),
 		EndTime:      timestamppb.New(pastTime),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -629,12 +659,17 @@ func (suite *KeeperTestSuite) TestProcessAuctions() {
 
 // Test BeginBlocker
 func (suite *KeeperTestSuite) TestBeginBlocker() {
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
 	// Create open auction with past end time
-	pastTime := time.Now().Add(-1 * time.Hour)
+	pastTime := currentTime.Add(-1 * time.Hour)
 	auction := &anteilv1.Auction{
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.New(pastTime.Add(-24 * time.Hour)),
 		EndTime:      timestamppb.New(pastTime),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -694,6 +729,7 @@ func (suite *KeeperTestSuite) TestCreateAuction() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -732,6 +768,7 @@ func (suite *KeeperTestSuite) TestGetBid() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -763,12 +800,17 @@ func (suite *KeeperTestSuite) TestGetBid_NotFound() {
 }
 
 func (suite *KeeperTestSuite) TestPlaceBid_AuctionExpired() {
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
 	// Create auction with past end time
-	pastTime := time.Now().Add(-1 * time.Hour)
+	pastTime := currentTime.Add(-1 * time.Hour)
 	auction := &anteilv1.Auction{
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.New(pastTime.Add(-24 * time.Hour)),
 		EndTime:      timestamppb.New(pastTime),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -789,6 +831,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_HigherBid() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
@@ -820,6 +863,7 @@ func (suite *KeeperTestSuite) TestSettleAuction_NoWinningBid() {
 		AuctionId:    "auction1",
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
+		AntAmount:    "1000000",
 		StartTime:    timestamppb.Now(),
 		EndTime:      timestamppb.New(time.Now().Add(-1 * time.Hour)),
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED,

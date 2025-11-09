@@ -362,8 +362,12 @@ func (suite *KeeperTestSuite) TestUpdateAccountActivity() {
 
 // Test BeginBlocker - account activity check
 func (suite *KeeperTestSuite) TestBeginBlocker_InactiveAccounts() {
-	// Create account with old last active time
-	oldTime := time.Now().Add(-400 * 24 * time.Hour) // 400 days ago
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Create account with old last active time (older than 1 year for citizens)
+	oldTime := currentTime.Add(-400 * 24 * time.Hour) // 400 days ago
 	account := &identv1.VerifiedAccount{
 		Address:          "cosmos1test",
 		Role:             identv1.Role_ROLE_CITIZEN,
@@ -388,19 +392,22 @@ func (suite *KeeperTestSuite) TestBeginBlocker_InactiveAccounts() {
 
 // Test EndBlocker
 func (suite *KeeperTestSuite) TestEndBlocker() {
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	oldTime := currentTime.Add(-1 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:          "cosmos1test",
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
-		LastActive:       timestamppb.New(time.Now().Add(-1 * time.Hour)),
+		LastActive:       timestamppb.New(oldTime),
 		IsActive:         true,
 		IdentityHash:     "hash123",
 	}
 
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.NoError(suite.T(), err)
-
-	oldTime := account.LastActive.AsTime()
 
 	// Run EndBlocker
 	err = suite.keeper.EndBlocker(suite.ctx)
@@ -673,8 +680,12 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts() {
 }
 
 func (suite *KeeperTestSuite) TestEndBlocker_UpdatesActivity() {
+	// Set block time to current time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
 	// Create account
-	oldTime := time.Now().Add(-1 * time.Hour)
+	oldTime := currentTime.Add(-1 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:          "cosmos1test",
 		Role:             identv1.Role_ROLE_CITIZEN,
