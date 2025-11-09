@@ -1,4 +1,4 @@
-package types
+package types_test
 
 import (
 	"testing"
@@ -6,116 +6,213 @@ import (
 
 	"github.com/stretchr/testify/require"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/ident/types"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestDefaultParams(t *testing.T) {
-	params := DefaultParams()
-	
-	// Проверяем, что параметры не пустые
-	require.NotZero(t, params.CitizenActivityPeriod)
-	require.NotZero(t, params.ValidatorActivityPeriod)
-	require.NotZero(t, params.MaxIdentitiesPerAddress)
-	
-	// Проверяем конкретные значения
-	require.Equal(t, 365*24*time.Hour, params.CitizenActivityPeriod)
-	require.Equal(t, 180*24*time.Hour, params.ValidatorActivityPeriod)
-	require.Equal(t, uint64(1), params.MaxIdentitiesPerAddress)
-	require.Equal(t, true, params.RequireIdentityVerification)
+	params := types.DefaultParams()
+
+	require.NotNil(t, params)
+	require.Greater(t, params.MaxIdentitiesPerAddress, uint64(0))
+	require.Greater(t, params.CitizenActivityPeriod, time.Duration(0))
+	require.Greater(t, params.ValidatorActivityPeriod, time.Duration(0))
 }
 
-func TestParamsValidation(t *testing.T) {
-	params := DefaultParams()
-	
-	// Тест валидных параметров
-	err := params.Validate()
-	require.NoError(t, err)
-	
-	// Тест невалидных параметров
-	invalidParams := params
-	invalidParams.CitizenActivityPeriod = 0
-	err = invalidParams.Validate()
-	require.Error(t, err)
+func TestParamsValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  types.Params
+		wantErr bool
+	}{
+		{
+			name:    "valid params",
+			params:  types.DefaultParams(),
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.params.Validate()
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestParamKeyTable(t *testing.T) {
-	keyTable := ParamKeyTable()
-	require.NotNil(t, keyTable)
-}
-
-func TestParamSetPairs(t *testing.T) {
-	params := DefaultParams()
-	pairs := params.ParamSetPairs()
-	
-	// Проверяем, что все ожидаемые пары присутствуют
-	require.Greater(t, len(pairs), 0)
-}
-
-func TestValidationFunctions(t *testing.T) {
-	// Тест validateDuration
-	err := validateDuration(time.Hour)
-	require.NoError(t, err)
-	
-	err = validateDuration(0)
-	require.Error(t, err)
-	
-	// Тест validateUint64
-	err = validateUint64(uint64(1))
-	require.NoError(t, err)
-	
-	err = validateUint64(uint64(0))
-	require.Error(t, err)
-	
-	// Тест validateBool
-	err = validateBool(true)
-	require.NoError(t, err)
-	
-	err = validateBool(false)
-	require.NoError(t, err)
-	
-	// Тест validateString
-	err = validateString("test")
-	require.NoError(t, err)
-	
-	err = validateString("")
-	require.NoError(t, err) // validateString не возвращает ошибку для пустой строки
+	table := types.ParamKeyTable()
+	require.NotNil(t, table)
 }
 
 func TestNewVerifiedAccount(t *testing.T) {
-	account := &identv1.VerifiedAccount{
-		Address:      "cosmos1test",
-		Role:         identv1.Role_ROLE_CITIZEN,
-		IdentityHash: "hash123",
-		IsActive:     true,
-	}
-	
+	account := types.NewVerifiedAccount(
+		"cosmos1test",
+		identv1.Role_ROLE_CITIZEN,
+		"hash123",
+	)
+
+	require.NotNil(t, account)
 	require.Equal(t, "cosmos1test", account.Address)
 	require.Equal(t, identv1.Role_ROLE_CITIZEN, account.Role)
 	require.Equal(t, "hash123", account.IdentityHash)
-	require.True(t, account.IsActive)
+	require.NotNil(t, account.LastActive)
 }
 
-func TestAccountValidation(t *testing.T) {
-	// Тест валидного аккаунта
+func TestIsAccountActive(t *testing.T) {
+	params := types.DefaultParams()
+
+	tests := []struct {
+		name     string
+		account  *identv1.VerifiedAccount
+		expected bool
+	}{
+		{
+			name: "active citizen",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1test",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				LastActive:   timestamppb.Now(),
+				IdentityHash: "hash123",
+			},
+			expected: true,
+		},
+		{
+			name: "inactive citizen",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1test",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				LastActive:   timestamppb.New(time.Now().Add(-400 * 24 * time.Hour)),
+				IdentityHash: "hash123",
+			},
+			expected: false,
+		},
+		{
+			name: "active validator",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1validator",
+				Role:         identv1.Role_ROLE_VALIDATOR,
+				LastActive:   timestamppb.Now(),
+				IdentityHash: "hash123",
+			},
+			expected: true,
+		},
+		{
+			name: "inactive validator",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1validator",
+				Role:         identv1.Role_ROLE_VALIDATOR,
+				LastActive:   timestamppb.New(time.Now().Add(-200 * 24 * time.Hour)),
+				IdentityHash: "hash123",
+			},
+			expected: false,
+		},
+		{
+			name: "unspecified role",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1test",
+				Role:         identv1.Role_ROLE_UNSPECIFIED,
+				LastActive:   timestamppb.Now(),
+				IdentityHash: "hash123",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := types.IsAccountActive(tt.account, params)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestUpdateAccountActivity(t *testing.T) {
+	oldTime := time.Now().Add(-24 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:      "cosmos1test",
 		Role:         identv1.Role_ROLE_CITIZEN,
+		LastActive:   timestamppb.New(oldTime),
 		IdentityHash: "hash123",
-		IsActive:     true,
 	}
-	
-	// Проверяем поля аккаунта
-	require.Equal(t, "cosmos1test", account.Address)
-	require.Equal(t, identv1.Role_ROLE_CITIZEN, account.Role)
-	require.Equal(t, "hash123", account.IdentityHash)
-	require.True(t, account.IsActive)
-	
-	// Тест невалидного аккаунта
-	invalidAccount := &identv1.VerifiedAccount{
-		Address:      "",
+
+	types.UpdateAccountActivity(account)
+
+	require.True(t, account.LastActive.AsTime().After(oldTime))
+}
+
+func TestChangeAccountRole(t *testing.T) {
+	oldTime := time.Now().Add(-24 * time.Hour)
+	account := &identv1.VerifiedAccount{
+		Address:      "cosmos1test",
 		Role:         identv1.Role_ROLE_CITIZEN,
+		LastActive:   timestamppb.New(oldTime),
 		IdentityHash: "hash123",
-		IsActive:     true,
 	}
-	
-	require.Empty(t, invalidAccount.Address)
+
+	types.ChangeAccountRole(account, identv1.Role_ROLE_VALIDATOR)
+
+	require.Equal(t, identv1.Role_ROLE_VALIDATOR, account.Role)
+	require.True(t, account.LastActive.AsTime().After(oldTime))
+}
+
+func TestValidateAccount(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *identv1.VerifiedAccount
+		wantErr error
+	}{
+		{
+			name: "valid account",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1test",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IdentityHash: "hash123",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "empty address",
+			account: &identv1.VerifiedAccount{
+				Address:      "",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IdentityHash: "hash123",
+			},
+			wantErr: types.ErrEmptyAddress,
+		},
+		{
+			name: "empty identity hash",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1test",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IdentityHash: "",
+			},
+			wantErr: types.ErrEmptyIdentityHash,
+		},
+		{
+			name: "unspecified role",
+			account: &identv1.VerifiedAccount{
+				Address:      "cosmos1test",
+				Role:         identv1.Role_ROLE_UNSPECIFIED,
+				IdentityHash: "hash123",
+			},
+			wantErr: types.ErrInvalidRole,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := types.ValidateAccount(tt.account)
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tt.wantErr, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

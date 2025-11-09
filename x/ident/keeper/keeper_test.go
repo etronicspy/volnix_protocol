@@ -707,3 +707,199 @@ func (suite *KeeperTestSuite) TestEndBlocker_UpdatesActivity() {
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.LastActive.AsTime().After(oldTime))
 }
+
+// Additional tests for better coverage
+
+func (suite *KeeperTestSuite) TestGetParams() {
+	params := suite.keeper.GetParams(suite.ctx)
+	require.NotNil(suite.T(), params)
+	require.Greater(suite.T(), params.MaxIdentitiesPerAddress, uint64(0))
+}
+
+func (suite *KeeperTestSuite) TestSetParams() {
+	params := types.DefaultParams()
+	params.MaxIdentitiesPerAddress = 500
+
+	suite.keeper.SetParams(suite.ctx, params)
+
+	retrieved := suite.keeper.GetParams(suite.ctx)
+	require.Equal(suite.T(), uint64(500), retrieved.MaxIdentitiesPerAddress)
+}
+
+func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts_NoChange() {
+	// Set block time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Create account with recent activity
+	account := &identv1.VerifiedAccount{
+		Address:          "cosmos1test",
+		Role:             identv1.Role_ROLE_CITIZEN,
+		VerificationDate: timestamppb.Now(),
+		LastActive:       timestamppb.Now(),
+		IsActive:         true,
+		IdentityHash:     "hash123",
+	}
+
+	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
+	require.NoError(suite.T(), err)
+
+	// Run BeginBlocker
+	err = suite.keeper.BeginBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify account role unchanged
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
+}
+
+func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
+	// Set block time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Create validator with old activity (>180 days)
+	oldTime := currentTime.Add(-200 * 24 * time.Hour)
+	account := &identv1.VerifiedAccount{
+		Address:          "cosmos1validator",
+		Role:             identv1.Role_ROLE_VALIDATOR,
+		VerificationDate: timestamppb.Now(),
+		LastActive:       timestamppb.New(oldTime),
+		IsActive:         true,
+		IdentityHash:     "hash123",
+	}
+
+	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
+	require.NoError(suite.T(), err)
+
+	// Run BeginBlocker
+	err = suite.keeper.BeginBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify validator was downgraded
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), identv1.Role_ROLE_UNSPECIFIED, retrieved.Role)
+}
+
+func (suite *KeeperTestSuite) TestChangeAccountRole_ExceedsLimit() {
+	// Set low limit
+	params := types.DefaultParams()
+	params.MaxIdentitiesPerAddress = 1
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Create one validator
+	account1 := &identv1.VerifiedAccount{
+		Address:          "cosmos1validator1",
+		Role:             identv1.Role_ROLE_VALIDATOR,
+		VerificationDate: timestamppb.Now(),
+		LastActive:       timestamppb.Now(),
+		IsActive:         true,
+		IdentityHash:     "hash1",
+	}
+
+	err := suite.keeper.SetVerifiedAccount(suite.ctx, account1)
+	require.NoError(suite.T(), err)
+
+	// Create citizen and try to change to validator (should fail due to limit)
+	account2 := &identv1.VerifiedAccount{
+		Address:          "cosmos1citizen",
+		Role:             identv1.Role_ROLE_CITIZEN,
+		VerificationDate: timestamppb.Now(),
+		LastActive:       timestamppb.Now(),
+		IsActive:         true,
+		IdentityHash:     "hash2",
+	}
+
+	err = suite.keeper.SetVerifiedAccount(suite.ctx, account2)
+	require.NoError(suite.T(), err)
+
+	// Try to change citizen to validator (should fail)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen", identv1.Role_ROLE_VALIDATOR)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "account limit exceeded")
+}
+
+func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_Empty() {
+	accounts, err := suite.keeper.GetAllVerifiedAccounts(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Empty(suite.T(), accounts)
+}
+
+func (suite *KeeperTestSuite) TestGetAllRoleMigrations_Empty() {
+	migrations, err := suite.keeper.GetAllRoleMigrations(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Empty(suite.T(), migrations)
+}
+
+func (suite *KeeperTestSuite) TestSetRoleMigration_Update() {
+	migration := &identv1.RoleMigration{
+		FromAddress:   "cosmos1from",
+		ToAddress:     "cosmos1to",
+		FromRole:      identv1.Role_ROLE_CITIZEN,
+		ToRole:        identv1.Role_ROLE_VALIDATOR,
+		MigrationHash: "hash123",
+		ZkpProof:      "proof123",
+		IsCompleted:   false,
+	}
+
+	err := suite.keeper.SetRoleMigration(suite.ctx, migration)
+	require.NoError(suite.T(), err)
+
+	// Update migration
+	migration.IsCompleted = true
+	err = suite.keeper.SetRoleMigration(suite.ctx, migration)
+	require.NoError(suite.T(), err)
+
+	// Verify update
+	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	require.NoError(suite.T(), err)
+	require.True(suite.T(), retrieved.IsCompleted)
+}
+
+func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
+	// Create source account
+	sourceAccount := &identv1.VerifiedAccount{
+		Address:          "cosmos1from",
+		Role:             identv1.Role_ROLE_CITIZEN,
+		VerificationDate: timestamppb.Now(),
+		LastActive:       timestamppb.Now(),
+		IsActive:         true,
+		IdentityHash:     "hash123",
+	}
+
+	err := suite.keeper.SetVerifiedAccount(suite.ctx, sourceAccount)
+	require.NoError(suite.T(), err)
+
+	// Create target account (already exists)
+	targetAccount := &identv1.VerifiedAccount{
+		Address:          "cosmos1to",
+		Role:             identv1.Role_ROLE_CITIZEN,
+		VerificationDate: timestamppb.Now(),
+		LastActive:       timestamppb.Now(),
+		IsActive:         true,
+		IdentityHash:     "hash456",
+	}
+
+	err = suite.keeper.SetVerifiedAccount(suite.ctx, targetAccount)
+	require.NoError(suite.T(), err)
+
+	// Create migration
+	migration := &identv1.RoleMigration{
+		FromAddress:   "cosmos1from",
+		ToAddress:     "cosmos1to",
+		FromRole:      identv1.Role_ROLE_CITIZEN,
+		ToRole:        identv1.Role_ROLE_CITIZEN,
+		MigrationHash: "hash123",
+		ZkpProof:      "proof123",
+		IsCompleted:   false,
+	}
+
+	err = suite.keeper.SetRoleMigration(suite.ctx, migration)
+	require.NoError(suite.T(), err)
+
+	// Try to execute migration (should fail because target exists)
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	require.Error(suite.T(), err)
+}

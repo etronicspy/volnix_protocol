@@ -148,10 +148,10 @@ func (ee *EconomicEngine) executeTrade(ctx sdk.Context, buyOrder, sellOrder *ant
 	}
 
 	// Update orders in store
-	if err := ee.keeper.SetOrder(ctx, buyOrder); err != nil {
+	if err := ee.keeper.UpdateOrder(ctx, buyOrder); err != nil {
 		return fmt.Errorf("failed to update buy order: %w", err)
 	}
-	if err := ee.keeper.SetOrder(ctx, sellOrder); err != nil {
+	if err := ee.keeper.UpdateOrder(ctx, sellOrder); err != nil {
 		return fmt.Errorf("failed to update sell order: %w", err)
 	}
 
@@ -230,7 +230,7 @@ func (ee *EconomicEngine) settleAuction(ctx sdk.Context, auction *anteilv1.Aucti
 	if len(bids) == 0 {
 		// No bids, cancel auction
 		auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CANCELLED
-		return ee.keeper.SetAuction(ctx, auction)
+		return ee.keeper.UpdateAuction(ctx, auction)
 	}
 
 	// Find highest bid
@@ -250,7 +250,7 @@ func (ee *EconomicEngine) settleAuction(ctx sdk.Context, auction *anteilv1.Aucti
 	auction.WinningBid = winningBid.BidId // Use BidId instead of Amount
 
 	// Update auction in store
-	if err := ee.keeper.SetAuction(ctx, auction); err != nil {
+	if err := ee.keeper.UpdateAuction(ctx, auction); err != nil {
 		return fmt.Errorf("failed to update auction: %w", err)
 	}
 
@@ -290,14 +290,14 @@ func (ee *EconomicEngine) CalculateMarketMetrics(ctx sdk.Context) (*MarketMetric
 
 	// Calculate metrics
 	metrics := &MarketMetrics{
-		TotalOrders:       len(orders),
-		ActiveOrders:      0,
-		TotalTrades:       len(trades),
-		TotalVolume:       0.0,
-		AveragePrice:      0.0,
-		HighestPrice:      0.0,
-		LowestPrice:       999999.0,
-		PriceSpread:       0.0,
+		TotalOrders:  len(orders),
+		ActiveOrders: 0,
+		TotalTrades:  len(trades),
+		TotalVolume:  0.0,
+		AveragePrice: 0.0,
+		HighestPrice: 0.0,
+		LowestPrice:  999999.0,
+		PriceSpread:  0.0,
 	}
 
 	// Count active orders
@@ -338,14 +338,14 @@ func (ee *EconomicEngine) CalculateMarketMetrics(ctx sdk.Context) (*MarketMetric
 
 // MarketMetrics represents market statistics
 type MarketMetrics struct {
-	TotalOrders   int     `json:"total_orders"`
-	ActiveOrders  int     `json:"active_orders"`
-	TotalTrades   int     `json:"total_trades"`
-	TotalVolume   float64 `json:"total_volume"`
-	AveragePrice  float64 `json:"average_price"`
-	HighestPrice  float64 `json:"highest_price"`
-	LowestPrice   float64 `json:"lowest_price"`
-	PriceSpread   float64 `json:"price_spread"`
+	TotalOrders  int     `json:"total_orders"`
+	ActiveOrders int     `json:"active_orders"`
+	TotalTrades  int     `json:"total_trades"`
+	TotalVolume  float64 `json:"total_volume"`
+	AveragePrice float64 `json:"average_price"`
+	HighestPrice float64 `json:"highest_price"`
+	LowestPrice  float64 `json:"lowest_price"`
+	PriceSpread  float64 `json:"price_spread"`
 }
 
 // ProcessMarketMaking handles automated market making
