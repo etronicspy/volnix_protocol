@@ -387,7 +387,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_InactiveAccounts() {
 	// Verify account was downgraded to guest
 	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_UNSPECIFIED, retrieved.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, retrieved.Role)
 }
 
 // Test EndBlocker
@@ -759,8 +759,13 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
 	currentTime := time.Now()
 	suite.ctx = suite.ctx.WithBlockTime(currentTime)
 
-	// Create validator with old activity (>180 days)
-	oldTime := currentTime.Add(-200 * 24 * time.Hour)
+	// Set shorter activity period for testing
+	params := suite.keeper.GetParams(suite.ctx)
+	params.ValidatorActivityPeriod = 60 * 24 * time.Hour // 60 days
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Create validator with old activity (older than activity period)
+	oldTime := currentTime.Add(-70 * 24 * time.Hour) // 70 days ago (older than 60 days)
 	account := &identv1.VerifiedAccount{
 		Address:          "cosmos1validator",
 		Role:             identv1.Role_ROLE_VALIDATOR,
@@ -780,7 +785,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
 	// Verify validator was downgraded
 	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_UNSPECIFIED, retrieved.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, retrieved.Role)
 }
 
 func (suite *KeeperTestSuite) TestChangeAccountRole_ExceedsLimit() {

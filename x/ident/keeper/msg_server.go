@@ -2,8 +2,11 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/ident/types"
 )
 
 type MsgServer struct {
@@ -18,27 +21,120 @@ func NewMsgServer(k *Keeper) MsgServer {
 var _ identv1.MsgServer = (*MsgServer)(nil)
 
 func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIdentity) (*identv1.MsgVerifyIdentityResponse, error) {
-	// Simple stub implementation
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Validate request
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	if req.Address == "" {
+		return nil, types.ErrEmptyAddress
+	}
+	if req.ZkpProof == "" {
+		return nil, fmt.Errorf("ZKP proof cannot be empty")
+	}
+
+	// Generate identity hash from ZKP proof
+	identityHash := fmt.Sprintf("hash-%s", req.ZkpProof[:16])
+
+	// Create verified account with default CITIZEN role
+	account := types.NewVerifiedAccount(
+		req.Address,
+		identv1.Role_ROLE_CITIZEN,
+		identityHash,
+	)
+
+	// Set verified account
+	err := s.k.SetVerifiedAccount(sdkCtx, account)
+	if err != nil {
+		return nil, err
+	}
+
 	return &identv1.MsgVerifyIdentityResponse{
 		Success:        true,
-		VerificationId: "verification-123",
-		IdentityHash:   "hash-456",
+		VerificationId: fmt.Sprintf("verification-%s", req.Address),
+		IdentityHash:   identityHash,
 	}, nil
 }
 
 func (s MsgServer) MigrateRole(ctx context.Context, req *identv1.MsgMigrateRole) (*identv1.MsgMigrateRoleResponse, error) {
-	// Simple stub implementation
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Validate request
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	if req.FromAddress == "" {
+		return nil, types.ErrEmptyAddress
+	}
+	if req.ToAddress == "" {
+		return nil, types.ErrEmptyAddress
+	}
+	if req.ZkpProof == "" {
+		return nil, fmt.Errorf("ZKP proof cannot be empty")
+	}
+
+	// Get from account to get role
+	fromAccount, err := s.k.GetVerifiedAccount(sdkCtx, req.FromAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate migration hash
+	migrationHash := fmt.Sprintf("migration-%s-%s", req.FromAddress, req.ToAddress)
+
+	// Create role migration
+	migration := &identv1.RoleMigration{
+		FromAddress:   req.FromAddress,
+		ToAddress:     req.ToAddress,
+		FromRole:      fromAccount.Role,
+		ToRole:        fromAccount.Role,
+		MigrationHash: migrationHash,
+		ZkpProof:      req.ZkpProof,
+		IsCompleted:   false,
+	}
+
+	// Set role migration
+	err = s.k.SetRoleMigration(sdkCtx, migration)
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute role migration
+	err = s.k.ExecuteRoleMigration(sdkCtx, req.FromAddress, req.ToAddress)
+	if err != nil {
+		return nil, err
+	}
+
 	return &identv1.MsgMigrateRoleResponse{
 		Success:       true,
-		MigrationHash: "migration-123",
+		MigrationHash: migrationHash,
 	}, nil
 }
 
 func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (*identv1.MsgChangeRoleResponse, error) {
-	// Simple stub implementation
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Validate request
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	if req.Address == "" {
+		return nil, types.ErrEmptyAddress
+	}
+	if req.NewRole == identv1.Role_ROLE_UNSPECIFIED {
+		return nil, types.ErrInvalidRole
+	}
+
+	// Change account role
+	err := s.k.ChangeAccountRole(sdkCtx, req.Address, req.NewRole)
+	if err != nil {
+		return nil, err
+	}
+
 	return &identv1.MsgChangeRoleResponse{
 		Success:    true,
-		ChangeHash: "change-123",
+		ChangeHash: fmt.Sprintf("change-%s-%d", req.Address, req.NewRole),
 	}, nil
 }
 

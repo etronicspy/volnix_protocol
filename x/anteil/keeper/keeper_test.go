@@ -535,8 +535,8 @@ func (suite *KeeperTestSuite) TestSettleAuction() {
 		BlockHeight:  1000,
 		ReservePrice: "1000000",
 		AntAmount:    "1000000",
-		StartTime:    timestamppb.New(currentTime.Add(-25 * time.Hour)),
-		EndTime:      timestamppb.New(currentTime.Add(-1 * time.Hour)), // Past end time
+		StartTime:    timestamppb.New(currentTime.Add(-1 * time.Hour)),
+		EndTime:      timestamppb.New(currentTime.Add(1 * time.Hour)), // Future end time for bidding
 		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
 		WinningBid:   "",
 	}
@@ -548,9 +548,13 @@ func (suite *KeeperTestSuite) TestSettleAuction() {
 	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder", "1500000")
 	require.NoError(suite.T(), err)
 
+	// Get updated auction with winning bid
+	updatedAuction, err := suite.keeper.GetAuction(suite.ctx, "auction1")
+	require.NoError(suite.T(), err)
+
 	// Close the auction
-	auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
-	err = suite.keeper.UpdateAuction(suite.ctx, auction)
+	updatedAuction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
+	err = suite.keeper.UpdateAuction(suite.ctx, updatedAuction)
 	require.NoError(suite.T(), err)
 
 	// Settle auction

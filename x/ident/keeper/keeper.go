@@ -118,6 +118,8 @@ func (k Keeper) checkAccountActivity(ctx sdk.Context) error {
 		return fmt.Errorf("failed to get verified accounts: %w", err)
 	}
 
+	// Get params for activity periods
+	params := k.GetParams(ctx)
 	currentTime := ctx.BlockTime()
 
 	for _, account := range allAccounts {
@@ -127,16 +129,16 @@ func (k Keeper) checkAccountActivity(ctx sdk.Context) error {
 		var activityPeriod time.Duration
 		switch account.GetRole() {
 		case identv1.Role_ROLE_CITIZEN:
-			activityPeriod = time.Duration(365 * 24 * time.Hour) // 1 year
+			activityPeriod = params.CitizenActivityPeriod
 		case identv1.Role_ROLE_VALIDATOR:
-			activityPeriod = time.Duration(180 * 24 * time.Hour) // 6 months
+			activityPeriod = params.ValidatorActivityPeriod
 		default:
 			continue // Skip guests
 		}
 
 		if currentTime.Sub(lastActivity) > activityPeriod {
-			// Downgrade role to guest (ROLE_UNSPECIFIED = 0)
-			account.Role = identv1.Role_ROLE_UNSPECIFIED
+			// Downgrade role to guest
+			account.Role = identv1.Role_ROLE_GUEST
 
 			// Update account in store
 			if err := k.UpdateVerifiedAccount(ctx, account); err != nil {
