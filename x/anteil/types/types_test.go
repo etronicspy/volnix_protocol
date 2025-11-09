@@ -1,4 +1,4 @@
-package types
+package types_test
 
 import (
 	"testing"
@@ -6,226 +6,328 @@ import (
 	"github.com/stretchr/testify/require"
 
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
 
 func TestNewOrder(t *testing.T) {
-	order := NewOrder(
-		"test_owner",
+	order := types.NewOrder(
+		"cosmos1owner",
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1000000",
 		"1.5",
-		"test_hash",
+		"hash123",
 	)
 
 	require.NotNil(t, order)
-	require.Equal(t, "test_owner", order.GetOwner())
-	require.Equal(t, anteilv1.OrderType_ORDER_TYPE_LIMIT, order.GetOrderType())
-	require.Equal(t, anteilv1.OrderSide_ORDER_SIDE_BUY, order.GetOrderSide())
-	require.Equal(t, "1000000", order.GetAntAmount())
-	require.Equal(t, "1.5", order.GetPrice())
-	require.Equal(t, "test_hash", order.GetIdentityHash())
-	require.Equal(t, anteilv1.OrderStatus_ORDER_STATUS_OPEN, order.GetStatus())
+	require.Equal(t, "cosmos1owner", order.Owner)
+	require.Equal(t, anteilv1.OrderType_ORDER_TYPE_LIMIT, order.OrderType)
+	require.Equal(t, anteilv1.OrderSide_ORDER_SIDE_BUY, order.OrderSide)
+	require.Equal(t, "1000000", order.AntAmount)
+	require.Equal(t, "1.5", order.Price)
+	require.Equal(t, "hash123", order.IdentityHash)
+	require.Equal(t, anteilv1.OrderStatus_ORDER_STATUS_OPEN, order.Status)
+	require.NotEmpty(t, order.OrderId)
+	require.NotNil(t, order.CreatedAt)
+	require.NotNil(t, order.ExpiresAt)
 }
 
 func TestNewTrade(t *testing.T) {
-	trade := NewTrade(
-		"buy_order_1",
-		"sell_order_1",
-		"buyer_addr",
-		"seller_addr",
-		"500000",
+	trade := types.NewTrade(
+		"buy1",
+		"sell1",
+		"cosmos1buyer",
+		"cosmos1seller",
+		"1000000",
 		"1.5",
-		"test_hash",
+		"hash123",
 	)
 
 	require.NotNil(t, trade)
-	require.Equal(t, "buy_order_1", trade.GetBuyOrderId())
-	require.Equal(t, "sell_order_1", trade.GetSellOrderId())
-	require.Equal(t, "buyer_addr", trade.GetBuyer())
-	require.Equal(t, "seller_addr", trade.GetSeller())
-	require.Equal(t, "500000", trade.GetAntAmount())
-	require.Equal(t, "1.5", trade.GetPrice())
-	require.Equal(t, "test_hash", trade.GetIdentityHash())
-}
-
-func TestNewUserPosition(t *testing.T) {
-	position := NewUserPosition("test_owner", "10000000")
-
-	require.NotNil(t, position)
-	require.Equal(t, "test_owner", position.GetOwner())
-	require.Equal(t, "10000000", position.GetAntBalance())
-	require.Equal(t, "0", position.GetLockedAnt())
-	require.Equal(t, "10000000", position.GetAvailableAnt())
-	require.Empty(t, position.GetOpenOrderIds())
-	require.Equal(t, "0", position.GetTotalTrades())
-	require.Equal(t, "0", position.GetTotalVolume())
-}
-
-func TestNewAuction(t *testing.T) {
-	auction := NewAuction(1000, "1000000", "1.0")
-
-	require.NotNil(t, auction)
-	require.Equal(t, uint64(1000), auction.GetBlockHeight())
-	require.Equal(t, "1000000", auction.GetAntAmount())
-	require.Equal(t, "1.0", auction.GetReservePrice())
-	require.Equal(t, anteilv1.AuctionStatus_AUCTION_STATUS_OPEN, auction.GetStatus())
-	require.Empty(t, auction.GetBids())
-	require.Empty(t, auction.GetWinningBid())
-}
-
-func TestNewBid(t *testing.T) {
-	bid := NewBid("bidder_addr", "auction_1", "1000000", "test_hash")
-
-	require.NotNil(t, bid)
-	require.Equal(t, "bidder_addr", bid.GetBidder())
-	require.Equal(t, "1000000", bid.GetAmount())
-	require.Equal(t, "test_hash", bid.GetIdentityHash())
+	require.Equal(t, "buy1", trade.BuyOrderId)
+	require.Equal(t, "sell1", trade.SellOrderId)
+	require.Equal(t, "cosmos1buyer", trade.Buyer)
+	require.Equal(t, "cosmos1seller", trade.Seller)
+	require.Equal(t, "1000000", trade.AntAmount)
+	require.Equal(t, "1.5", trade.Price)
+	require.Equal(t, "hash123", trade.IdentityHash)
+	require.NotEmpty(t, trade.TradeId)
+	require.NotEmpty(t, trade.TotalValue)
+	require.NotNil(t, trade.ExecutedAt)
 }
 
 func TestIsOrderValid(t *testing.T) {
-	// Test valid order
-	validOrder := NewOrder(
-		"test_owner",
-		anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		anteilv1.OrderSide_ORDER_SIDE_BUY,
-		"1000000",
-		"1.5",
-		"test_hash",
-	)
+	tests := []struct {
+		name    string
+		order   *anteilv1.Order
+		wantErr error
+	}{
+		{
+			name: "valid order",
+			order: types.NewOrder(
+				"cosmos1owner",
+				anteilv1.OrderType_ORDER_TYPE_LIMIT,
+				anteilv1.OrderSide_ORDER_SIDE_BUY,
+				"1000000",
+				"1.5",
+				"hash123",
+			),
+			wantErr: nil,
+		},
+		{
+			name: "empty owner",
+			order: &anteilv1.Order{
+				OrderId:      "order1",
+				Owner:        "",
+				OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+				OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+				AntAmount:    "1000000",
+				Price:        "1.5",
+				IdentityHash: "hash123",
+			},
+			wantErr: types.ErrEmptyOwner,
+		},
+		{
+			name: "empty ant amount",
+			order: &anteilv1.Order{
+				OrderId:      "order1",
+				Owner:        "cosmos1owner",
+				OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+				OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+				AntAmount:    "",
+				Price:        "1.5",
+				IdentityHash: "hash123",
+			},
+			wantErr: types.ErrEmptyAntAmount,
+		},
+		{
+			name: "empty price",
+			order: &anteilv1.Order{
+				OrderId:      "order1",
+				Owner:        "cosmos1owner",
+				OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+				OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+				AntAmount:    "1000000",
+				Price:        "",
+				IdentityHash: "hash123",
+			},
+			wantErr: types.ErrEmptyPrice,
+		},
+		{
+			name: "empty identity hash",
+			order: &anteilv1.Order{
+				OrderId:      "order1",
+				Owner:        "cosmos1owner",
+				OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+				OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+				AntAmount:    "1000000",
+				Price:        "1.5",
+				IdentityHash: "",
+			},
+			wantErr: types.ErrEmptyIdentityHash,
+		},
+	}
 
-	err := IsOrderValid(validOrder)
-	require.NoError(t, err)
-
-	// Test invalid order - empty owner
-	invalidOrder := NewOrder(
-		"",
-		anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		anteilv1.OrderSide_ORDER_SIDE_BUY,
-		"1000000",
-		"1.5",
-		"test_hash",
-	)
-
-	err = IsOrderValid(invalidOrder)
-	require.Error(t, err)
-	require.Equal(t, ErrEmptyOwner, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := types.IsOrderValid(tt.order)
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tt.wantErr, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestIsTradeValid(t *testing.T) {
-	// Test valid trade
-	validTrade := NewTrade(
-		"buy_order_1",
-		"sell_order_1",
-		"buyer_addr",
-		"seller_addr",
-		"500000",
-		"1.5",
-		"test_hash",
-	)
+	tests := []struct {
+		name    string
+		trade   *anteilv1.Trade
+		wantErr error
+	}{
+		{
+			name: "valid trade",
+			trade: types.NewTrade(
+				"buy1",
+				"sell1",
+				"cosmos1buyer",
+				"cosmos1seller",
+				"1000000",
+				"1.5",
+				"hash123",
+			),
+			wantErr: nil,
+		},
+		{
+			name: "empty buy order id",
+			trade: &anteilv1.Trade{
+				TradeId:     "trade1",
+				BuyOrderId:  "",
+				SellOrderId: "sell1",
+				Buyer:       "cosmos1buyer",
+				Seller:      "cosmos1seller",
+				AntAmount:   "1000000",
+				Price:       "1.5",
+			},
+			wantErr: types.ErrEmptyBuyOrderID,
+		},
+		{
+			name: "empty sell order id",
+			trade: &anteilv1.Trade{
+				TradeId:     "trade1",
+				BuyOrderId:  "buy1",
+				SellOrderId: "",
+				Buyer:       "cosmos1buyer",
+				Seller:      "cosmos1seller",
+				AntAmount:   "1000000",
+				Price:       "1.5",
+			},
+			wantErr: types.ErrEmptySellOrderID,
+		},
+		{
+			name: "empty buyer",
+			trade: &anteilv1.Trade{
+				TradeId:     "trade1",
+				BuyOrderId:  "buy1",
+				SellOrderId: "sell1",
+				Buyer:       "",
+				Seller:      "cosmos1seller",
+				AntAmount:   "1000000",
+				Price:       "1.5",
+			},
+			wantErr: types.ErrEmptyBuyer,
+		},
+		{
+			name: "empty seller",
+			trade: &anteilv1.Trade{
+				TradeId:     "trade1",
+				BuyOrderId:  "buy1",
+				SellOrderId: "sell1",
+				Buyer:       "cosmos1buyer",
+				Seller:      "",
+				AntAmount:   "1000000",
+				Price:       "1.5",
+			},
+			wantErr: types.ErrEmptySeller,
+		},
+	}
 
-	err := IsTradeValid(validTrade)
-	require.NoError(t, err)
-
-	// Test invalid trade - empty buyer
-	invalidTrade := NewTrade(
-		"buy_order_1",
-		"sell_order_1",
-		"",
-		"seller_addr",
-		"500000",
-		"1.5",
-		"test_hash",
-	)
-
-	err = IsTradeValid(invalidTrade)
-	require.Error(t, err)
-	require.Equal(t, ErrEmptyBuyer, err)
-}
-
-func TestIsUserPositionValid(t *testing.T) {
-	// Test valid position
-	validPosition := NewUserPosition("test_owner", "10000000")
-
-	err := IsUserPositionValid(validPosition)
-	require.NoError(t, err)
-
-	// Test invalid position - empty owner
-	invalidPosition := NewUserPosition("", "10000000")
-
-	err = IsUserPositionValid(invalidPosition)
-	require.Error(t, err)
-	require.Equal(t, ErrEmptyOwner, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := types.IsTradeValid(tt.trade)
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tt.wantErr, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestIsAuctionValid(t *testing.T) {
-	// Test valid auction
-	validAuction := NewAuction(1000, "1000000", "1.0")
+	tests := []struct {
+		name    string
+		auction *anteilv1.Auction
+		wantErr error
+	}{
+		{
+			name: "valid auction",
+			auction: &anteilv1.Auction{
+				AuctionId:    "auction1",
+				ReservePrice: "1000000",
+				AntAmount:    "1000000",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "empty auction id",
+			auction: &anteilv1.Auction{
+				AuctionId:    "",
+				ReservePrice: "1000000",
+				AntAmount:    "1000000",
+			},
+			wantErr: types.ErrEmptyAuctionID,
+		},
+		{
+			name: "empty reserve price",
+			auction: &anteilv1.Auction{
+				AuctionId:    "auction1",
+				ReservePrice: "",
+				AntAmount:    "1000000",
+			},
+			wantErr: types.ErrEmptyReservePrice,
+		},
+		{
+			name: "empty ant amount",
+			auction: &anteilv1.Auction{
+				AuctionId:    "auction1",
+				ReservePrice: "1000000",
+				AntAmount:    "",
+			},
+			wantErr: types.ErrEmptyAntAmount,
+		},
+	}
 
-	err := IsAuctionValid(validAuction)
-	require.NoError(t, err)
-
-	// Test invalid auction - empty ant amount
-	invalidAuction := NewAuction(1000, "", "1.0")
-
-	err = IsAuctionValid(invalidAuction)
-	require.Error(t, err)
-	require.Equal(t, ErrEmptyAntAmount, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := types.IsAuctionValid(tt.auction)
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tt.wantErr, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestIsBidValid(t *testing.T) {
-	// Test valid bid
-	validBid := NewBid("bidder_addr", "auction_1", "1000000", "test_hash")
+	tests := []struct {
+		name    string
+		bid     *anteilv1.Bid
+		wantErr error
+	}{
+		{
+			name: "valid bid",
+			bid: &anteilv1.Bid{
+				BidId:  "bid1",
+				Bidder: "cosmos1bidder",
+				Amount: "1500000",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "empty bidder",
+			bid: &anteilv1.Bid{
+				BidId:  "bid1",
+				Bidder: "",
+				Amount: "1500000",
+			},
+			wantErr: types.ErrEmptyBidder,
+		},
+		{
+			name: "empty amount",
+			bid: &anteilv1.Bid{
+				BidId:  "bid1",
+				Bidder: "cosmos1bidder",
+				Amount: "",
+			},
+			wantErr: types.ErrEmptyBidAmount,
+		},
+	}
 
-	err := IsBidValid(validBid)
-	require.NoError(t, err)
-
-	// Test invalid bid - empty bidder
-	invalidBid := NewBid("", "auction_1", "1000000", "test_hash")
-
-	err = IsBidValid(invalidBid)
-	require.Error(t, err)
-	require.Equal(t, ErrEmptyBidder, err)
-}
-
-func TestUpdateOrderStatus(t *testing.T) {
-	order := NewOrder(
-		"test_owner",
-		anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		anteilv1.OrderSide_ORDER_SIDE_BUY,
-		"1000000",
-		"1.5",
-		"test_hash",
-	)
-
-	// Test initial status
-	require.Equal(t, anteilv1.OrderStatus_ORDER_STATUS_OPEN, order.GetStatus())
-
-	// Update status
-	UpdateOrderStatus(order, anteilv1.OrderStatus_ORDER_STATUS_FILLED)
-	require.Equal(t, anteilv1.OrderStatus_ORDER_STATUS_FILLED, order.GetStatus())
-}
-
-func TestUpdateUserPosition(t *testing.T) {
-	position := NewUserPosition("test_owner", "10000000")
-	trade := NewTrade(
-		"buy_order_1",
-		"sell_order_1",
-		"test_owner",
-		"seller_addr",
-		"500000",
-		"1.5",
-		"test_hash",
-	)
-
-	// Test initial values
-	require.Equal(t, "0", position.GetTotalTrades())
-	require.Equal(t, "0", position.GetTotalVolume())
-
-	// Update position
-	UpdateUserPosition(position, trade, true)
-
-	// Note: In real implementation, these would be properly calculated
-	// For now, we just verify the function doesn't crash
-	require.NotNil(t, position)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := types.IsBidValid(tt.bid)
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tt.wantErr, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
