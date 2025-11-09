@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -888,4 +889,240 @@ func (suite *KeeperTestSuite) TestGetBidsByAuction() {
 func (suite *KeeperTestSuite) TestEndBlocker() {
 	err := suite.keeper.EndBlocker(suite.ctx)
 	require.NoError(suite.T(), err)
+}
+
+// Additional tests for better coverage
+
+func (suite *KeeperTestSuite) TestGetOrdersByOwner_MultipleOwners() {
+	// Create orders for owner1
+	for i := 0; i < 3; i++ {
+		order := &anteilv1.Order{
+			OrderId:      fmt.Sprintf("order_owner1_%d", i),
+			Owner:        "cosmos1owner1",
+			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+			AntAmount:    "1000000",
+			Price:        "1.5",
+			Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+			CreatedAt:    timestamppb.Now(),
+			IdentityHash: fmt.Sprintf("hash1_%d", i),
+		}
+		err := suite.keeper.SetOrder(suite.ctx, order)
+		require.NoError(suite.T(), err)
+	}
+
+	// Create orders for owner2
+	for i := 0; i < 2; i++ {
+		order := &anteilv1.Order{
+			OrderId:      fmt.Sprintf("order_owner2_%d", i),
+			Owner:        "cosmos1owner2",
+			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
+			AntAmount:    "1000000",
+			Price:        "1.5",
+			Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+			CreatedAt:    timestamppb.Now(),
+			IdentityHash: fmt.Sprintf("hash2_%d", i),
+		}
+		err := suite.keeper.SetOrder(suite.ctx, order)
+		require.NoError(suite.T(), err)
+	}
+
+	// Get orders for owner1
+	orders1, err := suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1owner1")
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), orders1, 3)
+
+	// Get orders for owner2
+	orders2, err := suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1owner2")
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), orders2, 2)
+
+	// Get orders for non-existent owner
+	orders3, err := suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1nonexistent")
+	require.NoError(suite.T(), err)
+	require.Empty(suite.T(), orders3)
+}
+
+func (suite *KeeperTestSuite) TestUpdateOrder_NotFound() {
+	order := &anteilv1.Order{
+		OrderId:      "nonexistent",
+		Owner:        "cosmos1test",
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+		AntAmount:    "1000000",
+		Price:        "1.5",
+		Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+		CreatedAt:    timestamppb.Now(),
+		IdentityHash: "hash123",
+	}
+
+	err := suite.keeper.UpdateOrder(suite.ctx, order)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrOrderNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestCancelOrder_NotFound() {
+	err := suite.keeper.CancelOrder(suite.ctx, "nonexistent")
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrOrderNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestDeleteOrder_NotFound() {
+	err := suite.keeper.DeleteOrder(suite.ctx, "nonexistent")
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrOrderNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestUpdateAuction_NotFound() {
+	auction := &anteilv1.Auction{
+		AuctionId:    "nonexistent",
+		BlockHeight:  1000,
+		ReservePrice: "1000000",
+		AntAmount:    "1000000",
+		StartTime:    timestamppb.Now(),
+		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
+		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
+		WinningBid:   "",
+	}
+
+	err := suite.keeper.UpdateAuction(suite.ctx, auction)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrAuctionNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestPlaceBid_AuctionNotFound() {
+	err := suite.keeper.PlaceBid(suite.ctx, "nonexistent", "cosmos1bidder", "1500000")
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrAuctionNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestSettleAuction_NotFound() {
+	err := suite.keeper.SettleAuction(suite.ctx, "nonexistent")
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrAuctionNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestGetUserPosition_Create() {
+	position := &anteilv1.UserPosition{
+		Owner:        "cosmos1newuser",
+		AntBalance:   "5000000",
+		TotalTrades:  "10",
+		TotalVolume:  "10000000",
+		LastActivity: timestamppb.Now(),
+	}
+
+	err := suite.keeper.SetUserPosition(suite.ctx, position)
+	require.NoError(suite.T(), err)
+
+	retrieved, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1newuser")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "cosmos1newuser", retrieved.Owner)
+	require.Equal(suite.T(), "5000000", retrieved.AntBalance)
+	require.Equal(suite.T(), "10", retrieved.TotalTrades)
+}
+
+func (suite *KeeperTestSuite) TestExecuteTrade_BuyOrderNotFound() {
+	sellOrder := &anteilv1.Order{
+		OrderId:      "sell1",
+		Owner:        "cosmos1seller",
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
+		AntAmount:    "1000000",
+		Price:        "1.5",
+		Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+		CreatedAt:    timestamppb.Now(),
+		IdentityHash: "hash_sell",
+	}
+
+	err := suite.keeper.SetOrder(suite.ctx, sellOrder)
+	require.NoError(suite.T(), err)
+
+	// Try to execute trade with non-existent buy order
+	err = suite.keeper.ExecuteTrade(suite.ctx, "nonexistent", "sell1")
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrOrderNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestExecuteTrade_SellOrderNotFound() {
+	buyOrder := &anteilv1.Order{
+		OrderId:      "buy1",
+		Owner:        "cosmos1buyer",
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+		AntAmount:    "1000000",
+		Price:        "1.5",
+		Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+		CreatedAt:    timestamppb.Now(),
+		IdentityHash: "hash_buy",
+	}
+
+	err := suite.keeper.SetOrder(suite.ctx, buyOrder)
+	require.NoError(suite.T(), err)
+
+	// Try to execute trade with non-existent sell order
+	err = suite.keeper.ExecuteTrade(suite.ctx, "buy1", "nonexistent")
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrOrderNotFound, err)
+}
+
+func (suite *KeeperTestSuite) TestGetAllOrders_Empty() {
+	orders, err := suite.keeper.GetAllOrders(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Empty(suite.T(), orders)
+}
+
+func (suite *KeeperTestSuite) TestGetAllAuctions_Empty() {
+	auctions, err := suite.keeper.GetAllAuctions(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Empty(suite.T(), auctions)
+}
+
+func (suite *KeeperTestSuite) TestGetAllTrades_Empty() {
+	trades, err := suite.keeper.GetAllTrades(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Empty(suite.T(), trades)
+}
+
+func (suite *KeeperTestSuite) TestCreateOrder_Alias() {
+	order := &anteilv1.Order{
+		OrderId:      "order1",
+		Owner:        "cosmos1test",
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+		AntAmount:    "1000000",
+		Price:        "1.5",
+		Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+		CreatedAt:    timestamppb.Now(),
+		IdentityHash: "hash123",
+	}
+
+	// Test CreateOrder (alias for SetOrder)
+	err := suite.keeper.CreateOrder(suite.ctx, order)
+	require.NoError(suite.T(), err)
+
+	retrieved, err := suite.keeper.GetOrder(suite.ctx, "order1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), order.OrderId, retrieved.OrderId)
+}
+
+func (suite *KeeperTestSuite) TestCreateAuction_Alias() {
+	auction := &anteilv1.Auction{
+		AuctionId:    "auction1",
+		BlockHeight:  1000,
+		ReservePrice: "1000000",
+		AntAmount:    "1000000",
+		StartTime:    timestamppb.Now(),
+		EndTime:      timestamppb.New(time.Now().Add(24 * time.Hour)),
+		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
+		WinningBid:   "",
+	}
+
+	// Test CreateAuction (alias for SetAuction)
+	err := suite.keeper.CreateAuction(suite.ctx, auction)
+	require.NoError(suite.T(), err)
+
+	retrieved, err := suite.keeper.GetAuction(suite.ctx, "auction1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), auction.AuctionId, retrieved.AuctionId)
 }
