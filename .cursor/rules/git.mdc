@@ -1,0 +1,30 @@
+---
+alwaysApply: true
+---
+
+# Git Workflow and Commit Conventions
+
+## Commit Messages
+- Follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <subject>`
+- Types: feat, fix, docs, style, refactor, test, chore, perf, ci
+- Scope examples: `ident`, `lizenz`, `anteil`, `consensus`, `frontend`, `docs`, `proto`
+- Examples: `feat(ident): add ZKP verification endpoint`, `fix(anteil): correct order matching`
+
+## Branching
+- `main`: Production-ready code
+- `develop`: Integration branch
+- `feature/<name>`, `fix/<name>`, `hotfix/<name>`, `release/<version>`
+- Create feature branches from `develop`
+- Keep branches focused, delete after merge
+
+## Pull Requests
+- Clear title following commit convention
+- Description, link to issues, test coverage, documentation updates
+- At least one approval required, all CI checks must pass
+- Labels: feature, bugfix, documentation, refactor, breaking, security
+
+## Best Practices
+- Commit logical units of work, write meaningful messages
+- Prefer smaller focused commits
+- Use merge for feature branches, rebase for cleaning up local commits
+- Don't rebase shared branches

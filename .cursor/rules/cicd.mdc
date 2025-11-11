@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+---
+
+# CI/CD and Automation
+
+## CI Pipeline
+- Stages: Lint, Build, Test, Security, Coverage
+- Triggers: Push to any branch, PR creation/update, scheduled runs
+- Run all tests in CI, fail on test failures
+- Generate test reports, upload coverage reports
+- Run tests in parallel when possible, use test caching
+
+## Build Process
+- Install dependencies, run code generation (protobuf)
+- Build binaries, run tests, create artifacts
+- Artifacts: Binary executables, Docker images, documentation, release packages
+
+## Code Quality
+- Linting: Run `golangci-lint` for Go, ESLint for frontend
+- Enforce code style, fail on linting errors
+- Formatting: Check code formatting, use `gofmt` for Go, Prettier for frontend
+
+## Security Scanning
+- Dependency vulnerability scanning, code security analysis
+- Secret scanning, container image scanning
+- Use `govulncheck` for Go, `npm audit` for frontend
+- Scan Docker images
+
+## Deployment
+- Deploy to testnet first, automated testnet deployment
+- Manual mainnet deployment, rollback procedures
+- Steps: Build artifacts, run smoke tests, deploy, verify, monitor
+
+## Release Automation
+- Tag releases automatically
+- Generate changelog, create release notes
+- Publish artifacts: Binary releases, Docker images, documentation
+
+## Best Practices
+- Cache dependencies, parallelize jobs, optimize build times
+- Review pipelines regularly, update dependencies
+- Clear error messages, retry failed steps, notify on failures

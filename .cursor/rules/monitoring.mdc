@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+---
+
+# Monitoring and Metrics
+
+## Metrics Collection
+- Use Prometheus for metrics collection
+- Expose metrics on `/metrics` endpoint
+- Track: block height/time, TPS, validator performance, network health
+- Module-specific: ident verifications, lizenz activations, ANT trading volume, LZN burn rate
+- Consensus metrics: block creation time, validator selection
+
+## Logging
+- Use structured logging format
+- Include context in all logs
+- Implement log rotation
+- Centralize logs for analysis (ELK, Loki, etc.)
+- Set up log retention policies
+
+## Health Checks
+- Implement `/health` endpoint
+- Check database connectivity, module state, validator status
+- Return status codes (200, 503)
+- Monitor health check failures, alert on degradation
+
+## Alerting
+- Set up alerts for critical metrics
+- Alert on error rate spikes, performance degradation, validator issues
+- Configure alert channels (email, Slack, PagerDuty)
+- Set appropriate thresholds, avoid alert fatigue
+
+## Best Practices
+- Use consistent metric naming, include module name
+- Avoid high cardinality metrics
+- Monitor resource usage (CPU, memory, disk)
+- Create dashboards for key metrics

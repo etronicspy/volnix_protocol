@@ -1,0 +1,32 @@
+---
+alwaysApply: true
+---
+
+# Versioning and Releases
+
+## Semantic Versioning
+- Follow semantic versioning (MAJOR.MINOR.PATCH) for all modules
+- **MAJOR**: Breaking changes to API, state structure, or consensus
+- **MINOR**: New features, backward-compatible API additions
+- **PATCH**: Bug fixes, backward-compatible changes
+- Go modules: `v1.2.3` format in `go.mod`
+- Protobuf: Version in package name (e.g., `volnix.ident.v1`)
+- Cosmos SDK: Align with SDK version (v0.53.x)
+
+## Release Process
+- Pre-release: All tests passing, security audit, documentation updated, changelog generated
+- Release tags: `v<version>` for full releases, `v<module>-<version>` for module-specific
+- Maintain `CHANGELOG.md` following [Keep a Changelog](https://keepachangelog.com/) format
+- Categories: Added, Changed, Deprecated, Removed, Fixed, Security
+
+## Migrations
+- Implement `AppModule.AppModuleMigrationHandler` interface
+- Test migrations on testnet before mainnet
+- Document breaking changes and provide upgrade instructions
+- Maintain compatibility layer when possible
+
+## Version Management
+- Each module has independent versioning
+- Pin Cosmos SDK: `v0.53.x`, CometBFT: `v0.38.x`
+- Coordinate major version bumps across modules
+- Document version compatibility matrix

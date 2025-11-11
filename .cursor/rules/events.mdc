@@ -1,0 +1,38 @@
+---
+alwaysApply: true
+---
+
+# Events and Indexing
+
+## Cosmos SDK Events
+- Use Cosmos SDK event system
+- Emit events for important state changes
+- Event naming: `<module>.<event_type>` (e.g., `ident.identity_verified`)
+- Use snake_case for event names
+- Include relevant attributes: account, amount, block_height, tx_hash, module
+
+## Event Types
+- **ident**: `identity_verified`, `role_migrated`, `activity_updated`
+- **lizenz**: `lizenz_activated`, `lizenz_deactivated`, `moa_checked`
+- **anteil**: `order_placed`, `order_matched`, `auction_started`
+- **consensus**: `block_created`, `validator_selected`, `burn_executed`
+
+## Indexing
+- Index events for efficient querying
+- Use event attributes for filtering
+- Index by common query patterns
+- Use indexed attributes in queries, avoid full table scans
+- Cache frequently queried data
+
+## Event Listeners
+- Create event listeners for external systems
+- Handle events asynchronously
+- Implement retry logic, log event processing
+- Patterns: webhook listeners, database listeners, message queue listeners
+
+## Best Practices
+- Emit events for all important actions
+- Include sufficient context
+- Minimize event overhead, batch events when possible
+- Test event emission, verify event attributes
+- Document all events in module docs

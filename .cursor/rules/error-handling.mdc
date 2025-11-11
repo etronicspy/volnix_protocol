@@ -1,0 +1,30 @@
+---
+alwaysApply: true
+---
+
+# Error Handling and Logging
+
+## Error Handling
+- Use `fmt.Errorf` with `%w` verb for error wrapping
+- Provide context at each error level
+- Use `errors.Is()` and `errors.As()` for error checking
+- Define custom error types for domain-specific errors
+- Use sentinel errors for common error conditions
+- Use `sdkerrors` package for SDK-specific errors
+- Return appropriate error codes (codespace, code)
+- Register custom error codes in module
+
+## Logging
+- Use structured logging with context fields
+- Include: module name, operation, account address, tx hash, block height
+- Log levels: DEBUG, INFO, WARN, ERROR, FATAL
+- Use consistent log format across modules
+- Recover from panics in critical paths, log before recovery
+- Return errors from message handlers, don't panic on invalid transactions
+
+## Security
+- Don't expose sensitive information in errors
+- Sanitize error messages for external APIs
+- Don't log sensitive data (private keys, passwords)
+- Mask sensitive information in logs
+- Implement log rotation and retention policies

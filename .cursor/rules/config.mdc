@@ -1,0 +1,38 @@
+---
+alwaysApply: true
+---
+
+# Configuration and Parameters
+
+## Module Parameters
+- Define parameters in proto files
+- Use governance for parameter changes
+- Validate parameters on update
+- Validate in `Validate()` method: check ranges, relationships
+- Return clear error messages
+
+## Configuration Files
+- Use TOML for configuration files
+- Node: `~/.volnix/config/config.toml`
+- App: `~/.volnix/config/app.toml`
+- Organize by component, document all options, provide defaults
+
+## Environment Variables
+- Use for sensitive data and deployment-specific configs
+- Naming: UPPER_SNAKE_CASE, prefix with module name when appropriate
+- Example: `VOLNIX_NODE_RPC_ADDRESS=localhost:26657`
+- Document in README
+
+## Genesis Configuration
+- Define in `genesis.proto`
+- Validate all genesis parameters
+- Check parameter relationships
+- Verify initial state
+
+## Best Practices
+- Keep configuration simple, use sensible defaults
+- Validate on load
+- Support configuration hot-reload where possible
+- Don't commit sensitive data
+- Use environment variables for secrets
+- Restrict configuration file permissions

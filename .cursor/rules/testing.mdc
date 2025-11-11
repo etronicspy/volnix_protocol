@@ -1,0 +1,46 @@
+---
+alwaysApply: true
+---
+
+# Testing Standards
+
+## Test Structure
+- Mirror source code structure in tests
+- Use `_test.go` suffix, group related tests together
+- Use table-driven tests where appropriate
+- Test functions: `Test<FunctionName>`, benchmarks: `Benchmark<FunctionName>`
+
+## Unit Testing
+- Test all public functions
+- Test edge cases and error conditions
+- Test with various inputs
+- Aim for >80% code coverage
+- Create test helpers for common setup
+- Mock external dependencies, keep tests independent
+
+## Integration Testing
+- Set up test environment, initialize test app and modules
+- Test module interactions, transaction flows, state transitions
+- Use `simapp` for integration tests, use `testutil` helpers
+- Test with real module implementations
+
+## End-to-End Testing
+- Test complete user flows, economic scenarios, consensus mechanisms
+- Set up multi-node testnet
+- Configure test network, monitor test execution
+
+## Performance Testing
+- Write benchmarks for critical functions
+- Run benchmarks regularly, track performance over time
+- Test under load, test transaction throughput
+
+## Best Practices
+- Tests should not depend on each other
+- Clean up after tests, use test isolation
+- Write clear test names, use descriptive assertions
+- Update tests with code changes, keep tests fast
+
+## Frontend Testing
+- Test React components, user interactions, error states
+- Test wallet flows, blockchain interactions
+- Test complete user journeys across browsers and devices

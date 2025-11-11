@@ -1,0 +1,32 @@
+---
+alwaysApply: true
+---
+
+# Dependency Management
+
+## Go Modules
+- Use Go modules for dependency management
+- Pin dependency versions in `go.mod`, use `go.sum` for checksums
+- Pin Cosmos SDK: `v0.53.x`, CometBFT: `v0.38.x`
+- Review dependency updates regularly
+- Test updates before merging
+- Update patch versions automatically, review major updates carefully
+
+## Security
+- Use `go list -m -u` to check for updates
+- Use `govulncheck` for vulnerability scanning
+- Review security advisories, update vulnerable dependencies promptly
+- Audit dependencies regularly, check for known vulnerabilities
+- Minimize dependency count
+
+## Version Management
+- Use latest stable versions, avoid pre-release in production
+- Test compatibility before upgrading
+- Use `replace` for local development, document replace directives
+- Remove replace directives before release
+
+## Frontend Dependencies
+- Use package-lock.json or yarn.lock
+- Pin dependency versions
+- Use `npm audit` or `yarn audit` for security
+- Fix security vulnerabilities, review dependency licenses

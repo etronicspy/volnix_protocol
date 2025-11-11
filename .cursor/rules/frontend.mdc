@@ -1,0 +1,33 @@
+---
+alwaysApply: true
+---
+
+# Frontend Development Rules
+
+## TypeScript & React
+- Use strict TypeScript, define interfaces for all props/state
+- Avoid `any`; use `unknown` if type is truly unknown
+- Use functional components with hooks
+- Keep components small and focused (single responsibility)
+- One component per file, co-locate related files
+- Naming: Components PascalCase, hooks camelCase with `use` prefix, constants UPPER_SNAKE_CASE
+
+## State Management
+- Use React Context for global state (wallet, network)
+- Use local state for component-specific data
+- Create custom hooks for blockchain interactions via CosmJS
+- Handle async operations with proper error handling
+- Cache query results, implement retry logic
+
+## Styling & Performance
+- Use CSS Modules or styled-components
+- Mobile-first approach, test on multiple screen sizes
+- Use React.memo for expensive components
+- Lazy load routes, optimize re-renders with useMemo/useCallback
+- Import only what you need, monitor bundle size
+
+## Security
+- Never store private keys in plain text
+- Use secure storage (browser secure storage)
+- Validate all user inputs, sanitize data before sending to blockchain
+- Prevent XSS attacks, validate transaction data before signing

@@ -1,0 +1,34 @@
+---
+alwaysApply: true
+---
+
+# Protobuf and Code Generation
+
+## Conventions
+- Package versioning: `volnix.<module>.v1`
+- Messages: PascalCase (`MsgVerifyIdentity`, `QueryRoleRequest`)
+- Fields: snake_case (`account_address`, `block_height`)
+- Enums: PascalCase with UPPER_SNAKE_CASE values
+- Use appropriate field numbers (don't reuse)
+- Use `repeated` for arrays, `oneof` for mutually exclusive fields
+
+## Versioning
+- Use version suffix in package name: `v1`, `v2`, etc.
+- Maintain backward compatibility within major version
+- Mark deprecated fields with `deprecated = true`
+- Maintain deprecated fields for at least one major version
+
+## Code Generation
+- Use `buf` for proto compilation
+- Generate Go code with `protoc-gen-go` and `protoc-gen-go-grpc`
+- Never edit generated files manually
+- Commit generated code to repository
+- Use `buf.yaml` for linting, enable strict rules
+- Check breaking changes in CI
+
+## Message Design
+- Transaction messages: Prefix with `Msg` (e.g., `MsgActivateLizenz`)
+- Query messages: Prefix with `Query` (e.g., `QueryRoleRequest`)
+- Use pagination for list queries
+- Field types: `string` for addresses, `bytes` for signatures, `uint64` for amounts
+- Add validation in message handlers, use Cosmos SDK validation helpers
