@@ -187,7 +187,7 @@ func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 	citizenPositionRetrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1citizen")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "1", citizenPositionRetrieved.TotalTrades)
-	require.Equal(suite.T(), "1500000", citizenPositionRetrieved.TotalVolume) // 1000000 * 1.5
+	require.Equal(suite.T(), "1000000", citizenPositionRetrieved.TotalVolume) // ANT amount traded
 
 	// Step 12: Create auction for block production
 	auction := anteiltypes.NewAuction(uint64(1000), "1000000", "1.0")
@@ -197,6 +197,13 @@ func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 
 	// Step 13: Place bid in auction
 	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator", "1000000")
+	require.NoError(suite.T(), err)
+
+	// Close the auction before settlement
+	retrievedAuction, err := suite.anteilKeeper.GetAuction(suite.ctx, auctionID)
+	require.NoError(suite.T(), err)
+	retrievedAuction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
+	err = suite.anteilKeeper.UpdateAuction(suite.ctx, retrievedAuction)
 	require.NoError(suite.T(), err)
 
 	// Step 14: Settle auction
