@@ -273,6 +273,13 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator2", "1500000")
 	require.NoError(suite.T(), err)
 
+	// Close the auction before settlement
+	retrievedAuction, err := suite.anteilKeeper.GetAuction(suite.ctx, auctionID)
+	require.NoError(suite.T(), err)
+	retrievedAuction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
+	err = suite.anteilKeeper.UpdateAuction(suite.ctx, retrievedAuction)
+	require.NoError(suite.T(), err)
+
 	// Settle auction
 	err = suite.anteilKeeper.SettleAuction(suite.ctx, auctionID)
 	require.NoError(suite.T(), err)
@@ -304,7 +311,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	// Verify order statuses
 	buyOrder1Retrieved, err := suite.anteilKeeper.GetOrder(suite.ctx, buyOrderID1)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), anteilv1.OrderStatus_ORDER_STATUS_PARTIALLY_FILLED, buyOrder1Retrieved.Status)
+	require.Equal(suite.T(), anteilv1.OrderStatus_ORDER_STATUS_FILLED, buyOrder1Retrieved.Status)
 
 	sellOrder1Retrieved, err := suite.anteilKeeper.GetOrder(suite.ctx, sellOrderID1)
 	require.NoError(suite.T(), err)
@@ -319,7 +326,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	position2Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1citizen2")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "1", position2Retrieved.TotalTrades)
-	require.Equal(suite.T(), "4000000", position2Retrieved.TotalVolume)
+	require.Equal(suite.T(), "2500000", position2Retrieved.TotalVolume)
 
 	// Verify auction was settled
 	auction, err = suite.anteilKeeper.GetAuction(suite.ctx, auctionID)

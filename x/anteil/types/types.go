@@ -211,15 +211,15 @@ func calculateTotalValue(antAmount, price string) string {
 	if err != nil {
 		return "0" // Return zero on error
 	}
-	
+
 	priceFloat, err := strconv.ParseFloat(price, 64)
 	if err != nil {
 		return "0" // Return zero on error
 	}
-	
+
 	// Calculate total value = amount * price
 	totalValue := antFloat * priceFloat
-	
+
 	// Return with proper precision (8 decimal places)
 	return fmt.Sprintf("%.8f", totalValue)
 }
@@ -242,4 +242,13 @@ func UpdateUserPosition(position *anteilv1.UserPosition, trade *anteilv1.Trade, 
 
 	// Update last activity
 	position.LastActivity = timestamppb.Now()
+}
+
+// ParseUint64 safely parses a string to uint64, returning 0 on error
+func ParseUint64(s string) uint64 {
+	val, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return val
 }

@@ -196,7 +196,7 @@ func (k Keeper) executeTrade(ctx sdk.Context, buyOrderID, sellOrderID string) er
 
 	// Execute the trade
 	trade := &anteilv1.Trade{
-		TradeId:     fmt.Sprintf("trade_%d", ctx.BlockHeight()),
+		TradeId:     fmt.Sprintf("trade_%s_%s", buyOrderID, sellOrderID),
 		BuyOrderId:  buyOrderID,
 		SellOrderId: sellOrderID,
 		Buyer:       buyOrder.Owner,
@@ -221,12 +221,73 @@ func (k Keeper) executeTrade(ctx sdk.Context, buyOrderID, sellOrderID string) er
 		return err
 	}
 
+	// Update user positions
+	if err := k.updateUserPositionForTrade(ctx, trade); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // ExecuteTrade executes a trade between orders (public interface)
 func (k Keeper) ExecuteTrade(ctx sdk.Context, buyOrderID, sellOrderID string) error {
 	return k.executeTrade(ctx, buyOrderID, sellOrderID)
+}
+
+// updateUserPositionForTrade updates user positions after a trade
+func (k Keeper) updateUserPositionForTrade(ctx sdk.Context, trade *anteilv1.Trade) error {
+	// Update buyer position
+	buyerPosition, err := k.GetUserPosition(ctx, trade.Buyer)
+	if err != nil {
+		// Create new position if not found
+		buyerPosition = &anteilv1.UserPosition{
+			Owner:        trade.Buyer,
+			AntBalance:   "0",
+			TotalTrades:  "0",
+			TotalVolume:  "0",
+			LastActivity: timestamppb.Now(),
+		}
+	}
+
+	// Update buyer stats
+	buyerTrades := anteiltypes.ParseUint64(buyerPosition.TotalTrades)
+	buyerVolume := anteiltypes.ParseUint64(buyerPosition.TotalVolume)
+	tradeAmount := anteiltypes.ParseUint64(trade.AntAmount)
+
+	buyerPosition.TotalTrades = fmt.Sprintf("%d", buyerTrades+1)
+	buyerPosition.TotalVolume = fmt.Sprintf("%d", buyerVolume+tradeAmount)
+	buyerPosition.LastActivity = timestamppb.Now()
+
+	if err := k.SetUserPosition(ctx, buyerPosition); err != nil {
+		return err
+	}
+
+	// Update seller position
+	sellerPosition, err := k.GetUserPosition(ctx, trade.Seller)
+	if err != nil {
+		// Create new position if not found
+		sellerPosition = &anteilv1.UserPosition{
+			Owner:        trade.Seller,
+			AntBalance:   "0",
+			TotalTrades:  "0",
+			TotalVolume:  "0",
+			LastActivity: timestamppb.Now(),
+		}
+	}
+
+	// Update seller stats
+	sellerTrades := anteiltypes.ParseUint64(sellerPosition.TotalTrades)
+	sellerVolume := anteiltypes.ParseUint64(sellerPosition.TotalVolume)
+
+	sellerPosition.TotalTrades = fmt.Sprintf("%d", sellerTrades+1)
+	sellerPosition.TotalVolume = fmt.Sprintf("%d", sellerVolume+tradeAmount)
+	sellerPosition.LastActivity = timestamppb.Now()
+
+	if err := k.SetUserPosition(ctx, sellerPosition); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SetTrade stores a trade in the store
