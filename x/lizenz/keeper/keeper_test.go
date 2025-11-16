@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -200,15 +201,18 @@ func (suite *KeeperTestSuite) TestDeleteActivatedLizenz() {
 
 // Test GetAllActivatedLizenz
 func (suite *KeeperTestSuite) TestGetAllActivatedLizenz() {
-	// Create multiple lizenz
+	// Create multiple lizenz with amounts that respect 33% limit
+	// First validator can have any amount (no limit check)
+	// Subsequent validators must be within 33% of total pool
+	amounts := []string{"10000000", "3000000", "3000000", "3000000", "3000000"} // Total: 22000000, each subsequent is < 33%
 	for i := range 5 {
 		lizenz := &lizenzv1.ActivatedLizenz{
-			Validator:            "cosmos1validator" + string(rune(i)),
-			Amount:               "1000000",
+			Validator:            fmt.Sprintf("cosmos1validator%d", i),
+			Amount:               amounts[i],
 			ActivationTime:       timestamppb.Now(),
 			LastActivity:         timestamppb.Now(),
 			IsEligibleForRewards: true,
-			IdentityHash:         "hash" + string(rune(i)),
+			IdentityHash:         fmt.Sprintf("hash%d", i),
 		}
 		err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz)
 		require.NoError(suite.T(), err)
@@ -616,15 +620,16 @@ func (suite *KeeperTestSuite) TestDeleteLizenz() {
 }
 
 func (suite *KeeperTestSuite) TestGetAllLizenzs() {
-	// Create multiple lizenz
+	// Create multiple lizenz with amounts that respect 33% limit
+	amounts := []string{"10000000", "3000000", "3000000"} // Total: 16000000, each subsequent is < 33%
 	for i := range 3 {
 		lizenz := &lizenzv1.ActivatedLizenz{
-			Validator:            "cosmos1validator" + string(rune(i)),
-			Amount:               "1000000",
+			Validator:            fmt.Sprintf("cosmos1validator%d", i),
+			Amount:               amounts[i],
 			ActivationTime:       timestamppb.Now(),
 			LastActivity:         timestamppb.Now(),
 			IsEligibleForRewards: true,
-			IdentityHash:         "hash" + string(rune(i)),
+			IdentityHash:         fmt.Sprintf("hash%d", i),
 		}
 		err := suite.keeper.SetLizenz(suite.ctx, lizenz)
 		require.NoError(suite.T(), err)
@@ -856,4 +861,182 @@ func (suite *KeeperTestSuite) TestProcessDeactivatingLizenz_NotExpired() {
 	retrieved, err := suite.keeper.GetDeactivatingLizenz(suite.ctx, "cosmos1validator")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "cosmos1validator", retrieved.Validator)
+}
+
+// Test GetTotalActivatedLizenz
+func (suite *KeeperTestSuite) TestGetTotalActivatedLizenz() {
+	// Initially should be 0
+	total, err := suite.keeper.GetTotalActivatedLizenz(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "0", total)
+
+	// Add first validator (first one is allowed without limit check)
+	// Use larger amount to allow room for second validator
+	lizenz1 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator1",
+		Amount:               "10000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash1",
+	}
+	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
+	require.NoError(suite.T(), err)
+
+	// Add second validator with amount within 33% limit (above minimum)
+	// Total will be 10000000 + 3000000 = 13000000
+	// 33% of 13000000 = 4290000, so 3000000 is within limit
+	lizenz2 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator2",
+		Amount:               "3000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash2",
+	}
+	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz2)
+	require.NoError(suite.T(), err)
+
+	// Total should be 13000000
+	total, err = suite.keeper.GetTotalActivatedLizenz(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "13000000", total)
+}
+
+// Test ValidateMaxLznActivationLimit - within limit
+func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_WithinLimit() {
+	// Create first validator (first one is allowed without limit check)
+	// Using amounts above minimum (1000000 micro units = 1 LZN)
+	lizenz1 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator1",
+		Amount:               "10000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash1",
+	}
+	err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
+	require.NoError(suite.T(), err)
+
+	// Try to add another validator with 30% of new total (should be within 33% limit)
+	// Total will be 10000000 + 3000000 = 13000000
+	// 33% of 13000000 = 4290000, so 3000000 is within limit
+	lizenz2 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator2",
+		Amount:               "3000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash2",
+	}
+	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz2)
+	require.NoError(suite.T(), err)
+}
+
+// Test ValidateMaxLznActivationLimit - exceeds limit
+func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_ExceedsLimit() {
+	// Create first validator with small amount (above minimum)
+	lizenz1 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator1",
+		Amount:               "1000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash1",
+	}
+	err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
+	require.NoError(suite.T(), err)
+
+	// Try to add validator with more than 33% of total
+	// Total will be 1000000 + 5000000 = 6000000
+	// 33% of 6000000 = 1980000, but we're trying to add 5000000
+	lizenz2 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator2",
+		Amount:               "5000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash2",
+	}
+	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz2)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "exceeds maximum LZN activation limit")
+}
+
+// Test ValidateMaxLznActivationLimit - exactly at limit (33%)
+func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_AtLimit() {
+	// Create first validator (above minimum)
+	lizenz1 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator1",
+		Amount:               "6700000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash1",
+	}
+	err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
+	require.NoError(suite.T(), err)
+
+	// Try to add validator with exactly 33% of new total
+	// Total will be 6700000 + 3300000 = 10000000
+	// 33% of 10000000 = 3300000 (exactly at limit, should be allowed)
+	lizenz2 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator2",
+		Amount:               "3300000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash2",
+	}
+	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz2)
+	require.NoError(suite.T(), err)
+}
+
+// Test ValidateMaxLznActivationLimit - update existing validator
+func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_UpdateExisting() {
+	// Create first validator (above minimum)
+	lizenz1 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator1",
+		Amount:               "1000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash1",
+	}
+	err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
+	require.NoError(suite.T(), err)
+
+	// Add second validator to create a pool (within 33% limit)
+	// Total will be 1000000 + 300000 = 1300000
+	// 33% of 1300000 = 429000, so 300000 is too small (below minimum)
+	// Use 1000000 which is exactly at minimum, but total will be 2000000, 33% = 660000
+	// So we need to use a value that's both above minimum and within 33%
+	// Let's use 500000 for second validator (above minimum, but will fail 33% check)
+	// Actually, let's use a larger first validator to allow room
+	lizenz1.Amount = "10000000" // Increase first validator
+	err = suite.keeper.UpdateActivatedLizenz(suite.ctx, lizenz1)
+	require.NoError(suite.T(), err)
+
+	// Add second validator with amount within 33% limit
+	// Total will be 10000000 + 3000000 = 13000000
+	// 33% of 13000000 = 4290000, so 3000000 is within limit
+	lizenz2 := &lizenzv1.ActivatedLizenz{
+		Validator:            "cosmos1validator2",
+		Amount:               "3000000",
+		ActivationTime:       timestamppb.Now(),
+		LastActivity:         timestamppb.Now(),
+		IsEligibleForRewards: true,
+		IdentityHash:         "hash2",
+	}
+	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz2)
+	require.NoError(suite.T(), err)
+
+	// Now try to update first validator to exceed limit
+	// Current total: 10000000 + 3000000 = 13000000
+	// After update: 13000000 - 10000000 + 15000000 = 18000000
+	// 33% of 18000000 = 5940000, but we're trying to set 15000000
+	lizenz1.Amount = "15000000"
+	err = suite.keeper.UpdateActivatedLizenz(suite.ctx, lizenz1)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "exceeds maximum LZN activation limit")
 }

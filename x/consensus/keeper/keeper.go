@@ -1,6 +1,8 @@
 package keeper
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -16,11 +18,20 @@ import (
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
 )
 
+// LizenzKeeperInterface defines the interface for interacting with lizenz module
+// This allows consensus module to get information about activated LZN and MOA status
+type LizenzKeeperInterface interface {
+	GetAllActivatedLizenz(ctx sdk.Context) ([]interface{}, error) // Returns list of activated LZN
+	GetTotalActivatedLizenz(ctx sdk.Context) (string, error)     // Returns total activated LZN
+	GetMOACompliance(ctx sdk.Context, validator string) (float64, error) // Returns MOA compliance ratio (0.0 to 1.0+)
+}
+
 type (
 	Keeper struct {
-		cdc        codec.BinaryCodec
-		storeKey   storetypes.StoreKey
-		paramstore paramtypes.Subspace
+		cdc          codec.BinaryCodec
+		storeKey     storetypes.StoreKey
+		paramstore   paramtypes.Subspace
+		lizenzKeeper LizenzKeeperInterface // Optional: for reward distribution
 	}
 )
 
@@ -39,6 +50,11 @@ func NewKeeper(
 		storeKey:   storeKey,
 		paramstore: ps,
 	}
+}
+
+// SetLizenzKeeper sets the lizenz keeper interface for reward distribution
+func (k *Keeper) SetLizenzKeeper(lizenzKeeper LizenzKeeperInterface) {
+	k.lizenzKeeper = lizenzKeeper
 }
 
 // GetParams returns the current parameters for the consensus module
@@ -68,13 +84,35 @@ func (k Keeper) SelectBlockProducer(ctx sdk.Context, validators []string) (strin
 	return validators[selectedIndex], nil
 }
 
-// SelectBlockCreator selects the next block creator using weighted lottery
+// SelectBlockCreator selects the next block creator using blind auction
+// According to whitepaper: "Право на создание блока и получение комиссий разыгрывается в каждом раунде через 'слепой аукцион с взвешенной лотереей'"
 func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1.BlockCreator, error) {
 	validators := k.GetAllValidators(ctx)
 	if len(validators) == 0 {
 		return nil, types.ErrNoValidators
 	}
 
+	// Try to get winner from blind auction
+	auction, err := k.GetBlindAuction(ctx, height)
+	if err == nil && auction != nil && auction.Phase == consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE && auction.Winner != "" {
+		// Use winner from blind auction
+		winnerValidator, err := k.GetValidator(ctx, auction.Winner)
+		if err == nil && winnerValidator != nil {
+			blockCreator := &consensusv1.BlockCreator{
+				Validator:     auction.Winner,
+				AntBalance:    winnerValidator.AntBalance,
+				ActivityScore: winnerValidator.ActivityScore,
+				BurnAmount:    auction.WinningBid,
+				BlockHeight:   height,
+				SelectionTime: timestamppb.Now(),
+			}
+
+			k.SetBlockCreator(ctx, blockCreator)
+			return blockCreator, nil
+		}
+	}
+
+	// Fallback to weighted lottery if no auction winner
 	// Calculate weights based on ANT balance and activity
 	weights := make([]uint64, len(validators))
 	totalWeight := uint64(0)
@@ -488,6 +526,44 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 		return err
 	}
 
+	// Process blind auction for current block
+	// Transition from commit to reveal phase if needed
+	auction, err := k.GetBlindAuction(ctx, currentHeight)
+	if err == nil && auction != nil {
+		// If auction is in commit phase and we have commits, transition to reveal
+		if auction.Phase == consensusv1.AuctionPhase_AUCTION_PHASE_COMMIT && len(auction.Commits) > 0 {
+			err = k.TransitionAuctionPhase(ctx, currentHeight)
+			if err != nil {
+				ctx.Logger().Error("failed to transition auction phase", "error", err)
+			}
+		}
+
+		// If auction is in reveal phase and we have reveals, select winner
+		if auction.Phase == consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL && len(auction.Reveals) > 0 {
+			winner, winningBid, err := k.SelectAuctionWinner(ctx, currentHeight)
+			if err != nil {
+				ctx.Logger().Error("failed to select auction winner", "error", err)
+			} else {
+				ctx.Logger().Info("blind auction winner selected", "height", currentHeight, "winner", winner, "bid", winningBid)
+			}
+		}
+	}
+
+	// Create blind auction for next block
+	nextHeight := currentHeight + 1
+	_, err = k.CreateBlindAuction(ctx, nextHeight)
+	if err != nil {
+		ctx.Logger().Error("failed to create blind auction for next block", "error", err, "height", nextHeight)
+	}
+
+	// Distribute base rewards to validators (Circuit 1)
+	// This happens after block creation, distributing passive income based on activated LZN
+	err = k.DistributeBaseRewards(ctx, currentHeight)
+	if err != nil {
+		ctx.Logger().Error("failed to distribute base rewards", "error", err, "height", currentHeight)
+		// Don't fail the block if reward distribution fails
+	}
+
 	return nil
 }
 
@@ -571,4 +647,492 @@ func (k Keeper) calculateTotalBurnedTokens(ctx sdk.Context) (string, error) {
 	}
 
 	return fmt.Sprintf("%.8f", totalBurned), nil
+}
+
+// ============================================================================
+// Blind Auction Methods
+// ============================================================================
+
+// HashCommit creates a commit hash from nonce and bid amount
+// commit_hash = SHA256(nonce + bid_amount)
+func HashCommit(nonce, bidAmount string) string {
+	data := fmt.Sprintf("%s:%s", nonce, bidAmount)
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])
+}
+
+// VerifyCommit verifies that a reveal matches the commit hash
+func VerifyCommit(commitHash, nonce, bidAmount string) bool {
+	calculatedHash := HashCommit(nonce, bidAmount)
+	return calculatedHash == commitHash
+}
+
+// GetBlindAuction returns a blind auction for a specific block height
+func (k Keeper) GetBlindAuction(ctx sdk.Context, height uint64) (*consensusv1.BlindAuction, error) {
+	store := ctx.KVStore(k.storeKey)
+	key := types.GetBlindAuctionKey(height)
+	bz := store.Get(key)
+	if bz == nil {
+		return nil, types.ErrAuctionNotFound
+	}
+
+	var auction consensusv1.BlindAuction
+	err := k.cdc.Unmarshal(bz, &auction)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal blind auction: %w", err)
+	}
+
+	return &auction, nil
+}
+
+// SetBlindAuction stores a blind auction
+func (k Keeper) SetBlindAuction(ctx sdk.Context, auction *consensusv1.BlindAuction) error {
+	store := ctx.KVStore(k.storeKey)
+	key := types.GetBlindAuctionKey(auction.BlockHeight)
+
+	bz, err := k.cdc.Marshal(auction)
+	if err != nil {
+		return fmt.Errorf("failed to marshal blind auction: %w", err)
+	}
+
+	store.Set(key, bz)
+	return nil
+}
+
+// CreateBlindAuction creates a new blind auction for a block height
+func (k Keeper) CreateBlindAuction(ctx sdk.Context, height uint64) (*consensusv1.BlindAuction, error) {
+	// Check if auction already exists
+	existing, err := k.GetBlindAuction(ctx, height)
+	if err == nil && existing != nil {
+		return existing, nil
+	}
+
+	auction := &consensusv1.BlindAuction{
+		BlockHeight: height,
+		Phase:       consensusv1.AuctionPhase_AUCTION_PHASE_COMMIT,
+		Commits:     []*consensusv1.EncryptedBid{},
+		Reveals:     []*consensusv1.BidReveal{},
+		Winner:      "",
+		WinningBid:   "0",
+		StartTime:   timestamppb.Now(),
+		EndTime:     nil,
+	}
+
+	err = k.SetBlindAuction(ctx, auction)
+	if err != nil {
+		return nil, err
+	}
+
+	return auction, nil
+}
+
+// CommitBid adds a committed bid to the auction
+func (k Keeper) CommitBid(ctx sdk.Context, validator, commitHash string, height uint64) error {
+	// Get or create auction
+	auction, err := k.GetBlindAuction(ctx, height)
+	if err != nil {
+		// Create new auction if it doesn't exist
+		auction, err = k.CreateBlindAuction(ctx, height)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Check if auction is in commit phase
+	if auction.Phase != consensusv1.AuctionPhase_AUCTION_PHASE_COMMIT {
+		return types.ErrAuctionNotInCommitPhase
+	}
+
+	// Check if validator already committed
+	for _, commit := range auction.Commits {
+		if commit.Validator == validator {
+			return fmt.Errorf("validator %s already committed a bid", validator)
+		}
+	}
+
+	// Validate commit hash
+	if commitHash == "" || len(commitHash) != 64 { // SHA256 produces 64 hex chars
+		return types.ErrInvalidCommitHash
+	}
+
+	// Add commit
+	encryptedBid := &consensusv1.EncryptedBid{
+		Validator:    validator,
+		CommitHash:   commitHash,
+		BlockHeight:  height,
+		CommitTime:   timestamppb.Now(),
+	}
+
+	auction.Commits = append(auction.Commits, encryptedBid)
+
+	return k.SetBlindAuction(ctx, auction)
+}
+
+// RevealBid reveals a bid in the auction
+func (k Keeper) RevealBid(ctx sdk.Context, validator, nonce, bidAmount string, height uint64) error {
+	// Get auction
+	auction, err := k.GetBlindAuction(ctx, height)
+	if err != nil {
+		return err
+	}
+
+	// Check if auction is in reveal phase
+	if auction.Phase != consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL {
+		return types.ErrAuctionNotInRevealPhase
+	}
+
+	// Find the commit for this validator
+	var commit *consensusv1.EncryptedBid
+	for _, c := range auction.Commits {
+		if c.Validator == validator {
+			commit = c
+			break
+		}
+	}
+
+	if commit == nil {
+		return types.ErrBidNotCommitted
+	}
+
+	// Check if already revealed
+	for _, reveal := range auction.Reveals {
+		if reveal.Validator == validator {
+			return types.ErrBidAlreadyRevealed
+		}
+	}
+
+	// Verify commit hash matches reveal
+	if !VerifyCommit(commit.CommitHash, nonce, bidAmount) {
+		return types.ErrCommitHashMismatch
+	}
+
+	// Validate bid amount
+	bidAmountInt, err := strconv.ParseUint(bidAmount, 10, 64)
+	if err != nil || bidAmountInt == 0 {
+		return types.ErrInvalidBidAmount
+	}
+
+	// Add reveal
+	bidReveal := &consensusv1.BidReveal{
+		Validator:    validator,
+		Nonce:       nonce,
+		BidAmount:   bidAmount,
+		BlockHeight: height,
+		RevealTime:  timestamppb.Now(),
+	}
+
+	auction.Reveals = append(auction.Reveals, bidReveal)
+
+	return k.SetBlindAuction(ctx, auction)
+}
+
+// SelectAuctionWinner selects the winner of the blind auction using weighted lottery
+// According to whitepaper: "Шанс на выигрыш пропорционален размеру ставки"
+func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, string, error) {
+	// Get auction
+	auction, err := k.GetBlindAuction(ctx, height)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Check if auction is in reveal phase
+	if auction.Phase != consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL {
+		return "", "", fmt.Errorf("auction is not in reveal phase")
+	}
+
+	// Check if there are any reveals
+	if len(auction.Reveals) == 0 {
+		return "", "", fmt.Errorf("no bids revealed")
+	}
+
+	// Calculate total bid amount (sum of all revealed bids)
+	totalBid := uint64(0)
+	bidAmounts := make([]uint64, len(auction.Reveals))
+	for i, reveal := range auction.Reveals {
+		bidAmount, err := strconv.ParseUint(reveal.BidAmount, 10, 64)
+		if err != nil {
+			continue // Skip invalid bids
+		}
+		bidAmounts[i] = bidAmount
+		totalBid += bidAmount
+	}
+
+	if totalBid == 0 {
+		return "", "", fmt.Errorf("total bid amount is zero")
+	}
+
+	// Weighted random selection: chance proportional to bid amount
+	randomWeight := rand.Uint64() % totalBid
+	currentWeight := uint64(0)
+
+	for i, bidAmount := range bidAmounts {
+		currentWeight += bidAmount
+		if randomWeight < currentWeight {
+			winner := auction.Reveals[i]
+			auction.Winner = winner.Validator
+			auction.WinningBid = winner.BidAmount
+			auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE
+			auction.EndTime = timestamppb.Now()
+
+			err = k.SetBlindAuction(ctx, auction)
+			if err != nil {
+				return "", "", err
+			}
+
+			return winner.Validator, winner.BidAmount, nil
+		}
+	}
+
+	// Fallback to first reveal (should not happen)
+	winner := auction.Reveals[0]
+	auction.Winner = winner.Validator
+	auction.WinningBid = winner.BidAmount
+	auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE
+	auction.EndTime = timestamppb.Now()
+
+	err = k.SetBlindAuction(ctx, auction)
+	if err != nil {
+		return "", "", err
+	}
+
+	return winner.Validator, winner.BidAmount, nil
+}
+
+// TransitionAuctionPhase transitions auction from commit to reveal phase
+func (k Keeper) TransitionAuctionPhase(ctx sdk.Context, height uint64) error {
+	auction, err := k.GetBlindAuction(ctx, height)
+	if err != nil {
+		return err
+	}
+
+	if auction.Phase == consensusv1.AuctionPhase_AUCTION_PHASE_COMMIT {
+		auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL
+		return k.SetBlindAuction(ctx, auction)
+	}
+
+	return nil
+}
+
+// ============================================================================
+// Base Reward Distribution (Circuit 1)
+// ============================================================================
+
+const (
+	// BaseBlockReward is the base reward per block in micro WRT (50 WRT = 50,000,000 uwrt)
+	BaseBlockReward = 50_000_000 // 50 WRT in micro units
+	// HalvingInterval is the number of blocks between halvings (210,000 blocks)
+	HalvingInterval = 210_000
+)
+
+// CalculateBaseReward calculates the base block reward considering halving
+// Formula: base_reward = BASE_BLOCK_REWARD / (2^halving_count)
+// where halving_count = floor(block_height / HALVING_INTERVAL)
+func (k Keeper) CalculateBaseReward(ctx sdk.Context, height uint64) (uint64, error) {
+	// Calculate halving count
+	halvingCount := height / HalvingInterval
+
+	// Calculate reward: base_reward / (2^halving_count)
+	// Use bit shift for efficiency: 2^halving_count = 1 << halvingCount
+	reward := uint64(BaseBlockReward)
+	if halvingCount > 0 {
+		// Right shift by halvingCount is equivalent to dividing by 2^halvingCount
+		// But we need to be careful with large halvingCount values
+		for i := uint64(0); i < halvingCount && reward > 0; i++ {
+			reward = reward / 2
+		}
+	}
+
+	// Minimum reward is 1 micro WRT (to avoid zero rewards)
+	if reward == 0 {
+		reward = 1
+	}
+
+	return reward, nil
+}
+
+// GetHalvingCount returns the current halving count for a given block height
+func (k Keeper) GetHalvingCount(height uint64) uint64 {
+	return height / HalvingInterval
+}
+
+// CalculateMOAPenaltyMultiplier calculates the penalty multiplier based on MOA compliance
+// According to whitepaper and economic-formulas.md:
+// - >= 1.0: no penalty (1.0)
+// - 0.9-1.0: warning (1.0, but logged)
+// - 0.7-0.9: 25% penalty (0.75)
+// - 0.5-0.7: 50% penalty (0.5)
+// - < 0.5: deactivation (0.0)
+func CalculateMOAPenaltyMultiplier(moaCompliance float64) float64 {
+	if moaCompliance >= 1.0 {
+		return 1.0 // No penalty
+	} else if moaCompliance >= 0.9 {
+		return 1.0 // Warning, but no penalty
+	} else if moaCompliance >= 0.7 {
+		return 0.75 // 25% penalty
+	} else if moaCompliance >= 0.5 {
+		return 0.5 // 50% penalty
+	} else {
+		return 0.0 // Deactivation, no reward
+	}
+}
+
+// ValidatorRewardInfo contains information about a validator's reward
+type ValidatorRewardInfo struct {
+	Validator        string
+	ActivatedLZN     uint64  // Amount of activated LZN in micro units
+	RewardShare      float64 // Share of total reward (0.0 to 1.0)
+	BaseRewardAmount uint64  // Base calculated reward amount in micro WRT (before MOA penalty)
+	MOACompliance    float64 // MOA compliance ratio (0.0 to 1.0+)
+	PenaltyMultiplier float64 // Penalty multiplier based on MOA (0.0 to 1.0)
+	FinalRewardAmount uint64  // Final reward amount after MOA penalty in micro WRT
+}
+
+// CalculateRewardDistribution calculates how base reward should be distributed among validators
+// According to whitepaper: "validator_passive_income = (activated_lzn_validator / total_activated_lzn) × current_block_reward"
+// Returns list of validator rewards and total distributed amount
+func (k Keeper) CalculateRewardDistribution(ctx sdk.Context, baseReward uint64, validatorLZN map[string]uint64) ([]ValidatorRewardInfo, uint64, error) {
+	if len(validatorLZN) == 0 {
+		return []ValidatorRewardInfo{}, 0, fmt.Errorf("no validators with activated LZN")
+	}
+
+	// Calculate total activated LZN
+	totalLZN := uint64(0)
+	for _, lzn := range validatorLZN {
+		totalLZN += lzn
+	}
+
+	if totalLZN == 0 {
+		return []ValidatorRewardInfo{}, 0, fmt.Errorf("total activated LZN is zero")
+	}
+
+	var rewards []ValidatorRewardInfo
+	totalDistributed := uint64(0)
+
+	// Calculate reward for each validator
+	for validator, activatedLZN := range validatorLZN {
+		if activatedLZN == 0 {
+			continue // Skip validators with no activated LZN
+		}
+
+		// Calculate share: activated_lzn / total_activated_lzn
+		share := float64(activatedLZN) / float64(totalLZN)
+
+		// Calculate base reward: share × base_reward
+		// Use integer arithmetic to avoid floating point precision issues
+		baseRewardAmount := (baseReward * activatedLZN) / totalLZN
+
+		// Get MOA compliance (default to 1.0 if not available)
+		moaCompliance := 1.0
+		if k.lizenzKeeper != nil {
+			compliance, err := k.lizenzKeeper.GetMOACompliance(ctx, validator)
+			if err == nil {
+				moaCompliance = compliance
+			}
+		}
+
+		// Calculate penalty multiplier
+		penaltyMultiplier := CalculateMOAPenaltyMultiplier(moaCompliance)
+
+		// Calculate final reward after penalty
+		finalRewardAmount := uint64(float64(baseRewardAmount) * penaltyMultiplier)
+
+		rewards = append(rewards, ValidatorRewardInfo{
+			Validator:         validator,
+			ActivatedLZN:      activatedLZN,
+			RewardShare:       share,
+			BaseRewardAmount:  baseRewardAmount,
+			MOACompliance:     moaCompliance,
+			PenaltyMultiplier: penaltyMultiplier,
+			FinalRewardAmount: finalRewardAmount,
+		})
+
+		totalDistributed += finalRewardAmount
+	}
+
+	// Handle rounding: distribute any remainder to the first compliant validator
+	// (only if they have full compliance)
+	if totalDistributed < baseReward {
+		remainder := baseReward - totalDistributed
+		for i := range rewards {
+			if rewards[i].MOACompliance >= 1.0 {
+				rewards[i].FinalRewardAmount += remainder
+				totalDistributed += remainder
+				break
+			}
+		}
+	}
+
+	return rewards, totalDistributed, nil
+}
+
+// DistributeBaseRewards distributes base block rewards to validators based on their activated LZN
+// This implements Circuit 1 of the economic model: passive income for validators
+// According to whitepaper: "validator_passive_income = (activated_lzn_validator / total_activated_lzn) × current_block_reward"
+func (k Keeper) DistributeBaseRewards(ctx sdk.Context, height uint64) error {
+	// Calculate base reward for this block
+	baseReward, err := k.CalculateBaseReward(ctx, height)
+	if err != nil {
+		return fmt.Errorf("failed to calculate base reward: %w", err)
+	}
+
+	// If no lizenz keeper is set, we can't distribute rewards
+	// This is expected in some test scenarios
+	if k.lizenzKeeper == nil {
+		ctx.Logger().Info("lizenz keeper not set, skipping reward distribution", "height", height, "base_reward", baseReward)
+		return nil
+	}
+
+	// Get all activated LZN
+	allLizenzs, err := k.lizenzKeeper.GetAllActivatedLizenz(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get activated LZN: %w", err)
+	}
+
+	// Build map of validator -> activated LZN amount
+	validatorLZN := make(map[string]uint64)
+	for _, lizenzInterface := range allLizenzs {
+		// Type assertion to get the actual lizenz object
+		// We need to handle this carefully since we're using interface{}
+		// For now, we'll assume the interface provides the necessary methods
+		// In a real implementation, we'd use a proper type
+		// This is a placeholder - actual implementation would need proper type casting
+		_ = lizenzInterface
+	}
+
+	// If no validators have activated LZN, skip distribution
+	if len(validatorLZN) == 0 {
+		ctx.Logger().Info("no validators with activated LZN, skipping reward distribution", "height", height)
+		return nil
+	}
+
+	// Calculate reward distribution
+	rewards, totalDistributed, err := k.CalculateRewardDistribution(ctx, baseReward, validatorLZN)
+	if err != nil {
+		return fmt.Errorf("failed to calculate reward distribution: %w", err)
+	}
+
+	// Log distribution with MOA compliance information
+	ctx.Logger().Info("base reward distribution calculated",
+		"height", height,
+		"base_reward", baseReward,
+		"total_distributed", totalDistributed,
+		"validators_count", len(rewards))
+
+	// Log MOA compliance details for each validator
+	for _, reward := range rewards {
+		if reward.MOACompliance < 1.0 {
+			ctx.Logger().Info("validator MOA penalty applied",
+				"validator", reward.Validator,
+				"moa_compliance", reward.MOACompliance,
+				"penalty_multiplier", reward.PenaltyMultiplier,
+				"base_reward", reward.BaseRewardAmount,
+				"final_reward", reward.FinalRewardAmount)
+		}
+	}
+
+	// TODO: Actually send WRT tokens to validators via bank module
+	// This requires integration with bank keeper
+	// For now, we just calculate and log the distribution
+
+	return nil
 }

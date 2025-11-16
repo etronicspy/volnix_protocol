@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -121,4 +122,67 @@ func (s MsgServer) CalculateBlockTime(ctx context.Context, req *consensusv1.MsgC
 	}
 
 	return &consensusv1.MsgCalculateBlockTimeResponse{BlockTime: int64(blockTime.Seconds())}, nil
+}
+
+// CommitBid commits an encrypted bid for blind auction
+func (s MsgServer) CommitBid(ctx context.Context, req *consensusv1.MsgCommitBid) (*consensusv1.MsgCommitBidResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Validate request
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	if req.Validator == "" {
+		return nil, types.ErrEmptyValidatorAddress
+	}
+	if req.CommitHash == "" {
+		return nil, types.ErrInvalidCommitHash
+	}
+
+	// Use current block height if not specified
+	height := req.BlockHeight
+	if height == 0 {
+		height = uint64(sdkCtx.BlockHeight())
+	}
+
+	// Commit the bid
+	err := s.k.CommitBid(sdkCtx, req.Validator, req.CommitHash, height)
+	if err != nil {
+		return nil, err
+	}
+
+	return &consensusv1.MsgCommitBidResponse{Success: true}, nil
+}
+
+// RevealBid reveals a bid in blind auction
+func (s MsgServer) RevealBid(ctx context.Context, req *consensusv1.MsgRevealBid) (*consensusv1.MsgRevealBidResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Validate request
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	if req.Validator == "" {
+		return nil, types.ErrEmptyValidatorAddress
+	}
+	if req.Nonce == "" {
+		return nil, fmt.Errorf("nonce cannot be empty")
+	}
+	if req.BidAmount == "" {
+		return nil, types.ErrInvalidBidAmount
+	}
+
+	// Use current block height if not specified
+	height := req.BlockHeight
+	if height == 0 {
+		height = uint64(sdkCtx.BlockHeight())
+	}
+
+	// Reveal the bid
+	err := s.k.RevealBid(sdkCtx, req.Validator, req.Nonce, req.BidAmount, height)
+	if err != nil {
+		return nil, err
+	}
+
+	return &consensusv1.MsgRevealBidResponse{Success: true}, nil
 }

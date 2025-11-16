@@ -360,6 +360,27 @@ func (k Keeper) validateRoleChange(ctx sdk.Context, oldRole, newRole identv1.Rol
 	return nil
 }
 
+// ValidateRoleChoice validates that the role choice during verification is valid
+// According to whitepaper, user must choose between ROLE_CITIZEN or ROLE_VALIDATOR
+func (k Keeper) ValidateRoleChoice(ctx sdk.Context, address string, desiredRole identv1.Role) error {
+	// Check if address already has a verified account
+	if _, err := k.GetVerifiedAccount(ctx, address); err == nil {
+		return types.ErrAlreadyVerified
+	}
+
+	// Validate that role is either CITIZEN or VALIDATOR
+	if desiredRole != identv1.Role_ROLE_CITIZEN && desiredRole != identv1.Role_ROLE_VALIDATOR {
+		return types.ErrInvalidRoleChoice
+	}
+
+	// Role cannot be GUEST or UNSPECIFIED
+	if desiredRole == identv1.Role_ROLE_GUEST || desiredRole == identv1.Role_ROLE_UNSPECIFIED {
+		return types.ErrInvalidRoleChoice
+	}
+
+	return nil
+}
+
 // SetRoleMigration sets a role migration request
 func (k Keeper) SetRoleMigration(ctx sdk.Context, migration *identv1.RoleMigration) error {
 	store := ctx.KVStore(k.storeKey)

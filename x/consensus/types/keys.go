@@ -37,6 +37,9 @@ var (
 
 	// ValidatorWeightKey defines the key for validator weight
 	ValidatorWeightKey = "ValidatorWeight"
+	
+	// BlindAuctionKey defines the key for blind auction data
+	BlindAuctionKey = "BlindAuction"
 )
 
 // Key prefixes
@@ -44,6 +47,7 @@ var (
 	KeyValidatorPrefix       = []byte(ValidatorKey)
 	KeyBlockCreatorPrefix    = []byte(BlockCreatorKey)
 	KeyValidatorWeightPrefix = []byte(ValidatorWeightKey)
+	KeyBlindAuctionPrefix    = []byte(BlindAuctionKey)
 )
 
 // KeyPrefix returns the key prefix for the consensus module
@@ -74,4 +78,9 @@ func KeyHalvingInfo() []byte {
 // KeyConsensusState returns the key for consensus state
 func KeyConsensusState() []byte {
 	return ConsensusStateKey
+}
+
+// GetBlindAuctionKey returns the key for a blind auction at a specific height
+func GetBlindAuctionKey(height uint64) []byte {
+	return append(KeyBlindAuctionPrefix, []byte(fmt.Sprintf("%d", height))...)
 }

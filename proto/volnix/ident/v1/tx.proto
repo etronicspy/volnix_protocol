@@ -23,6 +23,7 @@ message MsgVerifyIdentity {
   string zkp_proof = 2;
   string verification_provider = 3;
   cosmos.base.v1beta1.Coin verification_cost = 4;
+  Role desired_role = 5; // User must choose between ROLE_CITIZEN or ROLE_VALIDATOR
 }
 
 // MsgVerifyIdentityResponse defines the response for identity verification

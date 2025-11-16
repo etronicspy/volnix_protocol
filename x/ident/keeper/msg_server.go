@@ -34,13 +34,19 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 		return nil, fmt.Errorf("ZKP proof cannot be empty")
 	}
 
+	// Validate role choice: user must choose between CITIZEN or VALIDATOR
+	// This is a critical requirement from the whitepaper
+	if err := s.k.ValidateRoleChoice(sdkCtx, req.Address, req.DesiredRole); err != nil {
+		return nil, err
+	}
+
 	// Generate identity hash from ZKP proof
 	identityHash := fmt.Sprintf("hash-%s", req.ZkpProof[:16])
 
-	// Create verified account with default CITIZEN role
+	// Create verified account with user's chosen role (not default CITIZEN)
 	account := types.NewVerifiedAccount(
 		req.Address,
-		identv1.Role_ROLE_CITIZEN,
+		req.DesiredRole, // Use desired_role from request
 		identityHash,
 	)
 

@@ -25,6 +25,12 @@ service Msg {
   
   // CalculateBlockTime calculates block time
   rpc CalculateBlockTime(MsgCalculateBlockTime) returns (MsgCalculateBlockTimeResponse);
+  
+  // CommitBid commits an encrypted bid for blind auction
+  rpc CommitBid(MsgCommitBid) returns (MsgCommitBidResponse);
+  
+  // RevealBid reveals a bid in blind auction
+  rpc RevealBid(MsgRevealBid) returns (MsgRevealBidResponse);
 }
 
 // MsgSelectBlockCreator defines a message to select the next block creator
@@ -98,4 +104,33 @@ message MsgCalculateBlockTime {
 // MsgCalculateBlockTimeResponse defines the response for MsgCalculateBlockTime
 message MsgCalculateBlockTimeResponse {
   int64 block_time = 1;
+}
+
+// MsgCommitBid defines a message to commit an encrypted bid
+message MsgCommitBid {
+  option (cosmos.msg.v1.signer) = "validator";
+  
+  string validator = 1;
+  string commit_hash = 2; // Hash of (nonce + bid_amount)
+  uint64 block_height = 3;
+}
+
+// MsgCommitBidResponse defines the response for MsgCommitBid
+message MsgCommitBidResponse {
+  bool success = 1;
+}
+
+// MsgRevealBid defines a message to reveal a bid
+message MsgRevealBid {
+  option (cosmos.msg.v1.signer) = "validator";
+  
+  string validator = 1;
+  string nonce = 2; // Nonce used in commit
+  string bid_amount = 3; // ANT amount bid
+  uint64 block_height = 4;
+}
+
+// MsgRevealBidResponse defines the response for MsgRevealBid
+message MsgRevealBidResponse {
+  bool success = 1;
 }

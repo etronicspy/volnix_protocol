@@ -29,4 +29,8 @@ var (
 	// Migration errors
 	ErrRoleMigrationNotFound  = errors.Register(ModuleName, 8, "role migration not found")
 	ErrInvalidMigrationStatus = errors.Register(ModuleName, 9, "invalid migration status")
+
+	// Verification errors
+	ErrInvalidRoleChoice = errors.Register(ModuleName, 10, "invalid role choice: must be ROLE_CITIZEN or ROLE_VALIDATOR")
+	ErrAlreadyVerified   = errors.Register(ModuleName, 11, "address already has a verified identity")
 )

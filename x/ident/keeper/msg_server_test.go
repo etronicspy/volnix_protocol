@@ -58,20 +58,21 @@ func (suite *MsgServerTestSuite) SetupTest() {
 }
 
 func (suite *MsgServerTestSuite) TestVerifyIdentity() {
-	// Test valid verification request
+	// Test valid verification request as CITIZEN
 	coin := sdk.NewCoin("uvx", math.NewInt(1000000))
 	msg := &identv1.MsgVerifyIdentity{
 		Address:              "cosmos1test",
 		ZkpProof:             "valid_zkp_proof_data_123",
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
+		DesiredRole:          identv1.Role_ROLE_CITIZEN,
 	}
 
 	resp, err := suite.msgServer.VerifyIdentity(suite.ctx, msg)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), resp)
 
-	// Verify account was created
+	// Verify account was created with chosen role
 	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, account.Role)
@@ -80,7 +81,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 	// Test duplicate verification (should fail)
 	_, err = suite.msgServer.VerifyIdentity(suite.ctx, msg)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountAlreadyExists, err)
+	require.Equal(suite.T(), types.ErrAlreadyVerified, err)
 
 	// Test invalid address
 	invalidCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
@@ -89,10 +90,58 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 		ZkpProof:             "valid_zkp_proof_data_123",
 		VerificationProvider: "provider123",
 		VerificationCost:     &invalidCoin,
+		DesiredRole:          identv1.Role_ROLE_CITIZEN,
 	}
 
 	_, err = suite.msgServer.VerifyIdentity(suite.ctx, invalidMsg)
 	require.Error(suite.T(), err)
+}
+
+func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
+	coin := sdk.NewCoin("uvx", math.NewInt(1000000))
+
+	// Test verification as VALIDATOR
+	validatorMsg := &identv1.MsgVerifyIdentity{
+		Address:              "cosmos1validator",
+		ZkpProof:             "valid_zkp_proof_validator",
+		VerificationProvider: "provider123",
+		VerificationCost:     &coin,
+		DesiredRole:          identv1.Role_ROLE_VALIDATOR,
+	}
+
+	resp, err := suite.msgServer.VerifyIdentity(suite.ctx, validatorMsg)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+
+	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, account.Role)
+
+	// Test invalid role choice (GUEST)
+	guestMsg := &identv1.MsgVerifyIdentity{
+		Address:              "cosmos1guest",
+		ZkpProof:             "valid_zkp_proof_guest",
+		VerificationProvider: "provider123",
+		VerificationCost:     &coin,
+		DesiredRole:          identv1.Role_ROLE_GUEST,
+	}
+
+	_, err = suite.msgServer.VerifyIdentity(suite.ctx, guestMsg)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
+
+	// Test invalid role choice (UNSPECIFIED)
+	unspecifiedMsg := &identv1.MsgVerifyIdentity{
+		Address:              "cosmos1unspecified",
+		ZkpProof:             "valid_zkp_proof_unspecified",
+		VerificationProvider: "provider123",
+		VerificationCost:     &coin,
+		DesiredRole:          identv1.Role_ROLE_UNSPECIFIED,
+	}
+
+	_, err = suite.msgServer.VerifyIdentity(suite.ctx, unspecifiedMsg)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
 }
 
 func (suite *MsgServerTestSuite) TestChangeRole() {
@@ -103,6 +152,7 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 		ZkpProof:             "valid_zkp_proof_data_123",
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
+		DesiredRole:          identv1.Role_ROLE_CITIZEN,
 	}
 
 	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)
@@ -135,6 +185,7 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 		ZkpProof:             "valid_zkp_proof_data_123",
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
+		DesiredRole:          identv1.Role_ROLE_CITIZEN,
 	}
 
 	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)

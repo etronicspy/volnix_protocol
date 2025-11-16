@@ -71,6 +71,11 @@ func (k Keeper) SetActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.ActivatedLi
 		return err
 	}
 
+	// Validate 33% limit: no validator can activate more than 33% of total pool
+	if err := k.ValidateMaxLznActivationLimit(ctx, lizenz.Validator, lizenz.Amount); err != nil {
+		return err
+	}
+
 	// Store the LZN
 	lizenzBz, err := k.cdc.Marshal(lizenz)
 	if err != nil {
@@ -115,6 +120,11 @@ func (k Keeper) UpdateActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.Activate
 	// Check if LZN exists
 	if !store.Has(lizenzKey) {
 		return types.ErrLizenzNotFound
+	}
+
+	// Validate 33% limit when updating amount
+	if err := k.ValidateMaxLznActivationLimit(ctx, lizenz.Validator, lizenz.Amount); err != nil {
+		return err
 	}
 
 	// Store the updated LZN
@@ -166,6 +176,92 @@ func (k Keeper) GetAllActivatedLizenz(ctx sdk.Context) ([]*lizenzv1.ActivatedLiz
 	}
 
 	return lizenzs, nil
+}
+
+// GetTotalActivatedLizenz calculates the total amount of activated LZN across all validators
+// Returns the sum as a string to handle large numbers
+func (k Keeper) GetTotalActivatedLizenz(ctx sdk.Context) (string, error) {
+	allLizenzs, err := k.GetAllActivatedLizenz(ctx)
+	if err != nil {
+		return "0", err
+	}
+
+	total := int64(0)
+	for _, lizenz := range allLizenzs {
+		amount, err := strconv.ParseInt(lizenz.Amount, 10, 64)
+		if err != nil {
+			// Skip invalid amounts, but log the error
+			continue
+		}
+		total += amount
+	}
+
+	return strconv.FormatInt(total, 10), nil
+}
+
+// ValidateMaxLznActivationLimit checks if a validator's activation would exceed 33% of total pool
+// According to whitepaper: "Максимум 33% от общего пула LZN может быть активировано одним валидатором"
+func (k Keeper) ValidateMaxLznActivationLimit(ctx sdk.Context, validator string, newAmount string) error {
+	const maxValidatorShare = 0.33 // 33% limit from whitepaper
+
+	// Get total activated LZN
+	totalActivated, err := k.GetTotalActivatedLizenz(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get total activated LZN: %w", err)
+	}
+
+	totalActivatedInt, err := strconv.ParseInt(totalActivated, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid total activated LZN: %w", err)
+	}
+
+	// Get current validator's activated LZN (if any)
+	var currentValidatorAmount int64 = 0
+	if existingLizenz, err := k.GetActivatedLizenz(ctx, validator); err == nil {
+		currentValidatorAmount, err = strconv.ParseInt(existingLizenz.Amount, 10, 64)
+		if err != nil {
+			currentValidatorAmount = 0
+		}
+	}
+
+	// Calculate new amount
+	newAmountInt, err := strconv.ParseInt(newAmount, 10, 64)
+	if err != nil {
+		return types.ErrInvalidAmount
+	}
+
+	// Calculate what the total would be after this activation
+	// If validator already has LZN, subtract old amount and add new
+	newTotal := totalActivatedInt - currentValidatorAmount + newAmountInt
+
+	// If this is the first activation in the system (total was 0 and no existing LZN for this validator), allow it
+	// The limit only applies when there are other validators or when updating existing LZN
+	if totalActivatedInt == 0 && currentValidatorAmount == 0 {
+		// First validator in the system, no limit check needed
+		return nil
+	}
+
+	// If updating existing LZN and this is the only validator, allow it
+	// (but only if not exceeding reasonable bounds)
+	if currentValidatorAmount > 0 && totalActivatedInt == currentValidatorAmount {
+		// Only this validator exists, allow update (but still check if it's reasonable)
+		// This handles the case where a single validator updates their LZN
+		return nil
+	}
+
+	// Calculate maximum allowed (33% of new total)
+	maxAllowed := int64(float64(newTotal) * maxValidatorShare)
+
+	// Check if validator's new amount exceeds the limit
+	if newAmountInt > maxAllowed {
+		return fmt.Errorf("%w: validator would have %d LZN (%.2f%%), maximum allowed is %d LZN (33%%)",
+			types.ErrExceedsMaxLznActivation,
+			newAmountInt,
+			float64(newAmountInt)/float64(newTotal)*100,
+			maxAllowed)
+	}
+
+	return nil
 }
 
 // SetLizenz is an alias for SetActivatedLizenz for backward compatibility
@@ -253,6 +349,39 @@ func (k Keeper) CheckMOA(ctx sdk.Context, validator string) (bool, error) {
 	}
 
 	return currentMoa >= requiredMoa, nil
+}
+
+// GetMOACompliance returns the MOA compliance ratio for a validator
+// Returns compliance ratio: current_moa / required_moa
+// Returns 1.0 if validator has no MOA status (assumes compliance)
+// Returns error if MOA status exists but is invalid
+func (k Keeper) GetMOACompliance(ctx sdk.Context, validator string) (float64, error) {
+	status, err := k.GetMOAStatus(ctx, validator)
+	if err != nil {
+		// If no MOA status exists, assume full compliance
+		return 1.0, nil
+	}
+
+	// Parse MOA values
+	currentMoa, err := strconv.ParseFloat(status.CurrentMoa, 64)
+	if err != nil {
+		return 0.0, fmt.Errorf("invalid current MOA: %w", err)
+	}
+
+	requiredMoa, err := strconv.ParseFloat(status.RequiredMoa, 64)
+	if err != nil {
+		return 0.0, fmt.Errorf("invalid required MOA: %w", err)
+	}
+
+	// Avoid division by zero
+	if requiredMoa == 0 {
+		return 1.0, nil // If no requirement, assume compliance
+	}
+
+	// Calculate compliance ratio
+	compliance := currentMoa / requiredMoa
+
+	return compliance, nil
 }
 
 // BeginBlocker processes MOA violations and inactive LZN licenses

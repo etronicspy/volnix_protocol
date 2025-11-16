@@ -90,3 +90,42 @@ message ValidatorWeight {
   string validator = 1;
   string weight = 2;
 }
+
+// EncryptedBid represents a committed bid in the blind auction
+// This is the commit phase: validator submits encrypted/hashed bid
+message EncryptedBid {
+  string validator = 1;
+  string commit_hash = 2; // Hash of (nonce + bid_amount)
+  uint64 block_height = 3;
+  google.protobuf.Timestamp commit_time = 4;
+}
+
+// BidReveal represents a revealed bid in the blind auction
+// This is the reveal phase: validator reveals nonce and bid amount
+message BidReveal {
+  string validator = 1;
+  string nonce = 2; // Random nonce used in commit
+  string bid_amount = 3; // ANT amount bid
+  uint64 block_height = 4;
+  google.protobuf.Timestamp reveal_time = 5;
+}
+
+// AuctionPhase represents the current phase of the blind auction
+enum AuctionPhase {
+  AUCTION_PHASE_UNSPECIFIED = 0;
+  AUCTION_PHASE_COMMIT = 1; // Validators can submit encrypted bids
+  AUCTION_PHASE_REVEAL = 2; // Validators reveal their bids
+  AUCTION_PHASE_COMPLETE = 3; // Auction is complete, winner selected
+}
+
+// BlindAuction represents a blind auction for block creation rights
+message BlindAuction {
+  uint64 block_height = 1;
+  AuctionPhase phase = 2;
+  repeated EncryptedBid commits = 3; // Committed bids
+  repeated BidReveal reveals = 4; // Revealed bids
+  string winner = 5; // Winner validator address
+  string winning_bid = 6; // Winning bid amount
+  google.protobuf.Timestamp start_time = 7;
+  google.protobuf.Timestamp end_time = 8;
+}
