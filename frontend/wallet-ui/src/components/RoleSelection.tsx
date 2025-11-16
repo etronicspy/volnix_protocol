@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Shield, Crown, AlertTriangle, CheckCircle } from 'lucide-react';
-import { WalletType } from '../types/wallet';
 
 interface RoleSelectionProps {
   onRoleSelected: (role: 'citizen' | 'validator') => void;

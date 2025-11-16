@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, Send, History, Settings, Shield, Users, Coins, Crown } from 'lucide-react';
+import { Wallet, Send, History, Users, Coins, Crown } from 'lucide-react';
 import WalletConnect from './components/WalletConnect';
 import Balance from './components/Balance';
 import SendTokens from './components/SendTokens';
 import TransactionHistory from './components/TransactionHistory';
 import WalletTypes from './components/WalletTypes';
 import ValidatorManagement from './components/ValidatorManagement';
-import { WalletState } from './types/wallet';
+import { WalletState, WalletType } from './types/wallet';
+import { blockchainService } from './services/blockchainService';
 
 function App() {
   const [walletState, setWalletState] = useState<WalletState>({
@@ -18,45 +19,115 @@ function App() {
       ant: '0'
     },
     walletType: 'guest',
-    transactions: []
+    transactions: [],
+    isVerified: false
   });
 
   const [activeTab, setActiveTab] = useState<'wallet' | 'send' | 'history' | 'types' | 'validators'>('wallet');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const connectWallet = async (address: string) => {
-    // Симуляция подключения кошелька
-    setWalletState(prev => ({
-      ...prev,
-      isConnected: true,
-      address,
-      balance: {
-        wrt: '1000.50',
-        lzn: '250.75',
-        ant: '0' // Guest не имеет доступа к ANT токенам
-      },
-      transactions: [
-        {
-          id: '1',
-          type: 'receive',
-          amount: '100.00',
-          token: 'WRT',
-          from: 'volnix1abc...def',
-          to: address,
-          timestamp: new Date().toISOString(),
-          status: 'completed'
+  // Используем isLoading для отображения индикатора загрузки
+
+  // Загрузка балансов и транзакций
+  const loadWalletData = async (address: string) => {
+    if (!address || address.trim() === '') {
+      setError('Invalid address');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      // Загружаем балансы
+      const balances = await blockchainService.getBalances(address);
+      
+      // Проверяем что балансы валидны
+      if (!balances || typeof balances !== 'object') {
+        throw new Error('Invalid balance data received');
+      }
+
+      // Загружаем транзакции
+      const blockchainTxs = await blockchainService.getTransactions(address);
+      
+      // Конвертируем транзакции в формат приложения
+      const transactions = (blockchainTxs || []).map(tx => {
+        if (!tx) return null;
+        
+        const amountValue = parseFloat(tx.amount || '0') || 0;
+        const amountInTokens = amountValue > 0 ? (amountValue / 1_000_000).toFixed(6) : '0';
+        
+        return {
+          id: tx.hash || `tx_${Date.now()}_${Math.random()}`,
+          type: (tx.from === address ? 'send' : 'receive') as 'send' | 'receive',
+          amount: amountInTokens,
+          token: tx.denom === 'uwrt' ? 'WRT' : tx.denom === 'ulzn' ? 'LZN' : 'ANT',
+          from: tx.from || address,
+          to: tx.to || address,
+          timestamp: tx.timestamp || new Date().toISOString(),
+          status: (tx.status === 'success' ? 'completed' : 'failed') as 'completed' | 'failed' | 'pending'
+        };
+      }).filter((tx): tx is NonNullable<typeof tx> => tx !== null);
+
+      setWalletState(prev => ({
+        ...prev,
+        balance: {
+          wrt: balances.wrt || '0',
+          lzn: balances.lzn || '0',
+          ant: balances.ant || '0'
         },
-        {
-          id: '2',
-          type: 'send',
-          amount: '50.25',
-          token: 'LZN',
-          from: address,
-          to: 'volnix1xyz...uvw',
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          status: 'completed'
-        }
-      ]
-    }));
+        transactions
+      }));
+    } catch (err: any) {
+      const errorMessage = err?.message || err?.toString() || 'Failed to load wallet data';
+      setError(errorMessage);
+      console.error('Error loading wallet data:', err);
+      
+      // Устанавливаем нулевые балансы при ошибке
+      setWalletState(prev => ({
+        ...prev,
+        balance: {
+          wrt: '0',
+          lzn: '0',
+          ant: '0'
+        },
+        transactions: prev.transactions || []
+      }));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Автообновление данных каждые 10 секунд
+  useEffect(() => {
+    if (!walletState.isConnected || !walletState.address) return;
+
+    loadWalletData(walletState.address);
+    const interval = setInterval(() => {
+      loadWalletData(walletState.address);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [walletState.isConnected, walletState.address]);
+
+  const connectWallet = async (address: string, mnemonic?: string) => {
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      // Загружаем начальные данные
+      await loadWalletData(address);
+      
+      setWalletState(prev => ({
+        ...prev,
+        isConnected: true,
+        address
+      }));
+    } catch (err: any) {
+      setError(err.message || 'Failed to connect wallet');
+      setIsLoading(false);
+    }
   };
 
   const disconnectWallet = () => {
@@ -65,7 +136,8 @@ function App() {
       address: '',
       balance: { wrt: '0', lzn: '0', ant: '0' },
       walletType: 'guest',
-      transactions: []
+      transactions: [],
+      isVerified: false
     });
   };
 
@@ -81,9 +153,17 @@ function App() {
   };
 
   const sendTokens = async (to: string, amount: string, token: string) => {
-    // Симуляция отправки токенов
+    if (!walletState.address) {
+      setError('Wallet not connected');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    // Добавляем транзакцию в состояние как pending
     const newTransaction = {
-      id: Date.now().toString(),
+      id: `pending_${Date.now()}`,
       type: 'send' as const,
       amount,
       token,
@@ -98,15 +178,44 @@ function App() {
       transactions: [newTransaction, ...prev.transactions]
     }));
 
-    // Симуляция подтверждения через 2 секунды
-    setTimeout(() => {
+    try {
+      // Отправляем транзакцию через blockchainService
+      const txHash = await blockchainService.sendTokens(
+        walletState.address,
+        to,
+        amount,
+        token.toLowerCase() as 'wrt' | 'lzn' | 'ant'
+      );
+
+      // Обновляем транзакцию с реальным хешем
       setWalletState(prev => ({
         ...prev,
         transactions: prev.transactions.map(tx =>
-          tx.id === newTransaction.id ? { ...tx, status: 'completed' } : tx
+          tx.id === newTransaction.id 
+            ? { ...tx, id: txHash, status: 'completed' as const }
+            : tx
         )
       }));
-    }, 2000);
+
+      // Перезагружаем балансы
+      await loadWalletData(walletState.address);
+      
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to send transaction');
+      
+      // Обновляем транзакцию как failed
+      setWalletState(prev => ({
+        ...prev,
+        transactions: prev.transactions.map(tx =>
+          tx.id === newTransaction.id 
+            ? { ...tx, status: 'failed' as const }
+            : tx
+        )
+      }));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -126,6 +235,19 @@ function App() {
           Secure Multi-Token Blockchain Wallet
         </p>
       </header>
+
+      {error && (
+        <div className="card" style={{ background: '#fee2e2', color: '#dc2626', marginBottom: '16px' }}>
+          {error}
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="card" style={{ textAlign: 'center', padding: '20px' }}>
+          <div style={{ fontSize: '18px', marginBottom: '10px' }}>⏳ Loading...</div>
+          <div style={{ color: '#6b7280' }}>Please wait while we fetch blockchain data</div>
+        </div>
+      )}
 
       {!walletState.isConnected ? (
         <WalletConnect onConnect={connectWallet} />
@@ -208,7 +330,7 @@ function App() {
 
           <div className="grid">
             {activeTab === 'wallet' && <Balance balance={walletState.balance} />}
-            {activeTab === 'send' && <SendTokens onSend={sendTokens} />}
+            {activeTab === 'send' && <SendTokens onSend={sendTokens} balance={walletState.balance} />}
             {activeTab === 'history' && <TransactionHistory transactions={walletState.transactions} />}
             {activeTab === 'types' && <WalletTypes currentType={walletState.walletType} onUpgrade={upgradeWalletType} />}
             {activeTab === 'validators' && <ValidatorManagement />}

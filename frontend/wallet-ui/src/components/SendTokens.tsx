@@ -3,30 +3,71 @@ import { Send, ArrowRight } from 'lucide-react';
 
 interface SendTokensProps {
   onSend: (to: string, amount: string, token: string) => void;
+  balance: {
+    wrt: string;
+    lzn: string;
+    ant: string;
+  };
 }
 
-const SendTokens: React.FC<SendTokensProps> = ({ onSend }) => {
+const SendTokens: React.FC<SendTokensProps> = ({ onSend, balance }) => {
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [selectedToken, setSelectedToken] = useState('WRT');
   const [isSending, setIsSending] = useState(false);
 
   const handleSend = async () => {
-    if (!recipient || !amount || parseFloat(amount) <= 0) return;
+    if (!recipient || !amount) {
+      alert('Please enter recipient address and amount');
+      return;
+    }
+
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    const selectedTokenData = tokens.find(t => t.symbol === selectedToken);
+    if (selectedTokenData && parseFloat(selectedTokenData.balance) < amountNum) {
+      alert(`Insufficient balance. Available: ${selectedTokenData.balance} ${selectedToken}`);
+      return;
+    }
 
     setIsSending(true);
-    await onSend(recipient, amount, selectedToken);
-    
-    // Очистка формы после отправки
-    setRecipient('');
-    setAmount('');
-    setIsSending(false);
+    try {
+      await onSend(recipient.trim(), amount, selectedToken);
+      
+      // Очистка формы после успешной отправки
+      setRecipient('');
+      setAmount('');
+    } catch (error) {
+      // Ошибка уже обработана в App.tsx
+      console.error('Error sending tokens:', error);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const tokens = [
-    { symbol: 'WRT', name: 'Wealth Rights Token', balance: '1000.50', available: true },
-    { symbol: 'LZN', name: 'Lizenz Token', balance: '250.75', available: true },
-    { symbol: 'ANT', name: 'Anteil Rights', balance: '0', available: false }
+    { 
+      symbol: 'WRT', 
+      name: 'Wealth Rights Token', 
+      balance: balance?.wrt || '0', 
+      available: true 
+    },
+    { 
+      symbol: 'LZN', 
+      name: 'Lizenz Token', 
+      balance: balance?.lzn || '0', 
+      available: true 
+    },
+    { 
+      symbol: 'ANT', 
+      name: 'Anteil Rights', 
+      balance: balance?.ant || '0', 
+      available: parseFloat(balance?.ant || '0') > 0 
+    }
   ];
 
   const selectedTokenData = tokens.find(t => t.symbol === selectedToken);

@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"cosmossdk.io/log"
@@ -17,25 +19,124 @@ import (
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
 	"github.com/cometbft/cometbft/proxy"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/types"
 	
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	storetypes "cosmossdk.io/store/types"
+	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
+	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	
 	abci "github.com/cometbft/cometbft/abci/types"
 )
 
 const DefaultNodeHome = ".volnix"
 
+// consensusParamsStore implements baseapp.ParamStore using the params keeper subspace
+type consensusParamsStore struct {
+	subspace paramtypes.Subspace
+}
+
+var _ baseapp.ParamStore = (*consensusParamsStore)(nil)
+
+func (cps *consensusParamsStore) Get(ctx context.Context) (cmtproto.ConsensusParams, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	var cp cmtproto.ConsensusParams
+	
+	// Get individual params from subspace
+	var blockParams cmtproto.BlockParams
+	var evidenceParams cmtproto.EvidenceParams
+	var validatorParams cmtproto.ValidatorParams
+	
+	cps.subspace.Get(sdkCtx, []byte(baseapp.ParamStoreKeyBlockParams), &blockParams)
+	cps.subspace.Get(sdkCtx, []byte(baseapp.ParamStoreKeyEvidenceParams), &evidenceParams)
+	cps.subspace.Get(sdkCtx, []byte(baseapp.ParamStoreKeyValidatorParams), &validatorParams)
+	
+	cp.Block = &blockParams
+	cp.Evidence = &evidenceParams
+	cp.Validator = &validatorParams
+	
+	return cp, nil
+}
+
+func (cps *consensusParamsStore) Has(ctx context.Context) (bool, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	return cps.subspace.Has(sdkCtx, []byte(baseapp.ParamStoreKeyBlockParams)), nil
+}
+
+func (cps *consensusParamsStore) Set(ctx context.Context, cp cmtproto.ConsensusParams) error {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	
+	// Set individual params in subspace
+	if cp.Block != nil {
+		cps.subspace.Set(sdkCtx, []byte(baseapp.ParamStoreKeyBlockParams), cp.Block)
+	}
+	if cp.Evidence != nil {
+		cps.subspace.Set(sdkCtx, []byte(baseapp.ParamStoreKeyEvidenceParams), cp.Evidence)
+	}
+	if cp.Validator != nil {
+		cps.subspace.Set(sdkCtx, []byte(baseapp.ParamStoreKeyValidatorParams), cp.Validator)
+	}
+	
+	return nil
+}
+
 // StandaloneApp is a completely standalone minimal app
 type StandaloneApp struct {
 	*baseapp.BaseApp
 }
 
+// Query overrides BaseApp Query to handle bank balance queries
+// CosmJS StargateClient makes gRPC queries for balances that need to be handled
+func (app *StandaloneApp) Query(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
+	// Handle bank balance queries from CosmJS
+	// Path format: /cosmos.bank.v1beta1.Query/AllBalances or /cosmos.bank.v1beta1.Query/Balance
+	path := string(req.Path)
+	
+	if strings.HasPrefix(path, "/cosmos.bank.v1beta1.Query/") {
+		// Get current block height from BaseApp
+		// This is required by CosmJS - queries must return height
+		sdkCtx := app.NewContext(true) // true = checkTx = false, so we get latest committed state
+		blockHeight := sdkCtx.BlockHeight()
+		
+		// Return empty balances response in protobuf JSON format
+		// Format matches QueryAllBalancesResponse from cosmos.bank.v1beta1
+		// This allows CosmJS to parse the response correctly
+		emptyBalancesResponse := map[string]interface{}{
+			"balances": []interface{}{},
+			"pagination": map[string]interface{}{
+				"next_key": nil,
+				"total":    "0",
+			},
+		}
+		
+		responseJSON, err := json.Marshal(emptyBalancesResponse)
+		if err != nil {
+			return &abci.ResponseQuery{
+				Code:   1,
+				Log:    fmt.Sprintf("failed to marshal response: %v", err),
+				Value:  []byte{},
+				Height: int64(blockHeight),
+			}, nil
+		}
+		
+		return &abci.ResponseQuery{
+			Code:   0,
+			Value:  responseJSON,
+			Height: int64(blockHeight), // CRITICAL: Must return height for CosmJS
+		}, nil
+	}
+	
+	// For all other queries, use BaseApp's default Query handler
+	return app.BaseApp.Query(ctx, req)
+}
+
 // NewStandaloneApp creates a completely standalone app
-func NewStandaloneApp(logger log.Logger, db cosmosdb.DB) *StandaloneApp {
+// chainID is required to set it in BaseApp before handshake
+func NewStandaloneApp(logger log.Logger, db cosmosdb.DB, chainID string) *StandaloneApp {
 	// Create minimal encoding without any module dependencies
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
 	_ = codec.NewProtoCodec(interfaceRegistry) // Not used in minimal version
@@ -44,15 +145,38 @@ func NewStandaloneApp(logger log.Logger, db cosmosdb.DB) *StandaloneApp {
 	txDecoder := func(txBytes []byte) (sdk.Tx, error) { return nil, nil }
 	txEncoder := func(tx sdk.Tx) ([]byte, error) { return []byte{}, nil }
 	
-	// Create base app
-	bapp := baseapp.NewBaseApp("volnix-standalone", logger, db, txDecoder)
+	// CRITICAL: Set chainID in BaseApp using SetChainID option
+	// This ensures BaseApp has the correct chain-id BEFORE handshake
+	// When CometBFT calls Info() during handshake, BaseApp will have the correct chain-id
+	// When InitChain is called, the validation will pass: req.ChainId == app.chainID
+	bapp := baseapp.NewBaseApp("volnix-standalone", logger, db, txDecoder, baseapp.SetChainID(chainID))
 	bapp.SetVersion("0.1.0-standalone")
 	bapp.SetInterfaceRegistry(interfaceRegistry)
 	bapp.SetTxEncoder(txEncoder)
 	
-	app := &StandaloneApp{BaseApp: bapp}
+	// CRITICAL: Set up params store for consensus params storage
+	// BaseApp needs params store to store consensus params during InitChain
+	keyParams := storetypes.NewKVStoreKey(paramtypes.StoreKey)
+	tkeyParams := storetypes.NewTransientStoreKey(paramtypes.TStoreKey)
 	
-	// Set minimal ABCI handlers
+	// Mount params store
+	bapp.MountKVStores(map[string]*storetypes.KVStoreKey{
+		paramtypes.StoreKey: keyParams,
+	})
+	bapp.MountTransientStores(map[string]*storetypes.TransientStoreKey{
+		paramtypes.TStoreKey: tkeyParams,
+	})
+	
+	// CRITICAL: Create params keeper and set ParamStore BEFORE LoadLatestVersion
+	// BaseApp becomes "sealed" after LoadLatestVersion, so we must set ParamStore first
+	paramsKeeper := paramskeeper.NewKeeper(codec.NewProtoCodec(interfaceRegistry), codec.NewLegacyAmino(), keyParams, tkeyParams)
+	baseappSubspace := paramsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramtypes.ConsensusParamsKeyTable())
+	// Create adapter to convert Subspace to ParamStore interface
+	paramStore := &consensusParamsStore{subspace: baseappSubspace}
+	bapp.SetParamStore(paramStore)
+	
+	// CRITICAL: Set all ABCI handlers BEFORE LoadLatestVersion
+	// BaseApp becomes "sealed" after LoadLatestVersion, so all handlers must be set first
 	bapp.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
 		return sdk.BeginBlock{}, nil
 	})
@@ -63,8 +187,26 @@ func NewStandaloneApp(logger log.Logger, db cosmosdb.DB) *StandaloneApp {
 	
 	bapp.SetInitChainer(func(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
 		// Accept any chain-id from CometBFT
+		// Set the chain ID in the context - this is critical for BaseApp to store the correct chain-id
+		ctx = ctx.WithChainID(req.ChainId)
+		// BaseApp will automatically store the chain-id from the context
+		// This ensures consistency between genesis.json and stored chain-id
+		
+		// CRITICAL: Return validators in ResponseInitChain
+		// CometBFT uses this to verify validator consistency during replay
+		// If validators are not returned, CometBFT will see mismatch during replay
+		validators := make([]abci.ValidatorUpdate, len(req.Validators))
+		for i, val := range req.Validators {
+			validators[i] = abci.ValidatorUpdate{
+				PubKey: val.PubKey,
+				Power:  val.Power,
+			}
+		}
+		
 		return &abci.ResponseInitChain{
+			Validators:       validators,
 			ConsensusParams: req.ConsensusParams,
+			AppHash:         []byte{},
 		}, nil
 	})
 	
@@ -72,6 +214,16 @@ func NewStandaloneApp(logger log.Logger, db cosmosdb.DB) *StandaloneApp {
 	bapp.SetAnteHandler(func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		return ctx, nil
 	})
+	
+	// CRITICAL: Load latest version to initialize stores
+	// This must be called AFTER setting all handlers and ParamStore
+	// This initializes the commit multi-store and makes stores available
+	// After this call, BaseApp becomes "sealed" and no more configuration changes are allowed
+	if err := bapp.LoadLatestVersion(); err != nil {
+		panic(fmt.Errorf("failed to load latest version: %w", err))
+	}
+	
+	app := &StandaloneApp{BaseApp: bapp}
 	
 	return app
 }
@@ -131,9 +283,9 @@ func (w *StandaloneABCIWrapper) Commit(ctx context.Context, req *abci.RequestCom
 }
 
 // Query implements ABCI interface with context
+// This calls StandaloneApp.Query which handles bank balance queries
 func (w *StandaloneABCIWrapper) Query(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
-	resp, err := w.StandaloneApp.Query(ctx, req)
-	return resp, err
+	return w.StandaloneApp.Query(ctx, req)
 }
 
 // Info implements ABCI interface with context
@@ -202,16 +354,12 @@ type StandaloneServer struct {
 }
 
 // NewStandaloneServer creates a completely standalone server
+// NOTE: Database is NOT created here to avoid chain-id conflicts.
+// Database will be created in Start() method after cleaning old data.
 func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, error) {
-	// Create database
-	dbPath := filepath.Join(homeDir, "data")
-	db, err := cosmosdb.NewGoLevelDB("volnix-standalone", dbPath, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create database: %w", err)
-	}
-	
-	// Create standalone app
-	app := NewStandaloneApp(logger, db)
+	// Don't create database here - it will be created in Start() method
+	// This prevents chain-id conflicts during handshake
+	var app *StandaloneApp = nil // Will be created in Start()
 	
 	// Create CometBFT config
 	config := cmtcfg.DefaultConfig()
@@ -250,10 +398,74 @@ func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, 
 func (s *StandaloneServer) Start(ctx context.Context) error {
 	s.logger.Info("🚀 Starting Standalone Volnix Protocol...")
 	
-	// Initialize files
+	// Initialize files (this creates genesis.json with validators)
 	if err := s.initializeFiles(); err != nil {
 		return fmt.Errorf("failed to initialize files: %w", err)
 	}
+	
+	// CRITICAL: Read chain-id and validators from genesis.json AFTER it's created
+	// This ensures genesis.json contains validators before we read it
+	genesisFile := filepath.Join(s.config.RootDir, "config", "genesis.json")
+	genesisDoc, err := types.GenesisDocFromFile(genesisFile)
+	if err != nil {
+		return fmt.Errorf("failed to read genesis file: %w", err)
+	}
+	chainID := genesisDoc.ChainID
+	
+	// Verify validators are in genesis
+	if len(genesisDoc.Validators) == 0 {
+		return fmt.Errorf("genesis file must contain at least one validator")
+	}
+	s.logger.Info("Genesis loaded", "chain-id", chainID, "validators", len(genesisDoc.Validators))
+	
+	// CRITICAL: Completely clean ALL database files before creating new ones
+	// This ensures no stale validator or chain state data from previous runs
+	// CometBFT stores validator info in state.db, so we must clean it too
+	dbPath := filepath.Join(s.homeDir, "data")
+	
+	// Remove all application database files
+	appDbFiles := []string{
+		filepath.Join(dbPath, "volnix-standalone.db"),
+		filepath.Join(dbPath, "volnix-standalone.db-shm"),
+		filepath.Join(dbPath, "volnix-standalone.db-wal"),
+	}
+	for _, dbFile := range appDbFiles {
+		if err := os.RemoveAll(dbFile); err != nil && !os.IsNotExist(err) {
+			s.logger.Warn("Failed to remove app database file", "file", dbFile, "error", err)
+		}
+	}
+	
+	// CRITICAL: Remove CometBFT database directories (they contain validator state)
+	// These must be removed to prevent validator mismatch during replay
+	cometDbDirs := []string{
+		filepath.Join(dbPath, "blockstore.db"),
+		filepath.Join(dbPath, "state.db"),
+		filepath.Join(dbPath, "tx_index.db"),
+	}
+	for _, dir := range cometDbDirs {
+		if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) {
+			s.logger.Warn("Failed to remove CometBFT database directory", "dir", dir, "error", err)
+		}
+	}
+	
+	s.logger.Info("Database cleaned, ready for fresh start")
+	
+	// Create database HERE, not in NewStandaloneServer
+	// This ensures database is created fresh before handshake, preventing chain-id conflicts
+	db, err := cosmosdb.NewGoLevelDB("volnix-standalone", dbPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create database: %w", err)
+	}
+	
+	// Create standalone app with fresh database
+	// CRITICAL: Pass chainID from genesis.json to set it in BaseApp before handshake
+	s.app = NewStandaloneApp(s.logger, db, chainID)
+	
+	// NOTE: We cannot call InitChain manually because BaseApp validates chain-id
+	// and will fail if database already has a chain-id (even empty).
+	// Instead, we rely on CometBFT to call InitChain during handshake.
+	// The key is ensuring database is completely clean before creating BaseApp.
+	s.logger.Info("Database created, ready for CometBFT handshake", "chain-id", chainID)
 	
 	// Create CometBFT node
 	if err := s.createCometBFTNode(); err != nil {
@@ -365,11 +577,10 @@ func (s *StandaloneServer) initializeFiles() error {
 	}
 	
 	// Create genesis file
+	// Always recreate genesis file to ensure validators are included
 	genesisFile := filepath.Join(configDir, "genesis.json")
-	if _, err := os.Stat(genesisFile); os.IsNotExist(err) {
-		if err := s.createGenesisFile(genesisFile); err != nil {
-			return fmt.Errorf("failed to create genesis file: %w", err)
-		}
+	if err := s.createGenesisFile(genesisFile); err != nil {
+		return fmt.Errorf("failed to create genesis file: %w", err)
 	}
 	
 	// Create config file
@@ -393,22 +604,32 @@ func (s *StandaloneServer) createGenesisFile(genesisFile string) error {
 	}
 	
 	// Add default validator
+	// Always create/load validator key to ensure validator is in genesis
 	privValKeyFile := filepath.Join(s.config.RootDir, "config", "priv_validator_key.json")
+	privValStateFile := filepath.Join(s.config.RootDir, "data", "priv_validator_state.json")
+	
+	// Create validator key if it doesn't exist
+	var privVal *privval.FilePV
 	if _, err := os.Stat(privValKeyFile); os.IsNotExist(err) {
-		privVal := privval.GenFilePV(privValKeyFile, filepath.Join(s.config.RootDir, "data", "priv_validator_state.json"))
-		pubKey, err := privVal.GetPubKey()
-		if err != nil {
-			return fmt.Errorf("failed to get validator public key: %w", err)
-		}
-		
-		validator := types.GenesisValidator{
-			Address: pubKey.Address(),
-			PubKey:  pubKey,
-			Power:   10,
-			Name:    "volnix-standalone-validator",
-		}
-		genDoc.Validators = []types.GenesisValidator{validator}
+		privVal = privval.GenFilePV(privValKeyFile, privValStateFile)
+	} else {
+		// Load existing validator key
+		privVal = privval.LoadFilePV(privValKeyFile, privValStateFile)
 	}
+	
+	// Always add validator to genesis
+	pubKey, err := privVal.GetPubKey()
+	if err != nil {
+		return fmt.Errorf("failed to get validator public key: %w", err)
+	}
+	
+	validator := types.GenesisValidator{
+		Address: pubKey.Address(),
+		PubKey:  pubKey,
+		Power:   10,
+		Name:    "volnix-standalone-validator",
+	}
+	genDoc.Validators = []types.GenesisValidator{validator}
 	
 	return genDoc.SaveAs(genesisFile)
 }
@@ -446,14 +667,36 @@ func main() {
 				
 				fmt.Println("✅ Directory structure created")
 				
-				// Create server
+				// Create server to generate config files (but don't start it)
+				// This will create genesis.json and config.toml without creating the database
 				logger := log.NewLogger(os.Stdout)
 				server, err := NewStandaloneServer(DefaultNodeHome, logger)
 				if err != nil {
 					return fmt.Errorf("failed to create standalone server: %w", err)
 				}
 				
+				// Initialize files (creates genesis.json and config.toml)
+				if err := server.initializeFiles(); err != nil {
+					return fmt.Errorf("failed to initialize files: %w", err)
+				}
+				
+				// Stop server (this closes the database)
 				_ = server.Stop()
+				
+				// IMPORTANT: Remove database files created during initialization
+				// This ensures the database is created fresh on first start with correct chain-id
+				dataDir := filepath.Join(DefaultNodeHome, "data")
+				if err := filepath.Walk(dataDir, func(path string, info os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+					if !info.IsDir() && (filepath.Ext(path) == ".db" || filepath.Ext(path) == ".db-shm" || filepath.Ext(path) == ".db-wal") {
+						return os.Remove(path)
+					}
+					return nil
+				}); err != nil {
+					// Ignore errors - database might not exist yet
+				}
 				
 				fmt.Println("🎉 Standalone node initialized successfully!")
 				fmt.Println("📋 Next step: volnixd-standalone start")

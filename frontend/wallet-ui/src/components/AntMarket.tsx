@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Clock, CheckCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Clock } from 'lucide-react';
 import { AntMarketOrder } from '../types/wallet';
 
 interface AntMarketProps {
