@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -20,10 +21,21 @@ import (
 
 // LizenzKeeperInterface defines the interface for interacting with lizenz module
 // This allows consensus module to get information about activated LZN and MOA status
+// Note: We use interface{} for GetAllActivatedLizenz to avoid circular dependencies
+// The actual type is []*lizenzv1.ActivatedLizenz, but we can't import it here
 type LizenzKeeperInterface interface {
-	GetAllActivatedLizenz(ctx sdk.Context) ([]interface{}, error) // Returns list of activated LZN
-	GetTotalActivatedLizenz(ctx sdk.Context) (string, error)     // Returns total activated LZN
+	GetAllActivatedLizenz(ctx sdk.Context) ([]interface{}, error) // Returns list of activated LZN ([]*lizenzv1.ActivatedLizenz)
+	GetTotalActivatedLizenz(ctx sdk.Context) (string, error)      // Returns total activated LZN
 	GetMOACompliance(ctx sdk.Context, validator string) (float64, error) // Returns MOA compliance ratio (0.0 to 1.0+)
+}
+
+// AnteilKeeperInterface defines the interface for interacting with anteil module
+// This allows consensus module to check ANT balances and burn ANT tokens
+// Note: We use interface{} for UserPosition to avoid circular dependencies
+type AnteilKeeperInterface interface {
+	GetUserPosition(ctx sdk.Context, user string) (interface{}, error) // Returns UserPosition (anteilv1.UserPosition)
+	SetUserPosition(ctx sdk.Context, position interface{}) error      // Sets UserPosition
+	UpdateUserPosition(ctx sdk.Context, user string, antBalance string, orderCount uint32) error // Updates ANT balance
 }
 
 type (
@@ -32,6 +44,7 @@ type (
 		storeKey     storetypes.StoreKey
 		paramstore   paramtypes.Subspace
 		lizenzKeeper LizenzKeeperInterface // Optional: for reward distribution
+		anteilKeeper AnteilKeeperInterface // Optional: for ANT balance management
 	}
 )
 
@@ -55,6 +68,11 @@ func NewKeeper(
 // SetLizenzKeeper sets the lizenz keeper interface for reward distribution
 func (k *Keeper) SetLizenzKeeper(lizenzKeeper LizenzKeeperInterface) {
 	k.lizenzKeeper = lizenzKeeper
+}
+
+// SetAnteilKeeper sets the anteil keeper interface for ANT balance management
+func (k *Keeper) SetAnteilKeeper(anteilKeeper AnteilKeeperInterface) {
+	k.anteilKeeper = anteilKeeper
 }
 
 // GetParams returns the current parameters for the consensus module
@@ -113,9 +131,26 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 	}
 
 	// Fallback to weighted lottery if no auction winner
-	// Calculate weights based on ANT balance and activity
+	// Calculate weights based on ANT balance, activity, and activated LZN
 	weights := make([]uint64, len(validators))
 	totalWeight := uint64(0)
+
+	// Get activated LZN for validators (if lizenz keeper is available)
+	validatorLZN := make(map[string]uint64)
+	if k.lizenzKeeper != nil {
+		allLizenzs, err := k.lizenzKeeper.GetAllActivatedLizenz(ctx)
+		if err == nil {
+			for _, lizenzInterface := range allLizenzs {
+				validator, amount, err := extractLizenzInfo(lizenzInterface)
+				if err == nil {
+					amountInt, err := strconv.ParseUint(amount, 10, 64)
+					if err == nil {
+						validatorLZN[validator] = amountInt
+					}
+				}
+			}
+		}
+	}
 
 	for i, validator := range validators {
 		// Convert ANT balance to weight
@@ -130,8 +165,12 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 			activityScore = 0
 		}
 
-		// Weight = ANT balance + activity score
-		weights[i] = antBalance + activityScore
+		// Get activated LZN for this validator
+		activatedLZN := validatorLZN[validator.Validator]
+
+		// Weight = ANT balance + activity score + activated LZN
+		// LZN is important as it represents validator's stake in the network
+		weights[i] = antBalance + activityScore + activatedLZN
 		totalWeight += weights[i]
 	}
 
@@ -812,6 +851,31 @@ func (k Keeper) RevealBid(ctx sdk.Context, validator, nonce, bidAmount string, h
 		return types.ErrInvalidBidAmount
 	}
 
+	// Check ANT balance if anteil keeper is available
+	// According to whitepaper: validators must have sufficient ANT to bid
+	if k.anteilKeeper != nil {
+		positionInterface, err := k.anteilKeeper.GetUserPosition(ctx, validator)
+		if err != nil {
+			// If position doesn't exist, validator has no ANT balance
+			return fmt.Errorf("validator %s has no ANT balance", validator)
+		}
+
+		antBalanceStr, err := extractAntBalance(positionInterface)
+		if err != nil {
+			return fmt.Errorf("failed to extract ANT balance: %w", err)
+		}
+
+		antBalance, err := strconv.ParseUint(antBalanceStr, 10, 64)
+		if err != nil {
+			antBalance = 0
+		}
+
+		// Check if validator has sufficient ANT balance for the bid
+		if antBalance < bidAmountInt {
+			return fmt.Errorf("insufficient ANT balance: have %d, need %d", antBalance, bidAmountInt)
+		}
+	}
+
 	// Add reveal
 	bidReveal := &consensusv1.BidReveal{
 		Validator:    validator,
@@ -869,8 +933,36 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 		currentWeight += bidAmount
 		if randomWeight < currentWeight {
 			winner := auction.Reveals[i]
-			auction.Winner = winner.Validator
-			auction.WinningBid = winner.BidAmount
+			winnerValidator := winner.Validator
+			winningBid := winner.BidAmount
+
+			// Burn ANT from winner (according to whitepaper: "Только победитель аукциона фактически покупает права на ANT")
+			if k.anteilKeeper != nil {
+				positionInterface, err := k.anteilKeeper.GetUserPosition(ctx, winnerValidator)
+				if err == nil {
+					// Get current ANT balance
+					currentBalanceStr, err := extractAntBalance(positionInterface)
+					if err == nil {
+						currentBalance, err := strconv.ParseUint(currentBalanceStr, 10, 64)
+						if err == nil {
+							winningBidInt, err := strconv.ParseUint(winningBid, 10, 64)
+							if err == nil && currentBalance >= winningBidInt {
+								// Burn ANT: subtract winning bid amount from balance
+								newBalance := currentBalance - winningBidInt
+								err = k.anteilKeeper.UpdateUserPosition(ctx, winnerValidator, fmt.Sprintf("%d", newBalance), 0)
+								if err != nil {
+									ctx.Logger().Error("failed to burn ANT from winner", "error", err, "winner", winnerValidator, "amount", winningBid)
+								} else {
+									ctx.Logger().Info("ANT burned from auction winner", "winner", winnerValidator, "amount", winningBid, "new_balance", newBalance)
+								}
+							}
+						}
+					}
+				}
+			}
+
+			auction.Winner = winnerValidator
+			auction.WinningBid = winningBid
 			auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE
 			auction.EndTime = timestamppb.Now()
 
@@ -879,14 +971,38 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 				return "", "", err
 			}
 
-			return winner.Validator, winner.BidAmount, nil
+			return winnerValidator, winningBid, nil
 		}
 	}
 
 	// Fallback to first reveal (should not happen)
 	winner := auction.Reveals[0]
-	auction.Winner = winner.Validator
-	auction.WinningBid = winner.BidAmount
+	winnerValidator := winner.Validator
+	winningBid := winner.BidAmount
+
+	// Burn ANT from winner (fallback case)
+	if k.anteilKeeper != nil {
+		positionInterface, err := k.anteilKeeper.GetUserPosition(ctx, winnerValidator)
+		if err == nil {
+			currentBalanceStr, err := extractAntBalance(positionInterface)
+			if err == nil {
+				currentBalance, err := strconv.ParseUint(currentBalanceStr, 10, 64)
+				if err == nil {
+					winningBidInt, err := strconv.ParseUint(winningBid, 10, 64)
+					if err == nil && currentBalance >= winningBidInt {
+						newBalance := currentBalance - winningBidInt
+						err = k.anteilKeeper.UpdateUserPosition(ctx, winnerValidator, fmt.Sprintf("%d", newBalance), 0)
+						if err != nil {
+							ctx.Logger().Error("failed to burn ANT from winner (fallback)", "error", err, "winner", winnerValidator, "amount", winningBid)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	auction.Winner = winnerValidator
+	auction.WinningBid = winningBid
 	auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE
 	auction.EndTime = timestamppb.Now()
 
@@ -895,7 +1011,7 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 		return "", "", err
 	}
 
-	return winner.Validator, winner.BidAmount, nil
+	return winnerValidator, winningBid, nil
 }
 
 // TransitionAuctionPhase transitions auction from commit to reveal phase
@@ -953,6 +1069,50 @@ func (k Keeper) CalculateBaseReward(ctx sdk.Context, height uint64) (uint64, err
 // GetHalvingCount returns the current halving count for a given block height
 func (k Keeper) GetHalvingCount(height uint64) uint64 {
 	return height / HalvingInterval
+}
+
+// extractLizenzInfo extracts validator and amount from an ActivatedLizenz object
+// Uses reflection to avoid circular dependency with lizenzv1 package
+func extractLizenzInfo(lizenzInterface interface{}) (validator string, amount string, err error) {
+	// Use reflection to get the fields
+	v := reflect.ValueOf(lizenzInterface)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	// Get Validator field
+	validatorField := v.FieldByName("Validator")
+	if !validatorField.IsValid() || validatorField.Kind() != reflect.String {
+		return "", "", fmt.Errorf("invalid LZN object: Validator field not found or invalid")
+	}
+	validator = validatorField.String()
+
+	// Get Amount field
+	amountField := v.FieldByName("Amount")
+	if !amountField.IsValid() || amountField.Kind() != reflect.String {
+		return "", "", fmt.Errorf("invalid LZN object: Amount field not found or invalid")
+	}
+	amount = amountField.String()
+
+	return validator, amount, nil
+}
+
+// extractAntBalance extracts ANT balance from a UserPosition object
+// Uses reflection to avoid circular dependency with anteilv1 package
+func extractAntBalance(positionInterface interface{}) (string, error) {
+	// Use reflection to get the fields
+	v := reflect.ValueOf(positionInterface)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	// Get AntBalance field
+	antBalanceField := v.FieldByName("AntBalance")
+	if !antBalanceField.IsValid() || antBalanceField.Kind() != reflect.String {
+		return "0", fmt.Errorf("invalid UserPosition object: AntBalance field not found or invalid")
+	}
+
+	return antBalanceField.String(), nil
 }
 
 // CalculateMOAPenaltyMultiplier calculates the penalty multiplier based on MOA compliance
@@ -1091,12 +1251,23 @@ func (k Keeper) DistributeBaseRewards(ctx sdk.Context, height uint64) error {
 	// Build map of validator -> activated LZN amount
 	validatorLZN := make(map[string]uint64)
 	for _, lizenzInterface := range allLizenzs {
-		// Type assertion to get the actual lizenz object
-		// We need to handle this carefully since we're using interface{}
-		// For now, we'll assume the interface provides the necessary methods
-		// In a real implementation, we'd use a proper type
-		// This is a placeholder - actual implementation would need proper type casting
-		_ = lizenzInterface
+		// Type assertion: we expect *lizenzv1.ActivatedLizenz
+		// Use reflection or type assertion to get validator and amount
+		// Since we can't import lizenzv1 here, we use a helper function
+		validator, amount, err := extractLizenzInfo(lizenzInterface)
+		if err != nil {
+			ctx.Logger().Error("failed to extract LZN info", "error", err)
+			continue
+		}
+
+		// Parse amount to uint64
+		amountInt, err := strconv.ParseUint(amount, 10, 64)
+		if err != nil {
+			ctx.Logger().Error("failed to parse LZN amount", "error", err, "amount", amount)
+			continue
+		}
+
+		validatorLZN[validator] = amountInt
 	}
 
 	// If no validators have activated LZN, skip distribution

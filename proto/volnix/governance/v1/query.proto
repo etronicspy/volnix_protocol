@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package volnix.governance.v1;
+
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1;governancev1";
+
+import "volnix/governance/v1/types.proto";
+
+// Query defines the Query service for governance module
+service Query {
+  // Proposal queries a proposal by ID
+  rpc Proposal(QueryProposalRequest) returns (QueryProposalResponse);
+  
+  // Proposals queries all proposals
+  rpc Proposals(QueryProposalsRequest) returns (QueryProposalsResponse);
+  
+  // Vote queries a vote on a proposal
+  rpc Vote(QueryVoteRequest) returns (QueryVoteResponse);
+  
+  // Votes queries all votes on a proposal
+  rpc Votes(QueryVotesRequest) returns (QueryVotesResponse);
+  
+  // Params queries governance parameters
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
+}
+
+message QueryProposalRequest {
+  uint64 proposal_id = 1;
+}
+
+message QueryProposalResponse {
+  Proposal proposal = 1;
+}
+
+message QueryProposalsRequest {
+  ProposalStatus status = 1;  // Filter by status (optional)
+}
+
+message QueryProposalsResponse {
+  repeated Proposal proposals = 1;
+}
+
+message QueryVoteRequest {
+  uint64 proposal_id = 1;
+  string voter = 2;
+}
+
+message QueryVoteResponse {
+  Vote vote = 1;
+}
+
+message QueryVotesRequest {
+  uint64 proposal_id = 1;
+}
+
+message QueryVotesResponse {
+  repeated Vote votes = 1;
+}
+
+message QueryParamsRequest {}
+
+message QueryParamsResponse {
+  Params params = 1;
+}
+

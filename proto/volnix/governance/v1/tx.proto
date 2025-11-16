@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package volnix.governance.v1;
+
+option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1;governancev1";
+
+import "cosmos/msg/v1/msg.proto";
+import "volnix/governance/v1/types.proto";
+
+// Msg defines the Msg service for governance module
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+  
+  // SubmitProposal submits a new governance proposal
+  rpc SubmitProposal(MsgSubmitProposal) returns (MsgSubmitProposalResponse);
+  
+  // Vote votes on a proposal
+  rpc Vote(MsgVote) returns (MsgVoteResponse);
+  
+  // ExecuteProposal executes a passed proposal (after timelock)
+  rpc ExecuteProposal(MsgExecuteProposal) returns (MsgExecuteProposalResponse);
+}
+
+// MsgSubmitProposal submits a governance proposal
+message MsgSubmitProposal {
+  string proposer = 1;  // bech32 address
+  ProposalType proposal_type = 2;
+  string title = 3;
+  string description = 4;
+  repeated ParameterChange parameter_changes = 5;  // For parameter change proposals
+  string deposit = 6;  // WRT deposit (must meet min_deposit)
+}
+
+message MsgSubmitProposalResponse {
+  uint64 proposal_id = 1;
+}
+
+// MsgVote votes on a proposal
+// According to whitepaper: "Право голоса в этом DAO принадлежит исключительно держателям WRT"
+message MsgVote {
+  uint64 proposal_id = 1;
+  string voter = 2;  // bech32 address
+  VoteOption option = 3;
+}
+
+message MsgVoteResponse {
+  bool success = 1;
+}
+
+// MsgExecuteProposal executes a passed proposal
+message MsgExecuteProposal {
+  uint64 proposal_id = 1;
+  string executor = 2;  // bech32 address (can be anyone after timelock)
+}
+
+message MsgExecuteProposalResponse {
+  bool success = 1;
+}
+

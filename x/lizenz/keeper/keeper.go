@@ -10,15 +10,23 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
+// IdentKeeperInterface defines the interface for interacting with ident module
+// This allows lizenz module to verify identity and role before LZN activation
+type IdentKeeperInterface interface {
+	GetVerifiedAccount(ctx sdk.Context, address string) (*identv1.VerifiedAccount, error)
+}
+
 type (
 	Keeper struct {
-		cdc        codec.BinaryCodec
-		storeKey   storetypes.StoreKey
-		paramstore paramtypes.Subspace
+		cdc          codec.BinaryCodec
+		storeKey     storetypes.StoreKey
+		paramstore   paramtypes.Subspace
+		identKeeper  IdentKeeperInterface // Optional: for identity verification
 	}
 )
 
@@ -39,6 +47,11 @@ func NewKeeper(
 	}
 }
 
+// SetIdentKeeper sets the ident keeper interface for identity verification
+func (k *Keeper) SetIdentKeeper(identKeeper IdentKeeperInterface) {
+	k.identKeeper = identKeeper
+}
+
 // GetParams returns the current parameters for the lizenz module
 func (k Keeper) GetParams(ctx sdk.Context) types.Params {
 	var params types.Params
@@ -55,6 +68,13 @@ func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
 func (k Keeper) SetActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.ActivatedLizenz) error {
 	if err := types.IsActivatedLizenzValid(lizenz); err != nil {
 		return err
+	}
+
+	// Validate identity verification and role (if ident keeper is set)
+	if k.identKeeper != nil {
+		if err := k.validateIdentityAndRole(ctx, lizenz.Validator); err != nil {
+			return err
+		}
 	}
 
 	store := ctx.KVStore(k.storeKey)
@@ -573,6 +593,34 @@ func (k Keeper) UpdateLizenzActivity(ctx sdk.Context, validator string) error {
 		if err := k.SetMOAStatus(ctx, moaStatus); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// validateIdentityAndRole validates that validator has verified identity and VALIDATOR role
+// According to whitepaper: only validators with verified identity can activate LZN
+func (k Keeper) validateIdentityAndRole(ctx sdk.Context, validator string) error {
+	if k.identKeeper == nil {
+		// If ident keeper is not set, skip validation (for testing scenarios)
+		return nil
+	}
+
+	// Get verified account
+	account, err := k.identKeeper.GetVerifiedAccount(ctx, validator)
+	if err != nil {
+		return types.ErrIdentityNotVerified
+	}
+
+	// Check that account is active
+	if !account.IsActive {
+		return types.ErrIdentityNotVerified
+	}
+
+	// Check that role is VALIDATOR
+	// According to whitepaper: "Тип 3: Валидатор: Верифицированная роль. Активирует LZN..."
+	if account.Role != identv1.Role_ROLE_VALIDATOR {
+		return types.ErrInvalidRoleForLizenz
 	}
 
 	return nil

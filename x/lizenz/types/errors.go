@@ -40,4 +40,10 @@ var (
 
 	// ErrExceedsMaxLznActivation indicates that validator exceeds 33% limit of total activated LZN
 	ErrExceedsMaxLznActivation = errors.Register(ModuleName, 12, "validator exceeds maximum LZN activation limit (33% of total pool)")
+	
+	// ErrIdentityNotVerified indicates that validator has not verified their identity
+	ErrIdentityNotVerified = errors.Register(ModuleName, 13, "validator must have verified identity to activate LZN")
+	
+	// ErrInvalidRoleForLizenz indicates that validator does not have VALIDATOR role
+	ErrInvalidRoleForLizenz = errors.Register(ModuleName, 14, "only validators with ROLE_VALIDATOR can activate LZN")
 )
