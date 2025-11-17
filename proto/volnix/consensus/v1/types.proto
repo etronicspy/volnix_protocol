@@ -71,10 +71,13 @@ message Params {
 // GenesisState moved to genesis.proto to avoid duplication
 
 // HalvingInfo represents halving information
+// According to whitepaper: "Халвинг происходит строго каждые N блоков, но реальная дата адаптируется к динамическому времени блока"
 message HalvingInfo {
   uint64 last_halving_height = 1;
   uint64 halving_interval = 2;
   uint64 next_halving_height = 3;
+  google.protobuf.Timestamp estimated_next_halving_date = 4; // Estimated date based on average block time
+  google.protobuf.Timestamp last_halving_date = 5; // Actual date of last halving
 }
 
 // ConsensusState represents the current consensus state

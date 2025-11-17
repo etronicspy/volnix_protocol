@@ -34,9 +34,9 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 		return nil, fmt.Errorf("ZKP proof cannot be empty")
 	}
 
-	// Validate role choice: user must choose between CITIZEN or VALIDATOR
-	// This is a critical requirement from the whitepaper
-	if err := s.k.ValidateRoleChoice(sdkCtx, req.Address, req.DesiredRole); err != nil {
+	// Enhanced validation with security checks
+	// According to whitepaper: "через аккредитованных провайдеров"
+	if err := s.k.ValidateVerificationRequest(sdkCtx, req.Address, req.ZkpProof, req.VerificationProvider, req.DesiredRole); err != nil {
 		return nil, err
 	}
 

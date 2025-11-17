@@ -2,9 +2,16 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 )
+
+var _ lizenzv1.QueryServer = (*QueryServer)(nil)
 
 type QueryServer struct {
 	lizenzv1.UnimplementedQueryServer
@@ -15,64 +22,72 @@ func NewQueryServer(k *Keeper) QueryServer {
 	return QueryServer{k: k}
 }
 
-var _ lizenzv1.QueryServer = (*QueryServer)(nil)
+// GetRewardHistory returns reward history for a validator
+func (q QueryServer) GetRewardHistory(ctx context.Context, req *lizenzv1.QueryRewardHistoryRequest) (*lizenzv1.QueryRewardHistoryResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
 
-func (s QueryServer) Params(ctx context.Context, req *lizenzv1.QueryParamsRequest) (*lizenzv1.QueryParamsResponse, error) {
-	// Simple stub implementation
-	return &lizenzv1.QueryParamsResponse{
-		Params: &lizenzv1.Params{
-			MaxActivatedPerValidator: 10,
-			ActivityCoefficient:      "1.0",
-		},
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Get reward history
+	history, err := q.k.GetRewardHistory(sdkCtx, req.Validator)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert RewardRecord to proto format
+	var protoRecords []*lizenzv1.RewardRecord
+	for _, record := range history {
+		protoRecords = append(protoRecords, &lizenzv1.RewardRecord{
+			BlockHeight:    record.BlockHeight,
+			RewardAmount:   record.RewardAmount,
+			Timestamp:      record.Timestamp,
+			MoaCompliance:  fmt.Sprintf("%.4f", record.MOACompliance),
+			PenaltyApplied: fmt.Sprintf("%.4f", record.PenaltyApplied),
+			BaseReward:     record.BaseReward,
+		})
+	}
+
+	return &lizenzv1.QueryRewardHistoryResponse{
+		Validator:     req.Validator,
+		RewardHistory:  protoRecords,
+		TotalRecords:   uint64(len(protoRecords)),
 	}, nil
 }
 
-func (s QueryServer) ActivatedLizenz(ctx context.Context, req *lizenzv1.QueryActivatedLizenzRequest) (*lizenzv1.QueryActivatedLizenzResponse, error) {
-	// Simple stub implementation
-	return &lizenzv1.QueryActivatedLizenzResponse{
-		ActivatedLizenz: &lizenzv1.ActivatedLizenz{
-			Validator: req.Validator,
-			Amount:    "1000000ulzn",
-		},
+// GetRewardStats returns comprehensive reward statistics for a validator
+func (q QueryServer) GetRewardStats(ctx context.Context, req *lizenzv1.QueryRewardStatsRequest) (*lizenzv1.QueryRewardStatsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Get reward stats
+	stats, err := q.k.GetRewardStats(sdkCtx, req.Validator)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Convert RewardRecord to proto format
+	var protoRecords []*lizenzv1.RewardRecord
+	for _, record := range stats.RewardHistory {
+		protoRecords = append(protoRecords, &lizenzv1.RewardRecord{
+			BlockHeight:    record.BlockHeight,
+			RewardAmount:   record.RewardAmount,
+			Timestamp:      record.Timestamp,
+			MoaCompliance:  fmt.Sprintf("%.4f", record.MOACompliance),
+			PenaltyApplied: fmt.Sprintf("%.4f", record.PenaltyApplied),
+			BaseReward:     record.BaseReward,
+		})
+	}
+
+	return &lizenzv1.QueryRewardStatsResponse{
+		TotalRewardsEarned: stats.TotalRewardsEarned,
+		LastRewardBlock:    stats.LastRewardBlock,
+		LastRewardTime:     stats.LastRewardTime,
+		RewardHistory:      protoRecords,
+		TotalRewardsCount:  uint64(stats.TotalRewardsCount),
 	}, nil
 }
-
-func (s QueryServer) AllActivatedLizenz(ctx context.Context, req *lizenzv1.QueryAllActivatedLizenzRequest) (*lizenzv1.QueryAllActivatedLizenzResponse, error) {
-	// Simple stub implementation
-	return &lizenzv1.QueryAllActivatedLizenzResponse{
-		ActivatedLizenz: []*lizenzv1.ActivatedLizenz{},
-		Pagination:      nil,
-	}, nil
-}
-
-func (s QueryServer) DeactivatingLizenz(ctx context.Context, req *lizenzv1.QueryDeactivatingLizenzRequest) (*lizenzv1.QueryDeactivatingLizenzResponse, error) {
-	// Simple stub implementation
-	return &lizenzv1.QueryDeactivatingLizenzResponse{
-		DeactivatingLizenz: &lizenzv1.DeactivatingLizenz{
-			Validator: req.Validator,
-			Amount:    "1000000ulzn",
-		},
-	}, nil
-}
-
-func (s QueryServer) MOAStatus(ctx context.Context, req *lizenzv1.QueryMOAStatusRequest) (*lizenzv1.QueryMOAStatusResponse, error) {
-	// Simple stub implementation
-	return &lizenzv1.QueryMOAStatusResponse{
-		MoaStatus: &lizenzv1.MOAStatus{
-			Validator:   req.Validator,
-			IsActive:    true,
-			IsCompliant: true,
-		},
-	}, nil
-}
-
-func (s QueryServer) ValidatorIntegration(ctx context.Context, req *lizenzv1.QueryValidatorIntegrationRequest) (*lizenzv1.QueryValidatorIntegrationResponse, error) {
-	// Simple stub implementation
-	return &lizenzv1.QueryValidatorIntegrationResponse{
-		ValidatorIntegration: &lizenzv1.ValidatorIntegration{
-			Validator: req.Validator,
-		},
-	}, nil
-}
-
-// mustEmbedUnimplementedQueryServer is embedded via UnimplementedQueryServer

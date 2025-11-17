@@ -40,6 +40,11 @@ message ActivatedLizenz {
   string ant_market_access = 7; // ANT market access level
   string performance_rating = 8; // Overall performance rating
   bool is_eligible_for_rewards = 9; // Whether eligible for rewards
+  
+  // Reward tracking fields
+  string total_rewards_earned = 10; // Total WRT rewards earned (cumulative) in micro WRT
+  string last_reward_block = 11; // Block height of last reward distribution
+  google.protobuf.Timestamp last_reward_time = 12; // Timestamp of last reward
 }
 
 // DeactivatingLizenz represents a LZN license in the process of deactivation

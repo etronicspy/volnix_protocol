@@ -157,7 +157,9 @@ func (k Keeper) GetAllOrders(ctx sdk.Context) ([]*anteilv1.Order, error) {
 	iterator := orderStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
 		}
 	}()
 
@@ -341,7 +343,9 @@ func (k Keeper) GetAllTrades(ctx sdk.Context) ([]*anteilv1.Trade, error) {
 	iterator := tradeStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
 		}
 	}()
 
@@ -639,7 +643,13 @@ func (k Keeper) GetOrdersByOwner(ctx sdk.Context, owner string) ([]*anteilv1.Ord
 
 	var orders []*anteilv1.Order
 	iterator := store.Iterator(prefix, append(prefix, 0xFF))
-	defer iterator.Close()
+	defer func() {
+		if err := iterator.Close(); err != nil {
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
+		}
+	}()
 
 	for ; iterator.Valid(); iterator.Next() {
 		var order anteilv1.Order

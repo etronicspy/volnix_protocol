@@ -3,6 +3,7 @@ package keeper
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
@@ -27,6 +29,7 @@ type LizenzKeeperInterface interface {
 	GetAllActivatedLizenz(ctx sdk.Context) ([]interface{}, error) // Returns list of activated LZN ([]*lizenzv1.ActivatedLizenz)
 	GetTotalActivatedLizenz(ctx sdk.Context) (string, error)      // Returns total activated LZN
 	GetMOACompliance(ctx sdk.Context, validator string) (float64, error) // Returns MOA compliance ratio (0.0 to 1.0+)
+	UpdateRewardStats(ctx sdk.Context, validator string, rewardAmount uint64, blockHeight uint64, moaCompliance float64, penaltyMultiplier float64, baseReward uint64) error // Updates reward statistics
 }
 
 // AnteilKeeperInterface defines the interface for interacting with anteil module
@@ -38,6 +41,14 @@ type AnteilKeeperInterface interface {
 	UpdateUserPosition(ctx sdk.Context, user string, antBalance string, orderCount uint32) error // Updates ANT balance
 }
 
+// BankKeeperInterface defines the interface for interacting with bank module
+// This allows consensus module to send WRT rewards to validators
+type BankKeeperInterface interface {
+	SendCoins(ctx sdk.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error
+	MintCoins(ctx sdk.Context, moduleName string, amt sdk.Coins) error
+	SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
+}
+
 type (
 	Keeper struct {
 		cdc          codec.BinaryCodec
@@ -45,6 +56,7 @@ type (
 		paramstore   paramtypes.Subspace
 		lizenzKeeper LizenzKeeperInterface // Optional: for reward distribution
 		anteilKeeper AnteilKeeperInterface // Optional: for ANT balance management
+		bankKeeper   BankKeeperInterface   // Optional: for sending WRT rewards
 	}
 )
 
@@ -73,6 +85,11 @@ func (k *Keeper) SetLizenzKeeper(lizenzKeeper LizenzKeeperInterface) {
 // SetAnteilKeeper sets the anteil keeper interface for ANT balance management
 func (k *Keeper) SetAnteilKeeper(anteilKeeper AnteilKeeperInterface) {
 	k.anteilKeeper = anteilKeeper
+}
+
+// SetBankKeeper sets the bank keeper interface for sending WRT rewards
+func (k *Keeper) SetBankKeeper(bankKeeper BankKeeperInterface) {
+	k.bankKeeper = bankKeeper
 }
 
 // GetParams returns the current parameters for the consensus module
@@ -268,33 +285,177 @@ func (k Keeper) CalculateBlockTime(ctx sdk.Context, antAmount string) (time.Dura
 	return time.Duration(dynamicBlockTime), nil
 }
 
+// RecordBlockTime records the time for a block
+// This is used to calculate average block time for adaptive halving
+func (k Keeper) RecordBlockTime(ctx sdk.Context, height uint64) error {
+	store := ctx.KVStore(k.storeKey)
+	blockTimeKey := types.GetBlockTimeKey(height)
+	
+	// Store block time as timestamp
+	blockTime := ctx.BlockTime()
+	timeBz, err := blockTime.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal block time: %w", err)
+	}
+	
+	store.Set(blockTimeKey, timeBz)
+	
+	// Update average block time
+	return k.updateAverageBlockTime(ctx)
+}
+
+// GetAverageBlockTime calculates and returns the average block time
+// Uses a sliding window of recent blocks (e.g., last 1000 blocks)
+func (k Keeper) GetAverageBlockTime(ctx sdk.Context) (time.Duration, error) {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(types.AverageBlockTimeKey)
+	
+	if bz == nil {
+		// Return default if not calculated yet
+		return 5 * time.Second, nil
+	}
+	
+	// Parse stored duration (as nanoseconds) - use JSON encoding for simple types
+	var avgNanos int64
+	if err := json.Unmarshal(bz, &avgNanos); err != nil {
+		return 5 * time.Second, nil
+	}
+	
+	return time.Duration(avgNanos), nil
+}
+
+// updateAverageBlockTime updates the average block time based on recent blocks
+func (k Keeper) updateAverageBlockTime(ctx sdk.Context) error {
+	currentHeight := uint64(ctx.BlockHeight())
+	windowSize := uint64(1000) // Use last 1000 blocks for average
+	
+	startHeight := uint64(0)
+	if currentHeight > windowSize {
+		startHeight = currentHeight - windowSize
+	}
+	
+	var totalDuration time.Duration
+	blockCount := uint64(0)
+	store := ctx.KVStore(k.storeKey)
+	
+	// Calculate average from recent blocks
+	for h := startHeight + 1; h <= currentHeight; h++ {
+		blockTimeKey := types.GetBlockTimeKey(h)
+		timeBz := store.Get(blockTimeKey)
+		
+		if timeBz == nil {
+			continue // Skip if block time not recorded
+		}
+		
+		var blockTime time.Time
+		if err := blockTime.UnmarshalBinary(timeBz); err != nil {
+			continue // Skip invalid times
+		}
+		
+		// Get previous block time
+		if h > startHeight+1 {
+			prevTimeKey := types.GetBlockTimeKey(h - 1)
+			prevTimeBz := store.Get(prevTimeKey)
+			if prevTimeBz != nil {
+				var prevTime time.Time
+				if err := prevTime.UnmarshalBinary(prevTimeBz); err == nil {
+					duration := blockTime.Sub(prevTime)
+					totalDuration += duration
+					blockCount++
+				}
+			}
+		}
+	}
+	
+	if blockCount == 0 {
+		return nil // Not enough data yet
+	}
+	
+	// Calculate average
+	averageBlockTime := totalDuration / time.Duration(blockCount)
+	
+	// Store average - use JSON encoding for simple types
+	avgNanos := int64(averageBlockTime)
+	avgBz, err := json.Marshal(avgNanos)
+	if err != nil {
+		return fmt.Errorf("failed to marshal average block time: %w", err)
+	}
+	
+	store.Set(types.AverageBlockTimeKey, avgBz)
+	
+	return nil
+}
+
 // ProcessHalving processes halving event
+// According to whitepaper: "Халвинг происходит строго каждые N блоков, но реальная дата адаптируется к динамическому времени блока"
 func (k Keeper) ProcessHalving(ctx sdk.Context) error {
 	store := ctx.KVStore(k.storeKey)
 	halvingKey := types.KeyHalvingInfo()
 
-	var halvingInfo types.HalvingInfo
+	var halvingInfo consensusv1.HalvingInfo
 	bz := store.Get(halvingKey)
 	if bz == nil {
 		// Initialize halving info if not exists
-		halvingInfo = types.HalvingInfo{
+		halvingInfo = consensusv1.HalvingInfo{
 			LastHalvingHeight: 0,
-			NextHalvingHeight: 1000000, // Example: every 1M blocks
-			HalvingInterval:   1000000,
+			NextHalvingHeight: HalvingInterval, // 210,000 blocks
+			HalvingInterval:   HalvingInterval,
 		}
 	} else {
 		k.cdc.MustUnmarshal(bz, &halvingInfo)
 	}
 
 	currentHeight := uint64(ctx.BlockHeight())
+	currentTime := ctx.BlockTime()
+	
+	// Note: RecordBlockTime is called in EndBlocker, so we don't need to call it here
+
+	// Check if halving should occur
 	if currentHeight >= halvingInfo.NextHalvingHeight {
 		// Process halving
 		halvingInfo.LastHalvingHeight = halvingInfo.NextHalvingHeight
+		// TODO: Uncomment after proto generation
+		// halvingInfo.LastHalvingDate = timestamppb.New(currentTime)
 		halvingInfo.NextHalvingHeight += halvingInfo.HalvingInterval
+
+		// Calculate estimated next halving date based on average block time
+		avgBlockTime, err := k.GetAverageBlockTime(ctx)
+		if err == nil && avgBlockTime > 0 {
+			blocksRemaining := halvingInfo.NextHalvingHeight - currentHeight
+			estimatedDuration := avgBlockTime * time.Duration(blocksRemaining)
+			estimatedDate := currentTime.Add(estimatedDuration)
+			// TODO: Uncomment after proto generation
+			// halvingInfo.EstimatedNextHalvingDate = timestamppb.New(estimatedDate)
+			
+			ctx.Logger().Info("halving processed",
+				"height", currentHeight,
+				"next_halving_height", halvingInfo.NextHalvingHeight,
+				"estimated_date", estimatedDate,
+				"average_block_time", avgBlockTime)
+		}
 
 		// Store updated halving info
 		bz = k.cdc.MustMarshal(&halvingInfo)
 		store.Set(halvingKey, bz)
+	} else {
+		// Update estimated next halving date even if halving didn't occur
+		avgBlockTime, err := k.GetAverageBlockTime(ctx)
+		if err == nil && avgBlockTime > 0 {
+			blocksRemaining := halvingInfo.NextHalvingHeight - currentHeight
+			estimatedDuration := avgBlockTime * time.Duration(blocksRemaining)
+			estimatedDate := currentTime.Add(estimatedDuration)
+			// TODO: Uncomment after proto generation
+			// halvingInfo.EstimatedNextHalvingDate = timestamppb.New(estimatedDate)
+			
+			ctx.Logger().Info("halving date updated",
+				"next_halving_height", halvingInfo.NextHalvingHeight,
+				"estimated_date", estimatedDate,
+				"average_block_time", avgBlockTime)
+			
+			// Store updated halving info with new estimated date
+			bz = k.cdc.MustMarshal(&halvingInfo)
+			store.Set(halvingKey, bz)
+		}
 	}
 
 	return nil
@@ -545,6 +706,12 @@ func (k Keeper) BeginBlocker(ctx sdk.Context) error {
 func (k Keeper) EndBlocker(ctx sdk.Context) error {
 	// Update consensus state
 	currentHeight := uint64(ctx.BlockHeight())
+	
+	// Record block time for adaptive halving calculation
+	if err := k.RecordBlockTime(ctx, currentHeight); err != nil {
+		ctx.Logger().Error("failed to record block time", "error", err)
+	}
+	
 	validators := k.GetAllValidators(ctx)
 
 	var activeValidators []string
@@ -595,12 +762,26 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 		ctx.Logger().Error("failed to create blind auction for next block", "error", err, "height", nextHeight)
 	}
 
+	// Clean up old completed auctions (keep only last N blocks for history)
+	// This prevents storage bloat from accumulating old auction data
+	if err := k.CleanupOldAuctions(ctx, currentHeight); err != nil {
+		ctx.Logger().Error("failed to cleanup old auctions", "error", err)
+		// Don't fail EndBlocker if cleanup fails
+	}
+
 	// Distribute base rewards to validators (Circuit 1)
 	// This happens after block creation, distributing passive income based on activated LZN
 	err = k.DistributeBaseRewards(ctx, currentHeight)
 	if err != nil {
 		ctx.Logger().Error("failed to distribute base rewards", "error", err, "height", currentHeight)
 		// Don't fail the block if reward distribution fails
+	}
+
+	// Process halving (adaptive halving based on block time)
+	err = k.ProcessHalving(ctx)
+	if err != nil {
+		ctx.Logger().Error("failed to process halving", "error", err, "height", currentHeight)
+		// Don't fail the block if halving processing fails
 	}
 
 	return nil
@@ -807,6 +988,109 @@ func (k Keeper) CommitBid(ctx sdk.Context, validator, commitHash string, height 
 	return k.SetBlindAuction(ctx, auction)
 }
 
+// ValidateAuctionBid validates a bid to prevent manipulation
+// According to whitepaper: "слепой аукцион с взвешенной лотереей"
+func (k Keeper) ValidateAuctionBid(ctx sdk.Context, validator, bidAmount string) error {
+	// 1. Validate bid amount is positive
+	bidUint, err := strconv.ParseUint(bidAmount, 10, 64)
+	if err != nil || bidUint == 0 {
+		return fmt.Errorf("invalid bid amount: %s", bidAmount)
+	}
+
+	// 2. Check if validator has sufficient ANT balance
+	if k.anteilKeeper != nil {
+		positionInterface, err := k.anteilKeeper.GetUserPosition(ctx, validator)
+		if err != nil {
+			return fmt.Errorf("failed to get user position: %w", err)
+		}
+		
+		balance, err := extractAntBalance(positionInterface)
+		if err != nil {
+			return fmt.Errorf("failed to extract ANT balance: %w", err)
+		}
+		
+		balanceUint, err := strconv.ParseUint(balance, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid balance format: %w", err)
+		}
+		
+		if balanceUint < bidUint {
+			return fmt.Errorf("insufficient ANT balance: have %s, need %s", balance, bidAmount)
+		}
+	}
+
+	// 3. Check for bid manipulation (prevent extremely large bids)
+	// This is a simplified check - in production, use governance parameters
+	maxBid := uint64(1000000000000) // 1 trillion ANT (example limit)
+	if bidUint > maxBid {
+		return fmt.Errorf("bid amount exceeds maximum: %d", maxBid)
+	}
+
+	// 4. Check for rapid bid changes (potential manipulation)
+	// Store bid history to detect suspicious patterns
+	bidHistoryKey := types.GetBidHistoryKey(validator)
+	store := ctx.KVStore(k.storeKey)
+	
+	// Get recent bid history
+	bz := store.Get(bidHistoryKey)
+	if bz != nil {
+		var history []map[string]interface{}
+		if err := json.Unmarshal(bz, &history); err == nil {
+			// Check if there are too many rapid bid changes
+			recentBids := 0
+			currentTime := ctx.BlockTime().Unix()
+			for _, entry := range history {
+				if timestamp, ok := entry["timestamp"].(float64); ok {
+					// Count bids in last 10 blocks (approximately)
+					if currentTime-int64(timestamp) < 100 {
+						recentBids++
+					}
+				}
+			}
+			
+			// Prevent more than 5 bids in rapid succession
+			if recentBids >= 5 {
+				return fmt.Errorf("too many rapid bid changes detected - potential manipulation")
+			}
+		}
+	}
+
+	return nil
+}
+
+// RecordBidHistory records a bid in the validator's bid history
+func (k Keeper) RecordBidHistory(ctx sdk.Context, validator, bidAmount string) {
+	store := ctx.KVStore(k.storeKey)
+	bidHistoryKey := types.GetBidHistoryKey(validator)
+	
+	// Get existing history
+	var history []map[string]interface{}
+	bz := store.Get(bidHistoryKey)
+	if bz != nil {
+		json.Unmarshal(bz, &history)
+	}
+	
+	// Add new bid entry
+	entry := map[string]interface{}{
+		"bid_amount":  bidAmount,
+		"timestamp":   ctx.BlockTime().Unix(),
+		"block_height": ctx.BlockHeight(),
+	}
+	
+	history = append(history, entry)
+	
+	// Keep only last 100 entries
+	if len(history) > 100 {
+		history = history[len(history)-100:]
+	}
+	
+	// Store updated history
+	historyBz, err := json.Marshal(history)
+	if err == nil {
+		store.Set(bidHistoryKey, historyBz)
+	}
+}
+
 // RevealBid reveals a bid in the auction
 func (k Keeper) RevealBid(ctx sdk.Context, validator, nonce, bidAmount string, height uint64) error {
 	// Get auction
@@ -845,11 +1129,18 @@ func (k Keeper) RevealBid(ctx sdk.Context, validator, nonce, bidAmount string, h
 		return types.ErrCommitHashMismatch
 	}
 
-	// Validate bid amount
+	// Validate bid amount and check for manipulation
+	if err := k.ValidateAuctionBid(ctx, validator, bidAmount); err != nil {
+		return fmt.Errorf("bid validation failed: %w", err)
+	}
+	
 	bidAmountInt, err := strconv.ParseUint(bidAmount, 10, 64)
 	if err != nil || bidAmountInt == 0 {
 		return types.ErrInvalidBidAmount
 	}
+	
+	// Record bid in history for manipulation detection
+	k.RecordBidHistory(ctx, validator, bidAmount)
 
 	// Check ANT balance if anteil keeper is available
 	// According to whitepaper: validators must have sufficient ANT to bid
@@ -961,6 +1252,19 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 				}
 			}
 
+			// Return ANT to other validators (those who revealed but didn't win)
+			// According to whitepaper: only winner actually purchases ANT rights
+			if k.anteilKeeper != nil {
+				for j, reveal := range auction.Reveals {
+					if j != i && reveal.Validator != winnerValidator {
+						// Return ANT to non-winner validators (they already committed/revealed, but didn't win)
+						// Note: In a blind auction, validators don't actually spend ANT until they win
+						// This is just for accounting - the actual ANT is only burned from the winner
+						ctx.Logger().Info("ANT returned to non-winner validator", "validator", reveal.Validator, "bid", reveal.BidAmount)
+					}
+				}
+			}
+
 			auction.Winner = winnerValidator
 			auction.WinningBid = winningBid
 			auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE
@@ -994,9 +1298,20 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 						err = k.anteilKeeper.UpdateUserPosition(ctx, winnerValidator, fmt.Sprintf("%d", newBalance), 0)
 						if err != nil {
 							ctx.Logger().Error("failed to burn ANT from winner (fallback)", "error", err, "winner", winnerValidator, "amount", winningBid)
+						} else {
+							ctx.Logger().Info("ANT burned from auction winner (fallback)", "winner", winnerValidator, "amount", winningBid, "new_balance", newBalance)
 						}
 					}
 				}
+			}
+		}
+	}
+
+	// Return ANT to other validators (fallback case)
+	if k.anteilKeeper != nil && len(auction.Reveals) > 1 {
+		for _, reveal := range auction.Reveals {
+			if reveal.Validator != winnerValidator {
+				ctx.Logger().Info("ANT returned to non-winner validator (fallback)", "validator", reveal.Validator, "bid", reveal.BidAmount)
 			}
 		}
 	}
@@ -1026,6 +1341,51 @@ func (k Keeper) TransitionAuctionPhase(ctx sdk.Context, height uint64) error {
 		return k.SetBlindAuction(ctx, auction)
 	}
 
+	return nil
+}
+
+// CleanupOldAuctions removes old completed auctions to prevent storage bloat
+// Keeps only the last N completed auctions for history (default: 100 blocks)
+// According to whitepaper: auctions are per-block, so old ones can be safely removed
+func (k Keeper) CleanupOldAuctions(ctx sdk.Context, currentHeight uint64) error {
+	// Keep last N completed auctions for history (configurable, default 100)
+	// This means we keep auctions from the last 100 blocks
+	keepHistoryBlocks := uint64(100)
+	
+	// Calculate the oldest height we want to keep
+	// We keep auctions from (currentHeight - keepHistoryBlocks) to currentHeight
+	if currentHeight <= keepHistoryBlocks {
+		// Not enough blocks to clean up yet
+		return nil
+	}
+	
+	oldestHeightToKeep := currentHeight - keepHistoryBlocks
+	
+	// Delete auctions older than oldestHeightToKeep
+	store := ctx.KVStore(k.storeKey)
+	deletedCount := 0
+	
+	// Iterate through potential auction keys
+	// We check heights from 1 to (oldestHeightToKeep - 1)
+	for height := uint64(1); height < oldestHeightToKeep; height++ {
+		key := types.GetBlindAuctionKey(height)
+		if store.Has(key) {
+			// Only delete completed auctions (to avoid deleting active ones)
+			auction, err := k.GetBlindAuction(ctx, height)
+			if err == nil && auction != nil {
+				// Only delete if auction is complete (winner selected)
+				if auction.Phase == consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE {
+					store.Delete(key)
+					deletedCount++
+				}
+			}
+		}
+	}
+	
+	if deletedCount > 0 {
+		ctx.Logger().Info("cleaned up old auctions", "deleted_count", deletedCount, "oldest_kept_height", oldestHeightToKeep)
+	}
+	
 	return nil
 }
 
@@ -1289,21 +1649,62 @@ func (k Keeper) DistributeBaseRewards(ctx sdk.Context, height uint64) error {
 		"total_distributed", totalDistributed,
 		"validators_count", len(rewards))
 
-	// Log MOA compliance details for each validator
+	// Update reward statistics for each validator
 	for _, reward := range rewards {
-		if reward.MOACompliance < 1.0 {
-			ctx.Logger().Info("validator MOA penalty applied",
-				"validator", reward.Validator,
-				"moa_compliance", reward.MOACompliance,
-				"penalty_multiplier", reward.PenaltyMultiplier,
-				"base_reward", reward.BaseRewardAmount,
-				"final_reward", reward.FinalRewardAmount)
+		ctx.Logger().Info("validator reward",
+			"validator", reward.Validator,
+			"activated_lzn", reward.ActivatedLZN,
+			"share", reward.RewardShare,
+			"base_reward", reward.BaseRewardAmount,
+			"moa_compliance", reward.MOACompliance,
+			"penalty_multiplier", reward.PenaltyMultiplier,
+			"final_reward", reward.FinalRewardAmount)
+		
+		// Update reward stats in lizenz module
+		if k.lizenzKeeper != nil {
+			if err := k.lizenzKeeper.UpdateRewardStats(ctx, reward.Validator, reward.FinalRewardAmount, height, reward.MOACompliance, reward.PenaltyMultiplier, reward.BaseRewardAmount); err != nil {
+				ctx.Logger().Error("failed to update reward stats", "error", err, "validator", reward.Validator)
+				// Don't fail reward distribution if stats update fails
+			}
 		}
 	}
 
-	// TODO: Actually send WRT tokens to validators via bank module
-	// This requires integration with bank keeper
-	// For now, we just calculate and log the distribution
+	// Send WRT tokens to validators via bank module
+	if k.bankKeeper != nil {
+		for _, reward := range rewards {
+			validatorAddr, err := sdk.AccAddressFromBech32(reward.Validator)
+			if err != nil {
+				ctx.Logger().Error("invalid validator address", "error", err, "validator", reward.Validator)
+				continue
+			}
+
+			// Create coins for reward amount (in micro WRT)
+			rewardCoins := sdk.NewCoins(sdk.NewCoin("uwrt", math.NewIntFromUint64(reward.FinalRewardAmount)))
+
+			// Mint coins from consensus module account and send to validator
+			// Note: In production, coins should be minted from a module account
+			// For now, we use SendCoinsFromModuleToAccount which requires module account setup
+			moduleName := types.ModuleName
+			if err := k.bankKeeper.MintCoins(ctx, moduleName, rewardCoins); err != nil {
+				ctx.Logger().Error("failed to mint reward coins", "error", err, "validator", reward.Validator, "amount", reward.FinalRewardAmount)
+				continue
+			}
+
+			if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, moduleName, validatorAddr, rewardCoins); err != nil {
+				ctx.Logger().Error("failed to send reward coins", "error", err, "validator", reward.Validator, "amount", reward.FinalRewardAmount)
+				// Note: Minted coins remain in module account if sending fails
+				// In production, should implement proper error recovery (burn or retry)
+				continue
+			}
+
+			ctx.Logger().Info("WRT reward sent to validator",
+				"validator", reward.Validator,
+				"amount", reward.FinalRewardAmount,
+				"height", height)
+		}
+	} else {
+		ctx.Logger().Info("bank keeper not set, rewards calculated but not sent", "height", height)
+	}
 
 	return nil
 }

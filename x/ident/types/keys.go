@@ -23,6 +23,18 @@ var (
 
 	// NullifierKeyPrefix defines the prefix for nullifier keys
 	NullifierKeyPrefix = []byte{0x03}
+	
+	// ProviderKeyPrefix defines the prefix for verification provider keys
+	ProviderKeyPrefix = []byte{0x04}
+	
+	// AccreditationKeyPrefix defines the prefix for accreditation keys
+	AccreditationKeyPrefix = []byte{0x05}
+	
+	// VerificationRecordKeyPrefix defines the prefix for verification record keys
+	VerificationRecordKeyPrefix = []byte{0x06}
+	
+	// ProofKeyPrefix defines the prefix for proof keys (anti-replay)
+	ProofKeyPrefix = []byte{0x07}
 )
 
 // GetVerifiedAccountKey returns the key for a verified account
@@ -38,4 +50,24 @@ func GetRoleMigrationKey(fromAddress, toAddress string) []byte {
 // GetNullifierKey returns the key for a nullifier
 func GetNullifierKey(nullifier []byte) []byte {
 	return append(NullifierKeyPrefix, nullifier...)
+}
+
+// GetProviderKey returns the key for a verification provider
+func GetProviderKey(providerID string) []byte {
+	return append(ProviderKeyPrefix, []byte(providerID)...)
+}
+
+// GetAccreditationKey returns the key for an accreditation
+func GetAccreditationKey(accreditationHash string) []byte {
+	return append(AccreditationKeyPrefix, []byte(accreditationHash)...)
+}
+
+// GetVerificationRecordKey returns the key for a verification record
+func GetVerificationRecordKey(address string) []byte {
+	return append(VerificationRecordKeyPrefix, []byte(address)...)
+}
+
+// GetProofKey returns the key for a proof (anti-replay)
+func GetProofKey(proofHash []byte) []byte {
+	return append(ProofKeyPrefix, proofHash...)
 }

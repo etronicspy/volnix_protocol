@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
@@ -86,6 +87,14 @@ func (p *Params) Validate() error {
 	if p.ActivityCoefficient == "" {
 		return fmt.Errorf("ActivityCoefficient cannot be empty")
 	}
+	// Validate ActivityCoefficient is a valid float between 0.0 and 1.0 (or > 1.0 for bonus)
+	activityCoeff, err := strconv.ParseFloat(p.ActivityCoefficient, 64)
+	if err != nil {
+		return fmt.Errorf("ActivityCoefficient must be a valid number: %w", err)
+	}
+	if activityCoeff < 0 {
+		return fmt.Errorf("ActivityCoefficient must be >= 0, got %f", activityCoeff)
+	}
 	if p.DeactivationPeriod <= 0 {
 		return fmt.Errorf("DeactivationPeriod must be greater than 0")
 	}
@@ -95,8 +104,28 @@ func (p *Params) Validate() error {
 	if p.MinLznAmount == "" {
 		return fmt.Errorf("MinLznAmount cannot be empty")
 	}
+	// Validate MinLznAmount is a valid positive integer
+	minAmount, err := strconv.ParseInt(p.MinLznAmount, 10, 64)
+	if err != nil {
+		return fmt.Errorf("MinLznAmount must be a valid integer: %w", err)
+	}
+	if minAmount <= 0 {
+		return fmt.Errorf("MinLznAmount must be greater than 0")
+	}
 	if p.MaxLznAmount == "" {
 		return fmt.Errorf("MaxLznAmount cannot be empty")
+	}
+	// Validate MaxLznAmount is a valid positive integer
+	maxAmount, err := strconv.ParseInt(p.MaxLznAmount, 10, 64)
+	if err != nil {
+		return fmt.Errorf("MaxLznAmount must be a valid integer: %w", err)
+	}
+	if maxAmount <= 0 {
+		return fmt.Errorf("MaxLznAmount must be greater than 0")
+	}
+	// Validate MaxLznAmount >= MinLznAmount
+	if maxAmount < minAmount {
+		return fmt.Errorf("MaxLznAmount (%d) must be >= MinLznAmount (%d)", maxAmount, minAmount)
 	}
 	if p.LznDenom == "" {
 		return fmt.Errorf("LznDenom cannot be empty")

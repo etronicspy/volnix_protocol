@@ -151,3 +151,81 @@ func TestValidateParams(t *testing.T) {
 		})
 	}
 }
+
+func TestKeyPrefix(t *testing.T) {
+	key := types.KeyPrefix("test")
+	require.NotNil(t, key)
+	require.Equal(t, []byte("test"), key)
+}
+
+func TestGetValidatorKey(t *testing.T) {
+	validator := "cosmos1validator"
+	key := types.GetValidatorKey(validator)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), validator)
+}
+
+func TestGetBlockCreatorKey(t *testing.T) {
+	height := uint64(100)
+	key := types.GetBlockCreatorKey(height)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), "100")
+}
+
+func TestGetValidatorWeightKey(t *testing.T) {
+	validator := "cosmos1validator"
+	key := types.GetValidatorWeightKey(validator)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), validator)
+}
+
+func TestKeyHalvingInfo(t *testing.T) {
+	key := types.KeyHalvingInfo()
+	require.NotNil(t, key)
+	require.Equal(t, types.HalvingInfoKey, key)
+}
+
+func TestGetBlockTimeKey(t *testing.T) {
+	height := uint64(100)
+	key := types.GetBlockTimeKey(height)
+	require.NotNil(t, key)
+	require.NotEmpty(t, key)
+	
+	// Test different heights produce different keys
+	key2 := types.GetBlockTimeKey(200)
+	require.NotEqual(t, key, key2)
+}
+
+func TestKeyConsensusState(t *testing.T) {
+	key := types.KeyConsensusState()
+	require.NotNil(t, key)
+	require.Equal(t, types.ConsensusStateKey, key)
+}
+
+func TestGetBlindAuctionKey(t *testing.T) {
+	// Test basic functionality
+	height := uint64(100)
+	key := types.GetBlindAuctionKey(height)
+	require.NotNil(t, key)
+	require.NotEmpty(t, key)
+	
+	// Test different heights
+	key2 := types.GetBlindAuctionKey(200)
+	require.NotNil(t, key2)
+	require.NotEmpty(t, key2)
+	
+	// Test same height produces same key
+	key3 := types.GetBlindAuctionKey(100)
+	require.Equal(t, string(key), string(key3), "keys for same height should be equal")
+}
+
+func TestGetBidHistoryKey(t *testing.T) {
+	validator := "cosmos1validator"
+	key := types.GetBidHistoryKey(validator)
+	require.NotNil(t, key)
+	require.NotEmpty(t, key)
+	
+	// Test different validators produce different keys
+	key2 := types.GetBidHistoryKey("cosmos1validator2")
+	require.NotEqual(t, key, key2)
+}

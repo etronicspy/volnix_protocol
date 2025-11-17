@@ -8,6 +8,7 @@ import (
 
 	storetypes "cosmossdk.io/store/types"
 	"cosmossdk.io/math"
+	"encoding/json"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/std"
@@ -15,6 +16,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/ident/types"
@@ -55,14 +57,47 @@ func (suite *MsgServerTestSuite) SetupTest() {
 
 	// Set default params
 	suite.keeper.SetParams(suite.ctx, types.DefaultParams())
+	
+	// Register a test verification provider for tests
+	// First, register the accreditation as JSON (as expected by ValidateProviderAccreditation)
+	accreditationHash := "test_accreditation_hash"
+	accreditationData := map[string]interface{}{
+		"valid": true,
+		"provider_id": "provider123",
+		"issuer": "test_issuer",
+	}
+	accreditationBz, err := json.Marshal(accreditationData)
+	if err != nil {
+		suite.T().Fatalf("Failed to marshal accreditation: %v", err)
+	}
+	store := suite.ctx.KVStore(suite.storeKey)
+	accreditationKey := types.GetAccreditationKey(accreditationHash)
+	store.Set(accreditationKey, accreditationBz)
+	
+	// Then register the provider
+	testProvider := &VerificationProvider{
+		ProviderID:        "provider123",
+		ProviderName:     "Test Provider",
+		PublicKey:        "test_public_key",
+		AccreditationHash: accreditationHash,
+		IsActive:          true,
+		RegistrationTime: timestamppb.Now(),
+		ExpirationTime:   nil, // No expiration for test
+	}
+	err = suite.keeper.SetVerificationProvider(suite.ctx, testProvider)
+	if err != nil {
+		suite.T().Fatalf("Failed to register test provider: %v", err)
+	}
 }
 
 func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 	// Test valid verification request as CITIZEN
+	// ZKP proof must be at least 64 bytes (as per VerifyZKProofIntegrity)
+	zkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	coin := sdk.NewCoin("uvx", math.NewInt(1000000))
 	msg := &identv1.MsgVerifyIdentity{
 		Address:              "cosmos1test",
-		ZkpProof:             "valid_zkp_proof_data_123",
+		ZkpProof:             zkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
 		DesiredRole:          identv1.Role_ROLE_CITIZEN,
@@ -85,9 +120,10 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 
 	// Test invalid address
 	invalidCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
+	invalidZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	invalidMsg := &identv1.MsgVerifyIdentity{
 		Address:              "",
-		ZkpProof:             "valid_zkp_proof_data_123",
+		ZkpProof:             invalidZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &invalidCoin,
 		DesiredRole:          identv1.Role_ROLE_CITIZEN,
@@ -99,11 +135,13 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 
 func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
 	coin := sdk.NewCoin("uvx", math.NewInt(1000000))
+	// ZKP proof must be at least 64 bytes
+	zkpProof := "valid_zkp_proof_validator_123456789012345678901234567890123456789012345678901234567890" // 80 bytes
 
 	// Test verification as VALIDATOR
 	validatorMsg := &identv1.MsgVerifyIdentity{
 		Address:              "cosmos1validator",
-		ZkpProof:             "valid_zkp_proof_validator",
+		ZkpProof:             zkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
 		DesiredRole:          identv1.Role_ROLE_VALIDATOR,
@@ -118,9 +156,10 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, account.Role)
 
 	// Test invalid role choice (GUEST)
+	guestZkpProof := "valid_zkp_proof_guest_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	guestMsg := &identv1.MsgVerifyIdentity{
 		Address:              "cosmos1guest",
-		ZkpProof:             "valid_zkp_proof_guest",
+		ZkpProof:             guestZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
 		DesiredRole:          identv1.Role_ROLE_GUEST,
@@ -131,9 +170,10 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
 	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
 
 	// Test invalid role choice (UNSPECIFIED)
+	unspecifiedZkpProof := "valid_zkp_proof_unspecified_123456789012345678901234567890123456789012345678901234567890" // 80 bytes
 	unspecifiedMsg := &identv1.MsgVerifyIdentity{
 		Address:              "cosmos1unspecified",
-		ZkpProof:             "valid_zkp_proof_unspecified",
+		ZkpProof:             unspecifiedZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
 		DesiredRole:          identv1.Role_ROLE_UNSPECIFIED,
@@ -147,9 +187,10 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
 func (suite *MsgServerTestSuite) TestChangeRole() {
 	// First create an account
 	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
+	createZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	createMsg := &identv1.MsgVerifyIdentity{
 		Address:              "cosmos1test",
-		ZkpProof:             "valid_zkp_proof_data_123",
+		ZkpProof:             createZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
 		DesiredRole:          identv1.Role_ROLE_CITIZEN,
@@ -160,10 +201,11 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 
 	// Test valid role change
 	changeCoin := sdk.NewCoin("uvx", math.NewInt(100000))
+	changeZkpProof := "zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	changeMsg := &identv1.MsgChangeRole{
 		Address:   "cosmos1test",
 		NewRole:   identv1.Role_ROLE_VALIDATOR,
-		ZkpProof:  "zkp_proof_data",
+		ZkpProof:  changeZkpProof,
 		ChangeFee: &changeCoin,
 	}
 
@@ -180,9 +222,10 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 func (suite *MsgServerTestSuite) TestMigrateRole() {
 	// First create source account
 	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
+	migrateZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	createMsg := &identv1.MsgVerifyIdentity{
 		Address:              "cosmos1test",
-		ZkpProof:             "valid_zkp_proof_data_123",
+		ZkpProof:             migrateZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
 		DesiredRole:          identv1.Role_ROLE_CITIZEN,
@@ -193,10 +236,11 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 
 	// Test role migration
 	migrationCoin := sdk.NewCoin("uvx", math.NewInt(500000))
+	migrationZkpProof := "valid_migration_zkp_proof_4567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	migrationMsg := &identv1.MsgMigrateRole{
 		FromAddress:  "cosmos1test",
 		ToAddress:    "cosmos2test",
-		ZkpProof:     "valid_migration_zkp_proof_456",
+		ZkpProof:     migrationZkpProof,
 		MigrationFee: &migrationCoin,
 	}
 

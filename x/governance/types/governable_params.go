@@ -47,11 +47,9 @@ var GovernableParameters = []GovernableParameter{
 	{Module: "anteil", Parameter: "max_open_orders", Type: "uint32"},
 	
 	// Consensus module parameters (auction parameters)
-	{Module: "consensus", Parameter: "base_block_time", Type: "duration"},
-	{Module: "consensus", Parameter: "high_activity_threshold", Type: "string"},
-	{Module: "consensus", Parameter: "low_activity_threshold", Type: "string"},
-	{Module: "consensus", Parameter: "min_validator_power", Type: "string"},
-	{Module: "consensus", Parameter: "max_validator_power", Type: "string"},
+	{Module: "consensus", Parameter: "base_block_time", Type: "duration"}, // Stored as string (e.g., "5s")
+	{Module: "consensus", Parameter: "high_activity_threshold", Type: "uint64"},
+	{Module: "consensus", Parameter: "low_activity_threshold", Type: "uint64"},
 	
 	// Governance module parameters (meta-governance)
 	{Module: "governance", Parameter: "voting_period", Type: "duration"},

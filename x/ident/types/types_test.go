@@ -216,3 +216,82 @@ func TestValidateAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestGetVerifiedAccountKey(t *testing.T) {
+	address := "cosmos1test"
+	key := types.GetVerifiedAccountKey(address)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), address)
+	
+	// Test different addresses produce different keys
+	key2 := types.GetVerifiedAccountKey("cosmos1test2")
+	require.NotEqual(t, key, key2)
+}
+
+func TestGetRoleMigrationKey(t *testing.T) {
+	fromAddress := "cosmos1from"
+	toAddress := "cosmos1to"
+	key := types.GetRoleMigrationKey(fromAddress, toAddress)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), fromAddress)
+	require.Contains(t, string(key), toAddress)
+	
+	// Test different migrations produce different keys
+	key2 := types.GetRoleMigrationKey("cosmos1from2", "cosmos1to2")
+	require.NotEqual(t, key, key2)
+}
+
+func TestGetNullifierKey(t *testing.T) {
+	nullifier := []byte("nullifier123")
+	key := types.GetNullifierKey(nullifier)
+	require.NotNil(t, key)
+	require.NotEmpty(t, key)
+	
+	// Test different nullifiers produce different keys
+	key2 := types.GetNullifierKey([]byte("nullifier456"))
+	require.NotEqual(t, key, key2)
+}
+
+func TestGetProviderKey(t *testing.T) {
+	providerID := "provider123"
+	key := types.GetProviderKey(providerID)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), providerID)
+	
+	// Test different providers produce different keys
+	key2 := types.GetProviderKey("provider456")
+	require.NotEqual(t, key, key2)
+}
+
+func TestGetAccreditationKey(t *testing.T) {
+	accreditationHash := "hash123"
+	key := types.GetAccreditationKey(accreditationHash)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), accreditationHash)
+	
+	// Test different hashes produce different keys
+	key2 := types.GetAccreditationKey("hash456")
+	require.NotEqual(t, key, key2)
+}
+
+func TestGetVerificationRecordKey(t *testing.T) {
+	address := "cosmos1test"
+	key := types.GetVerificationRecordKey(address)
+	require.NotNil(t, key)
+	require.Contains(t, string(key), address)
+	
+	// Test different addresses produce different keys
+	key2 := types.GetVerificationRecordKey("cosmos1test2")
+	require.NotEqual(t, key, key2)
+}
+
+func TestGetProofKey(t *testing.T) {
+	proofHash := []byte("proof123")
+	key := types.GetProofKey(proofHash)
+	require.NotNil(t, key)
+	require.NotEmpty(t, key)
+	
+	// Test different proofs produce different keys
+	key2 := types.GetProofKey([]byte("proof456"))
+	require.NotEqual(t, key, key2)
+}

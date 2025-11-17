@@ -1,6 +1,10 @@
 package types
 
-import "fmt"
+import (
+	"fmt"
+	
+	sdk "github.com/cosmos/cosmos-sdk/types"
+)
 
 const (
 	// ModuleName defines the module name
@@ -31,6 +35,12 @@ var (
 
 	// HalvingInfoKey defines the key for halving information
 	HalvingInfoKey = []byte("HalvingInfo")
+	
+	// BlockTimeKeyPrefix defines the prefix for block time keys
+	BlockTimeKeyPrefix = []byte{0x10}
+	
+	// AverageBlockTimeKey defines the key for average block time
+	AverageBlockTimeKey = []byte("AverageBlockTime")
 
 	// ConsensusStateKey defines the key for consensus state
 	ConsensusStateKey = []byte("ConsensusState")
@@ -40,6 +50,9 @@ var (
 	
 	// BlindAuctionKey defines the key for blind auction data
 	BlindAuctionKey = "BlindAuction"
+	
+	// BidHistoryKeyPrefix defines the prefix for bid history keys (anti-manipulation)
+	BidHistoryKeyPrefix = []byte{0x11}
 )
 
 // Key prefixes
@@ -75,6 +88,11 @@ func KeyHalvingInfo() []byte {
 	return HalvingInfoKey
 }
 
+// GetBlockTimeKey returns the key for a block's time
+func GetBlockTimeKey(height uint64) []byte {
+	return append(BlockTimeKeyPrefix, sdk.Uint64ToBigEndian(height)...)
+}
+
 // KeyConsensusState returns the key for consensus state
 func KeyConsensusState() []byte {
 	return ConsensusStateKey
@@ -83,4 +101,9 @@ func KeyConsensusState() []byte {
 // GetBlindAuctionKey returns the key for a blind auction at a specific height
 func GetBlindAuctionKey(height uint64) []byte {
 	return append(KeyBlindAuctionPrefix, []byte(fmt.Sprintf("%d", height))...)
+}
+
+// GetBidHistoryKey returns the key for a validator's bid history
+func GetBidHistoryKey(validator string) []byte {
+	return append(BidHistoryKeyPrefix, []byte(validator)...)
 }

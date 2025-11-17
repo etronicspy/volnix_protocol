@@ -183,7 +183,9 @@ func (k Keeper) GetAllActivatedLizenz(ctx sdk.Context) ([]*lizenzv1.ActivatedLiz
 	iterator := lizenzStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
 		}
 	}()
 
@@ -222,7 +224,14 @@ func (k Keeper) GetTotalActivatedLizenz(ctx sdk.Context) (string, error) {
 // ValidateMaxLznActivationLimit checks if a validator's activation would exceed 33% of total pool
 // According to whitepaper: "Максимум 33% от общего пула LZN может быть активировано одним валидатором"
 func (k Keeper) ValidateMaxLznActivationLimit(ctx sdk.Context, validator string, newAmount string) error {
+	// 33% limit from whitepaper: "не более 33% на один кошелек"
+	// This is a hardcoded constant as per whitepaper, but could be made configurable via governance in the future
 	const maxValidatorShare = 0.33 // 33% limit from whitepaper
+	
+	// Validate share is between 0.0 and 1.0 (safety check)
+	if maxValidatorShare <= 0.0 || maxValidatorShare > 1.0 {
+		return fmt.Errorf("invalid maxValidatorShare: must be between 0.0 and 1.0, got %f", maxValidatorShare)
+	}
 
 	// Get total activated LZN
 	totalActivated, err := k.GetTotalActivatedLizenz(ctx)

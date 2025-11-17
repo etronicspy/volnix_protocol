@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package volnix.lizenz.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1;lizenzv1";
 
 import "google/api/annotations.proto";
@@ -38,6 +40,16 @@ service Query {
   // ValidatorIntegration queries integration status for a validator
   rpc ValidatorIntegration(QueryValidatorIntegrationRequest) returns (QueryValidatorIntegrationResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/integration/{validator}";
+  }
+  
+  // GetRewardHistory returns reward history for a validator
+  rpc GetRewardHistory(QueryRewardHistoryRequest) returns (QueryRewardHistoryResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/reward_history/{validator}";
+  }
+  
+  // GetRewardStats returns comprehensive reward statistics for a validator
+  rpc GetRewardStats(QueryRewardStatsRequest) returns (QueryRewardStatsResponse) {
+    option (google.api.http).get = "/volnix/lizenz/v1/reward_stats/{validator}";
   }
 }
 
@@ -98,4 +110,40 @@ message QueryValidatorIntegrationRequest {
 // QueryValidatorIntegrationResponse is response type for the Query/ValidatorIntegration RPC method
 message QueryValidatorIntegrationResponse {
   ValidatorIntegration validator_integration = 1;
+}
+
+// QueryRewardHistoryRequest is request type for Query/GetRewardHistory
+message QueryRewardHistoryRequest {
+  string validator = 1; // Validator address
+}
+
+// QueryRewardHistoryResponse is response type for Query/GetRewardHistory
+message QueryRewardHistoryResponse {
+  string validator = 1;
+  repeated RewardRecord reward_history = 2;
+  uint64 total_records = 3;
+}
+
+// QueryRewardStatsRequest is request type for Query/GetRewardStats
+message QueryRewardStatsRequest {
+  string validator = 1; // Validator address
+}
+
+// QueryRewardStatsResponse is response type for Query/GetRewardStats
+message QueryRewardStatsResponse {
+  string total_rewards_earned = 1; // Total WRT rewards earned (cumulative)
+  string last_reward_block = 2; // Block height of last reward
+  google.protobuf.Timestamp last_reward_time = 3; // Timestamp of last reward
+  repeated RewardRecord reward_history = 4; // Recent reward history
+  uint64 total_rewards_count = 5; // Total number of reward distributions
+}
+
+// RewardRecord represents a single reward distribution record
+message RewardRecord {
+  uint64 block_height = 1;
+  string reward_amount = 2; // in micro WRT
+  int64 timestamp = 3;
+  string moa_compliance = 4; // MOA compliance ratio at time of reward
+  string penalty_applied = 5; // Penalty multiplier applied
+  string base_reward = 6; // Base reward before penalty
 }

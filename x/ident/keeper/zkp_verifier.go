@@ -47,7 +47,8 @@ func (zkp *ZKPVerifier) VerifyIdentityProof(ctx sdk.Context, proof *IdentityProo
 	}
 
 	// 2. Verify nullifier uniqueness (prevents double-spending of identity)
-	if err := zkp.verifyNullifierUniqueness(ctx, proof.Nullifier); err != nil {
+	// Enhanced check supports role migration
+	if err := zkp.verifyNullifierUniqueness(ctx, proof.Nullifier, address); err != nil {
 		return fmt.Errorf("nullifier verification failed: %w", err)
 	}
 
@@ -99,15 +100,10 @@ func (zkp *ZKPVerifier) validateProofStructure(proof *IdentityProof) error {
 }
 
 // verifyNullifierUniqueness ensures the nullifier hasn't been used before
-func (zkp *ZKPVerifier) verifyNullifierUniqueness(ctx sdk.Context, nullifier []byte) error {
-	store := ctx.KVStore(zkp.keeper.storeKey)
-	nullifierKey := types.GetNullifierKey(nullifier)
-
-	if store.Has(nullifierKey) {
-		return fmt.Errorf("nullifier already used - identity already verified")
-	}
-
-	return nil
+// Enhanced with address checking for role migration support
+func (zkp *ZKPVerifier) verifyNullifierUniqueness(ctx sdk.Context, nullifier []byte, address string) error {
+	// Use enhanced nullifier check from security_enhancements.go
+	return zkp.keeper.EnhancedNullifierCheck(ctx, nullifier, address)
 }
 
 // verifyZKProof verifies the cryptographic zero-knowledge proof
