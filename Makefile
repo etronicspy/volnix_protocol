@@ -15,10 +15,10 @@ PURPLE=\033[0;35m
 CYAN=\033[0;36m
 NC=\033[0m # No Color
 
-.PHONY: help build install test clean run init start status keys version
+.PHONY: help build build-standalone install test clean run init start status keys version
 
 # Default target
-all: build
+all: build build-standalone
 
 help: ## Show this help message
 	@echo "$(CYAN)🚀 Volnix Protocol - Build Commands$(NC)"
@@ -30,6 +30,12 @@ build: ## Build the volnixd binary
 	@mkdir -p $(BUILD_DIR)
 	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/volnixd
 	@echo "$(GREEN)✅ Build completed: $(BUILD_DIR)/$(BINARY_NAME)$(NC)"
+
+build-standalone: ## Build the volnixd-standalone binary
+	@echo "$(GREEN)🔨 Building Volnix Protocol Standalone...$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	@go build -o $(BUILD_DIR)/volnixd-standalone ./cmd/volnixd-standalone
+	@echo "$(GREEN)✅ Standalone build completed: $(BUILD_DIR)/volnixd-standalone$(NC)"
 
 build-linux: ## Build for Linux
 	@echo "$(GREEN)🔨 Building for Linux...$(NC)"
@@ -81,6 +87,7 @@ clean: ## Clean build artifacts
 	@echo "$(YELLOW)🧹 Cleaning build artifacts...$(NC)"
 	@rm -rf $(BUILD_DIR)
 	@rm -f coverage.out coverage.html
+	@rm -f volnixd-standalone volnixd-standalone.exe
 	@echo "$(GREEN)✅ Clean completed$(NC)"
 
 deps: ## Download and tidy dependencies

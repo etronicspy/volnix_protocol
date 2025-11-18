@@ -69,7 +69,8 @@ function Build-Project {
         
         # Сборка standalone версии
         Write-Host "Building volnixd-standalone binary..." -ForegroundColor $Yellow
-        go build -o volnixd-standalone.exe ./cmd/volnixd-standalone
+        New-Item -ItemType Directory -Force -Path "build" | Out-Null
+        go build -o build/volnixd-standalone.exe ./cmd/volnixd-standalone
         if ($LASTEXITCODE -ne 0) {
             Write-Host "❌ Failed to build volnixd-standalone" -ForegroundColor $Red
             exit 1

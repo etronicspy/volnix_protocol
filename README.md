@@ -35,6 +35,22 @@
 ./scripts/deploy.sh --moniker "MyValidator" --enable-monitoring
 ```
 
+### Запуск минимальной локальной сети
+```bash
+# Запуск сети с несколькими узлами (по умолчанию 3 узла)
+./scripts/start-minimal-network.sh
+
+# Запуск с указанием количества узлов (минимум 2)
+./scripts/start-minimal-network.sh 2
+./scripts/start-minimal-network.sh 4
+
+# Запуск с очисткой данных
+./scripts/start-minimal-network.sh --clean
+
+# Подробная документация
+cat scripts/README-minimal-network.md
+```
+
 ## 🌟 Особенности
 
 - **🔐 Гибридный консенсус PoVB** - уникальное сочетание Proof-of-Stake и Proof-of-Burn

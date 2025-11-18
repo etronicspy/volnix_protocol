@@ -1,6 +1,8 @@
 # Binaries
 build/
 *.exe
+volnixd-standalone
+volnixd-standalone.exe
 
 # Config files
 ~/.volnix/
@@ -76,3 +78,47 @@ proto/gen/
 .env
 .env.local
 .env.*.local
+
+# Deprecated files and old content
+deprecated/
+
+# Testnet and node data (contains private keys and blockchain data)
+testnet/
+**/.volnix/data/
+
+# Private keys and validator state (security critical)
+priv_validator_key.json
+node_key.json
+priv_validator_state.json
+addrbook.json
+
+# Process files
+*.pid
+.network_pids
+
+# Cache files
+*.cache
+.cache/
+
+# Blockchain data directories
+data/
+*.db
+*.db-shm
+*.db-wal
+*.ldb
+**/blockstore.db/
+**/state.db/
+**/tx_index.db/
+**/application.db/
+MANIFEST-*
+CURRENT
+CURRENT.bak
+LOCK
+LOG
+
+# Cosmos SDK / CometBFT specific
+snapshots/
+*.wasm
+*.tar.gz
+*.zip
+*.cosmos

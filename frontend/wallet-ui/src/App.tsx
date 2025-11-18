@@ -26,8 +26,65 @@ function App() {
   const [activeTab, setActiveTab] = useState<'wallet' | 'send' | 'history' | 'types' | 'validators'>('wallet');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isRestoring, setIsRestoring] = useState(true); // Флаг для отслеживания восстановления состояния
 
-  // Используем isLoading для отображения индикатора загрузки
+  // Ключи для localStorage
+  const CURRENT_WALLET_KEY = 'volnix_current_wallet';
+  const CURRENT_WALLET_MNEMONIC_KEY = 'volnix_current_wallet_mnemonic';
+  const ACTIVE_TAB_KEY = 'volnix_active_tab';
+
+  // Восстановление состояния при загрузке страницы
+  useEffect(() => {
+    const restoreWalletState = async () => {
+      try {
+        // Восстанавливаем активную вкладку
+        const savedTab = localStorage.getItem(ACTIVE_TAB_KEY);
+        if (savedTab && ['wallet', 'send', 'history', 'types', 'validators'].includes(savedTab)) {
+          setActiveTab(savedTab as typeof activeTab);
+        }
+
+        // Восстанавливаем подключенный кошелек
+        const savedAddress = localStorage.getItem(CURRENT_WALLET_KEY);
+        const savedMnemonic = localStorage.getItem(CURRENT_WALLET_MNEMONIC_KEY);
+
+        if (savedAddress && savedMnemonic) {
+          // Восстанавливаем подключение кошелька
+          try {
+            // Инициализируем signing client с сохраненной мнемоникой
+            await blockchainService.initializeSigningClient(savedMnemonic);
+            
+            // Восстанавливаем состояние подключения ПЕРЕД загрузкой данных
+            // Это предотвратит двойную загрузку (из restoreWalletState и из useEffect автообновления)
+            setWalletState(prev => ({
+              ...prev,
+              isConnected: true,
+              address: savedAddress
+            }));
+            
+            // Загружаем данные кошелька (loadWalletData сам управляет isLoading)
+            await loadWalletData(savedAddress);
+          } catch (err: any) {
+            console.error('Failed to restore wallet connection:', err);
+            // Если не удалось восстановить, очищаем сохраненные данные
+            localStorage.removeItem(CURRENT_WALLET_KEY);
+            localStorage.removeItem(CURRENT_WALLET_MNEMONIC_KEY);
+          }
+        }
+      } catch (err) {
+        console.error('Error restoring wallet state:', err);
+      } finally {
+        // Помечаем, что восстановление завершено
+        setIsRestoring(false);
+      }
+    };
+
+    restoreWalletState();
+  }, []); // Выполняется только при монтировании компонента
+
+  // Сохранение активной вкладки при изменении
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
+  }, [activeTab]);
 
   // Загрузка балансов и транзакций
   const loadWalletData = async (address: string) => {
@@ -101,7 +158,8 @@ function App() {
 
   // Автообновление данных каждые 10 секунд
   useEffect(() => {
-    if (!walletState.isConnected || !walletState.address) return;
+    // Не запускаем автообновление во время восстановления состояния
+    if (isRestoring || !walletState.isConnected || !walletState.address) return;
 
     loadWalletData(walletState.address);
     const interval = setInterval(() => {
@@ -109,7 +167,7 @@ function App() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [walletState.isConnected, walletState.address]);
+  }, [isRestoring, walletState.isConnected, walletState.address]);
 
   const connectWallet = async (address: string, mnemonic?: string) => {
     setIsLoading(true);
@@ -124,6 +182,12 @@ function App() {
         isConnected: true,
         address
       }));
+
+      // Сохраняем состояние подключения в localStorage
+      localStorage.setItem(CURRENT_WALLET_KEY, address);
+      if (mnemonic) {
+        localStorage.setItem(CURRENT_WALLET_MNEMONIC_KEY, mnemonic);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to connect wallet');
       setIsLoading(false);
@@ -139,6 +203,10 @@ function App() {
       transactions: [],
       isVerified: false
     });
+
+    // Очищаем сохраненное состояние подключения
+    localStorage.removeItem(CURRENT_WALLET_KEY);
+    localStorage.removeItem(CURRENT_WALLET_MNEMONIC_KEY);
   };
 
   const upgradeWalletType = (newType: WalletType) => {
