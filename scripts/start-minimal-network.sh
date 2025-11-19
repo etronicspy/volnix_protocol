@@ -418,8 +418,9 @@ start_node() {
         return 1
     fi
     
-    # Запускаем узел из его директории
-    (cd "$abs_dir" && "$abs_build_path/volnixd-standalone" start > "$log_file" 2>&1) &
+    # Запускаем узел из его директории с env переменными для портов
+    # CRITICAL: Передаем VOLNIX_RPC_PORT и VOLNIX_P2P_PORT чтобы узел использовал правильные порты
+    (cd "$abs_dir" && VOLNIX_RPC_PORT=$rpc_port VOLNIX_P2P_PORT=$p2p_port "$abs_build_path/volnixd-standalone" start > "$log_file" 2>&1) &
     local pid=$!
     
     # Даем процессу время на запуск (volnixd-standalone может запускаться не сразу)
