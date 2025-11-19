@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  validator-0:
+    build: .
+    container_name: volnix-validator-0
+    environment:
+      - VOLNIX_HOME=/home/volnix/.volnix
+      - VOLNIX_RPC_PORT=26657
+      - VOLNIX_P2P_PORT=26656
+    ports:
+      - "26657:26657"
+      - "26656:26656"
+    volumes:
+      - validator-0-data:/home/volnix/.volnix
+    networks:
+      - volnix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:26657/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  validator-1:
+    build: .
+    container_name: volnix-validator-1
+    environment:
+      - VOLNIX_HOME=/home/volnix/.volnix
+      - VOLNIX_RPC_PORT=26657
+      - VOLNIX_P2P_PORT=26656
+    ports:
+      - "26757:26657"
+      - "26756:26656"
+    volumes:
+      - validator-1-data:/home/volnix/.volnix
+    networks:
+      - volnix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:26657/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - validator-0
+
+  validator-2:
+    build: .
+    container_name: volnix-validator-2
+    environment:
+      - VOLNIX_HOME=/home/volnix/.volnix
+      - VOLNIX_RPC_PORT=26657
+      - VOLNIX_P2P_PORT=26656
+    ports:
+      - "26857:26657"
+      - "26856:26656"
+    volumes:
+      - validator-2-data:/home/volnix/.volnix
+    networks:
+      - volnix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:26657/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - validator-0
+
+  # Frontend Wallet UI
+  wallet-ui:
+    build: ./frontend/wallet-ui
+    container_name: volnix-wallet-ui
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_RPC_ENDPOINT=http://validator-0:26657
+      - REACT_APP_CHAIN_ID=volnix-standalone
+    networks:
+      - volnix-network
+    restart: unless-stopped
+    depends_on:
+      - validator-0
+
+volumes:
+  validator-0-data:
+  validator-1-data:
+  validator-2-data:
+
+networks:
+  volnix-network:
+    driver: bridge
+

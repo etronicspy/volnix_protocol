@@ -1097,14 +1097,26 @@ func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, 
 	config.Consensus.CreateEmptyBlocks = true
 	config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
 	
-	// Configure P2P
-	config.P2P.ListenAddress = "tcp://0.0.0.0:26656"
+	// Configure P2P - support env variable for port
+	p2pPort := os.Getenv("VOLNIX_P2P_PORT")
+	if p2pPort == "" {
+		p2pPort = "26656"
+	}
+	config.P2P.ListenAddress = fmt.Sprintf("tcp://0.0.0.0:%s", p2pPort)
 	config.P2P.MaxNumInboundPeers = 40
 	config.P2P.MaxNumOutboundPeers = 10
 	
-	// Configure RPC
-	config.RPC.ListenAddress = "tcp://0.0.0.0:26657"
+	// Configure RPC - support env variable for port
+	rpcPort := os.Getenv("VOLNIX_RPC_PORT")
+	if rpcPort == "" {
+		rpcPort = "26657"
+	}
+	config.RPC.ListenAddress = fmt.Sprintf("tcp://0.0.0.0:%s", rpcPort)
 	config.RPC.CORSAllowedOrigins = []string{"*"}
+	
+	logger.Info("Network configuration", 
+		"p2p_port", p2pPort, 
+		"rpc_port", rpcPort)
 	
 	// CRITICAL: Configure transaction indexer for tx_search endpoint
 	// Without this, tx_search will return 500 errors
