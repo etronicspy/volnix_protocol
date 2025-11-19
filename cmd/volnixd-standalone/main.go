@@ -1087,6 +1087,35 @@ func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, 
 	config.SetRoot(homeDir)
 	config.Moniker = "volnix-standalone"
 	
+	// CRITICAL: Read persistent_peers from config.toml if it exists
+	configFile := filepath.Join(homeDir, "config", "config.toml")
+	if _, err := os.Stat(configFile); err == nil {
+		logger.Info("Reading persistent_peers from config file", "file", configFile)
+		
+		// Читаем файл и извлекаем persistent_peers
+		configContent, err := os.ReadFile(configFile)
+		if err == nil {
+			// Простой парсинг: ищем строку persistent_peers = "..."
+			lines := strings.Split(string(configContent), "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "persistent_peers") {
+					// Извлекаем значение между кавычками
+					if start := strings.Index(line, "\""); start != -1 {
+						if end := strings.LastIndex(line, "\""); end > start {
+							persistentPeers := line[start+1 : end]
+							if persistentPeers != "" {
+								config.P2P.PersistentPeers = persistentPeers
+								logger.Info("Loaded persistent_peers from config", "peers", persistentPeers)
+							}
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+	
 	// Configure consensus
 	config.Consensus.TimeoutPropose = 3 * time.Second
 	config.Consensus.TimeoutPrevote = 1 * time.Second
