@@ -1355,18 +1355,24 @@ func (s *StandaloneServer) initializeFiles() error {
 	
 	// Create config file
 	configFile := filepath.Join(configDir, "config.toml")
-	// Always write config file to ensure CreateEmptyBlocks settings are applied
-	// This is CRITICAL for CosmJS compatibility - blocks must be created immediately
-	// to populate sync_info fields, preventing "must provide a non-empty value" errors
-	// CRITICAL: Re-apply critical settings before writing to ensure they're in the file
-	// The config object is passed directly to node.NewNode(), so in-memory settings are used
-	// But we also write to file for consistency and debugging
-	s.config.Consensus.CreateEmptyBlocks = true
-	s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
-	// CRITICAL: Configure transaction indexer for tx_search endpoint
-	// Without this, tx_search will return 500 errors
-	s.config.TxIndex.Indexer = "kv"
-	cmtcfg.WriteConfigFile(configFile, s.config)
+	
+	// CRITICAL: Only write config if it doesn't exist
+	// If config exists (e.g., manually configured for multinode), preserve it
+	// This prevents overwriting persistent_peers and other custom settings
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		// Config doesn't exist, create it with default settings
+		// Always write config file to ensure CreateEmptyBlocks settings are applied
+		// This is CRITICAL for CosmJS compatibility - blocks must be created immediately
+		// to populate sync_info fields, preventing "must provide a non-empty value" errors
+		s.config.Consensus.CreateEmptyBlocks = true
+		s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
+		// CRITICAL: Configure transaction indexer for tx_search endpoint
+		// Without this, tx_search will return 500 errors
+		s.config.TxIndex.Indexer = "kv"
+		cmtcfg.WriteConfigFile(configFile, s.config)
+	} else {
+		s.logger.Info("Config file already exists, preserving custom settings", "file", configFile)
+	}
 	
 	// CRITICAL: Always reset priv_validator_state.json to allow block creation
 	// If height is set incorrectly, CometBFT will not create blocks
