@@ -430,16 +430,19 @@ func (app *StandaloneApp) Query(ctx context.Context, req *abci.RequestQuery) (*a
 		// Get current block height from BaseApp
 		// This is required by CosmJS - queries must return height
 		// Use LastBlockHeight() which returns the height of the last committed block
-		blockHeight := app.LastBlockHeight()
-		
-		// If height is 0, try to get it from context (for initial blocks)
-		if blockHeight == 0 {
-			sdkCtx := app.NewContext(true) // true = checkTx = false, so we get latest committed state
-			blockHeight = sdkCtx.BlockHeight()
-			// If still 0, use height 1 as minimum (genesis block)
+		var blockHeight int64
+		if app.BaseApp != nil {
+			blockHeight = app.LastBlockHeight()
+			
+			// If height is 0, try to get it from context (for initial blocks)
 			if blockHeight == 0 {
-				blockHeight = 1
+				sdkCtx := app.NewContext(true) // true = checkTx = false, so we get latest committed state
+				blockHeight = sdkCtx.BlockHeight()
 			}
+		}
+		// If BaseApp is nil (e.g., in tests) or height is still 0, use height 1 as minimum (genesis block)
+		if blockHeight == 0 {
+			blockHeight = 1
 		}
 		
 		// Genesis accounts with balances (for testing)

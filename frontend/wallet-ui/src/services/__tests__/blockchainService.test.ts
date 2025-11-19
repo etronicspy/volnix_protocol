@@ -1,5 +1,26 @@
 // Тесты для blockchainService - парсинг событий и транзакций
 
+// Полифилл для TextEncoder в Jest окружении
+if (typeof TextEncoder === 'undefined') {
+  const { TextEncoder, TextDecoder } = require('util');
+  global.TextEncoder = TextEncoder;
+  global.TextDecoder = TextDecoder;
+}
+
+// Полифилл для crypto.subtle в Jest окружении
+if (typeof global.crypto === 'undefined' || !global.crypto.subtle) {
+  const nodeCrypto = require('crypto');
+  global.crypto = {
+    subtle: {
+      digest: async (algorithm: string, data: Uint8Array): Promise<ArrayBuffer> => {
+        const hash = nodeCrypto.createHash('sha256');
+        hash.update(Buffer.from(data));
+        return hash.digest().buffer;
+      },
+    },
+  } as any;
+}
+
 describe('BlockchainService - Event Parsing', () => {
   // Mock данных для тестирования парсинга событий
   
@@ -303,7 +324,10 @@ describe('BlockchainService - Transaction Conversion', () => {
     ];
     
     for (const testCase of testCases) {
-      const type = testCase.tx.from === userAddress ? 'send' : 'receive';
+      // Правильная логика: send если from === userAddress, receive если to === userAddress
+      const type = testCase.tx.from === userAddress 
+        ? 'send' 
+        : (testCase.tx.to === userAddress ? 'receive' : 'send');
       expect(type).toBe(testCase.expected);
     }
   });
