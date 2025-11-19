@@ -179,89 +179,261 @@ class BlockchainService {
     }
   }
 
+  // Сохранение хеша транзакции в localStorage
+  private saveTxHash(address: string, txHash: string): void {
+    try {
+      const TX_STORAGE_KEY = `volnix_txs_${address}`;
+      const storedTxs = localStorage.getItem(TX_STORAGE_KEY);
+      const txHashes: string[] = storedTxs ? JSON.parse(storedTxs) : [];
+      
+      // Добавляем новый хеш в начало массива (новые транзакции сначала)
+      if (!txHashes.includes(txHash)) {
+        txHashes.unshift(txHash);
+        localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(txHashes));
+        console.log(`💾 Saved transaction hash ${txHash} to localStorage`);
+      }
+    } catch (error: any) {
+      console.warn(`Failed to save transaction hash: ${error.message}`);
+    }
+  }
+
+  // Сканирование блоков для поиска входящих транзакций
+  async scanForIncomingTransactions(address: string, blocksToScan: number = 100): Promise<void> {
+    try {
+      console.log(`🔍 Scanning last ${blocksToScan} blocks for incoming transactions to ${address}...`);
+      
+      // Получаем текущую высоту блока
+      const statusResponse = await fetch(`${RPC_ENDPOINT}/status`);
+      const statusData = await statusResponse.json();
+      const latestHeight = parseInt(statusData.result?.sync_info?.latest_block_height || '0');
+      
+      if (latestHeight === 0) {
+        console.warn('⚠️  Could not get latest block height');
+        return;
+      }
+      
+      console.log(`📊 Latest block height: ${latestHeight}`);
+      
+      // Определяем диапазон блоков для сканирования
+      const startHeight = Math.max(1, latestHeight - blocksToScan + 1);
+      const endHeight = latestHeight;
+      
+      let foundCount = 0;
+      
+      // Сканируем блоки
+      for (let height = endHeight; height >= startHeight; height--) {
+        try {
+          // Получаем результаты транзакций в блоке
+          const blockResultResponse = await fetch(`${RPC_ENDPOINT}/block_results?height=${height}`);
+          const blockResultData = await blockResultResponse.json();
+          const txResults = blockResultData.result?.txs_results || [];
+          
+          if (txResults.length === 0) continue;
+          
+          // Получаем сами транзакции чтобы извлечь хеши
+          const blockResponse = await fetch(`${RPC_ENDPOINT}/block?height=${height}`);
+          const blockData = await blockResponse.json();
+          const txs = blockData.result?.block?.data?.txs || [];
+          
+          // Проверяем каждую транзакцию
+          for (let i = 0; i < txResults.length; i++) {
+            const txResult = txResults[i];
+            const events = txResult.events || [];
+            
+            // Ищем события transfer с нашим адресом как получателем
+            for (const event of events) {
+              if (event.type === 'transfer' || event.type === 'coin_received') {
+                const attributes = event.attributes || [];
+                
+                let recipient = '';
+                for (const attr of attributes) {
+                  try {
+                    // CRITICAL: Проверяем index - если true, значения уже декодированы
+                    const isIndexed = attr.index === true;
+                    const key = isIndexed ? (attr.key || '') : (attr.key ? atob(attr.key) : '');
+                    const value = isIndexed ? (attr.value || '') : (attr.value ? atob(attr.value) : '');
+                    
+                    if (key === 'recipient' || key === 'receiver') {
+                      recipient = value;
+                    }
+                  } catch (e) {
+                    // Игнорируем ошибки декодирования
+                  }
+                }
+                
+                // Если это наш адрес - сохраняем хеш транзакции
+                if (recipient === address && txs[i]) {
+                  // Вычисляем хеш транзакции (SHA256 от base64 tx)
+                  const txHash = await this.calculateTxHash(txs[i]);
+                  if (txHash) {
+                    this.saveTxHash(address, txHash);
+                    foundCount++;
+                    console.log(`   ✅ Found incoming tx at block ${height}: ${txHash.substring(0, 16)}...`);
+                  }
+                }
+              }
+            }
+          }
+        } catch (error: any) {
+          // Игнорируем ошибки отдельных блоков
+          console.warn(`⚠️  Error scanning block ${height}:`, error.message);
+        }
+      }
+      
+      console.log(`🔍 Scan complete. Found ${foundCount} incoming transactions.`);
+    } catch (error: any) {
+      console.warn(`Failed to scan for incoming transactions: ${error.message}`);
+    }
+  }
+
+  // Вычисление хеша транзакции из base64 данных
+  private async calculateTxHash(txBase64: string): Promise<string | null> {
+    try {
+      // Декодируем base64 в байты
+      const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
+      
+      // Вычисляем SHA256
+      const hashBuffer = await crypto.subtle.digest('SHA-256', txBytes);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      return hashHex.toUpperCase();
+    } catch (error) {
+      console.warn('Failed to calculate tx hash:', error);
+      return null;
+    }
+  }
+
   // Получение транзакций аккаунта
-  async getTransactions(address: string, limit: number = 50): Promise<BlockchainTransaction[]> {
+  async getTransactions(address: string, limit: number = 50, scanBlocks: boolean = true): Promise<BlockchainTransaction[]> {
     await this.initializeClient();
     if (!this.client) throw new Error('Client not initialized');
 
     try {
-      // Используем RPC напрямую для получения транзакций
-      // CRITICAL: Обрабатываем все возможные ошибки, включая сетевые и HTTP ошибки
-      let response: Response;
-      try {
-        response = await fetch(`${RPC_ENDPOINT}/tx_search?query="transfer.recipient='${address}' OR transfer.sender='${address}'"&per_page=${limit}`);
-      } catch (fetchError: any) {
-        // Сетевая ошибка или ошибка fetch
-        console.warn(`tx_search: fetch failed: ${fetchError.message || fetchError}. Returning empty transactions.`);
-        return [];
-      }
-      
-      // Парсим JSON независимо от статуса ответа (500 все равно возвращает JSON с error)
-      let data: any;
-      try {
-        data = await response.json();
-      } catch (parseError: any) {
-        // Если не удалось распарсить JSON, возвращаем пустой массив
-        console.warn(`tx_search: failed to parse response. Returning empty transactions.`);
-        return [];
-      }
-
-      // Если есть ошибка в ответе (например, protobuf decode error "offset 67: got tag, want 6"), возвращаем пустой массив
-      if (data.error) {
-        // CRITICAL: Не логируем как error, а как warn, чтобы не засорять консоль
-        console.warn(`tx_search: ${data.error.message || data.error.data || 'Unknown error'}. Returning empty transactions.`);
-        return [];
-      }
-      
-      // Если запрос вернул ошибку (500 или другой код ошибки), возвращаем пустой массив
-      if (!response.ok) {
-        console.warn(`tx_search: HTTP ${response.status} ${response.statusText}. Returning empty transactions.`);
-        return [];
-      }
-
-      if (!data.result || !data.result.txs) {
-        return [];
-      }
-
-      const transactions: BlockchainTransaction[] = data.result.txs.map((tx: any) => {
-        // Парсинг транзакции из Cosmos SDK формата
-        const txHash = tx.hash || '';
-        const height = tx.height || 0;
-        const timestamp = tx.timestamp || new Date().toISOString();
-
-        // Извлечение данных из сообщений
-        // Это упрощенная версия, в реальности нужно парсить protobuf
-        // Пытаемся извлечь данные из tx_result
-        let from = address;
-        let to = address;
-        let amount = '0';
-        let denom = 'uwrt';
-        let status: 'success' | 'failed' = 'success';
-
-        if (tx.tx_result) {
-          if (tx.tx_result.code !== 0) {
-            status = 'failed';
-          }
-          // Здесь можно добавить парсинг событий для получения from/to/amount
+      // НОВЫЙ: Сначала сканируем блоки для поиска входящих транзакций
+      if (scanBlocks) {
+        const SCAN_FLAG_KEY = `volnix_last_scan_${address}`;
+        const lastScan = localStorage.getItem(SCAN_FLAG_KEY);
+        const now = Date.now();
+        
+        // Сканируем только раз в 30 секунд
+        if (!lastScan || now - parseInt(lastScan) > 30000) {
+          await this.scanForIncomingTransactions(address, 100);
+          localStorage.setItem(SCAN_FLAG_KEY, now.toString());
         }
+      }
+      
+      // Загружаем хеши из localStorage и получаем детали через /tx?hash=
+      // Это работает, так как /tx?hash= индексируется корректно, в отличие от /tx_search
+      
+      const TX_STORAGE_KEY = `volnix_txs_${address}`;
+      const storedTxs = localStorage.getItem(TX_STORAGE_KEY);
+      const txHashes: string[] = storedTxs ? JSON.parse(storedTxs) : [];
+      
+      if (txHashes.length === 0) {
+        console.log('📭 No transactions found in localStorage for', address);
+        return [];
+      }
 
-        return {
-          hash: txHash,
-          height: typeof height === 'string' ? parseInt(height) : height,
-          timestamp,
-          from,
-          to,
-          amount,
-          denom,
-          status,
-        };
+      console.log(`📦 Loading ${txHashes.length} transactions from localStorage`);
+
+      // Загружаем детали каждой транзакции
+      const txPromises = txHashes.slice(0, limit).map(async (hash) => {
+        try {
+          const response = await fetch(`${RPC_ENDPOINT}/tx?hash=0x${hash}`);
+          const data = await response.json();
+          
+          if (data.error) {
+            console.warn(`Transaction ${hash} not found:`, data.error.data);
+            return null;
+          }
+
+          if (!data.result) {
+            return null;
+          }
+
+          const tx = data.result;
+          const txResult = tx.tx_result || {};
+          
+          // Парсим события для получения from/to/amount
+          let from = '';
+          let to = '';
+          let amount = '0';
+          let denom = 'uwrt';
+          
+          const events = txResult.events || [];
+          for (const event of events) {
+            // CRITICAL: Проверяем transfer, coin_spent и coin_received события
+            if (event.type === 'transfer' || event.type === 'coin_spent' || event.type === 'coin_received') {
+              const attributes = event.attributes || [];
+              for (const attr of attributes) {
+                // CRITICAL: Атрибуты могут быть в base64 ИЛИ уже декодированы (если index: true)
+                // Проверяем index флаг - если true, значения уже строки
+                let key = '';
+                let value = '';
+                
+                const isIndexed = attr.index === true;
+                
+                if (isIndexed) {
+                  // Если index: true, значения уже декодированы (строки)
+                  key = attr.key || '';
+                  value = attr.value || '';
+                } else {
+                  // Если index: false, значения в base64 - декодируем
+                  try {
+                    key = attr.key ? atob(attr.key) : '';
+                    value = attr.value ? atob(attr.value) : '';
+                  } catch (e) {
+                    // Если декодирование не удалось, используем как есть
+                    key = attr.key || '';
+                    value = attr.value || '';
+                  }
+                }
+                
+                // Парсим разные атрибуты
+                if (key === 'sender' || key === 'spender') {
+                  from = value;
+                } else if (key === 'recipient' || key === 'receiver') {
+                  to = value;
+                } else if (key === 'amount') {
+                  // amount формат: "1000000uwrt" или "1000000uwrt,2000000ulzn"
+                  const amounts = value.split(',');
+                  for (const amt of amounts) {
+                    const match = amt.trim().match(/^(\d+)(\w+)$/);
+                    if (match) {
+                      amount = match[1];
+                      denom = match[2];
+                      break; // Берем первую сумму
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          return {
+            hash: tx.hash || hash,
+            height: typeof tx.height === 'string' ? parseInt(tx.height) : tx.height,
+            timestamp: new Date().toISOString(), // CometBFT не возвращает timestamp через /tx
+            from: from || address,
+            to: to || address,
+            amount,
+            denom,
+            status: (txResult.code === 0 ? 'success' : 'failed') as 'success' | 'failed',
+          };
+        } catch (error: any) {
+          console.warn(`Failed to load transaction ${hash}:`, error.message);
+          return null;
+        }
       });
 
+      const results = await Promise.all(txPromises);
+      const transactions = results.filter((tx): tx is BlockchainTransaction => tx !== null);
+      
+      console.log(`✅ Loaded ${transactions.length} transactions`);
       return transactions;
     } catch (error: any) {
-      // CRITICAL: Обрабатываем ВСЕ ошибки, включая неожиданные
-      // Логируем как warn, а не error, чтобы не засорять консоль
-      console.warn(`tx_search: unexpected error: ${error.message || error}. Returning empty transactions.`);
+      console.warn(`Failed to get transactions: ${error.message || error}. Returning empty.`);
       return [];
     }
   }
@@ -429,6 +601,9 @@ class BlockchainService {
         console.error('❌ Transaction failed:', result.rawLog);
         throw new Error(`Transaction failed: ${result.rawLog}`);
       }
+
+      // CRITICAL: Сохраняем хеш транзакции в localStorage для истории
+      this.saveTxHash(fromAddress, result.transactionHash);
 
       // CRITICAL: Wait a bit after successful transaction to allow sequence update
       // This helps prevent "tx already exists" errors on subsequent transactions

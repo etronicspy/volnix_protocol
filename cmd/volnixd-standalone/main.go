@@ -141,6 +141,43 @@ func (s *minimalBankMsgServer) Send(ctx context.Context, msg *banktypes.MsgSend)
 			msg.ToAddress, toBalance.String(), newToBalance.String())
 	}
 	
+	// CRITICAL: Emit transfer events for transaction tracking
+	// These events are used by frontends to track transaction history
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	
+	// Emit transfer event for each coin
+	for _, coin := range msg.Amount {
+		sdkCtx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"transfer",
+				sdk.NewAttribute("sender", msg.FromAddress),
+				sdk.NewAttribute("recipient", msg.ToAddress),
+				sdk.NewAttribute("amount", coin.String()),
+			),
+		)
+	}
+	
+	// Also emit coin_spent and coin_received events (standard Cosmos SDK events)
+	totalCoins := sdk.NewCoins(msg.Amount...)
+	sdkCtx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			"coin_spent",
+			sdk.NewAttribute("spender", msg.FromAddress),
+			sdk.NewAttribute("amount", totalCoins.String()),
+		),
+	)
+	
+	sdkCtx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			"coin_received",
+			sdk.NewAttribute("receiver", msg.ToAddress),
+			sdk.NewAttribute("amount", totalCoins.String()),
+		),
+	)
+	
+	fmt.Printf("[MsgHandler] 📡 Emitted transfer events: from=%s, to=%s, amount=%v\n", 
+		msg.FromAddress, msg.ToAddress, totalCoins)
+	
 	// CRITICAL: Increment sequence number for the sender account
 	// This prevents "tx already exists" errors when sending multiple transactions
 	s.app.sequenceMutex.Lock()
@@ -459,10 +496,60 @@ func (app *StandaloneApp) Query(ctx context.Context, req *abci.RequestQuery) (*a
 		
 		fmt.Printf("[Query] Queried address: '%s', Genesis address: '%s'\n", queriedAddress, genesisAccountAddress)
 		
-		// Check if queried address is genesis account
+		// CRITICAL: Check accountBalances FIRST (updated by transactions)
+		// This applies to ALL addresses, including genesis account
+		app.balancesMutex.RLock()
+		accountBalances, hasAccountBalances := app.accountBalances[queriedAddress]
+		app.balancesMutex.RUnlock()
+		
+		if hasAccountBalances && len(accountBalances) > 0 {
+			fmt.Printf("[Query] Found balances in accountBalances for %s: %v\n", queriedAddress, accountBalances)
+			
+			// Create coins from accountBalances (these are the actual current balances)
+			balances := make(sdk.Coins, 0, len(accountBalances))
+			for denom, amountStr := range accountBalances {
+				amount, ok := math.NewIntFromString(amountStr)
+				if !ok {
+					fmt.Printf("[Query] Error parsing amount %s for denom %s\n", amountStr, denom)
+					continue
+				}
+				coin := sdk.Coin{
+					Denom:  denom,
+					Amount: amount,
+				}
+				balances = append(balances, coin)
+			}
+			
+			response := &banktypes.QueryAllBalancesResponse{
+				Balances: balances,
+			}
+			
+			responseBytes, err := response.Marshal()
+			if err != nil {
+				fmt.Printf("[Query] Error marshaling response: %v\n", err)
+				// Fallback to empty
+				emptyResponse := &banktypes.QueryAllBalancesResponse{
+					Balances: sdk.Coins{},
+				}
+				emptyResponseBytes, _ := emptyResponse.Marshal()
+				return &abci.ResponseQuery{
+					Code:   0,
+					Value:  emptyResponseBytes,
+					Height: int64(blockHeight),
+				}, nil
+			}
+			
+			return &abci.ResponseQuery{
+				Code:   0,
+				Value:  responseBytes,
+				Height: int64(blockHeight),
+			}, nil
+		}
+		
+		// Fallback: Check if queried address is genesis account (for initial balances)
 		if queriedAddress == genesisAccountAddress {
-			fmt.Printf("[Query] Genesis account detected: %s\n", queriedAddress)
-			fmt.Printf("[Query] Returning balances: %v\n", genesisBalances)
+			fmt.Printf("[Query] Genesis account detected (no accountBalances): %s\n", queriedAddress)
+			fmt.Printf("[Query] Returning initial genesis balances: %v\n", genesisBalances)
 			
 			// Create coins with balances
 			balances := make(sdk.Coins, 0, len(genesisBalances))
@@ -506,7 +593,7 @@ func (app *StandaloneApp) Query(ctx context.Context, req *abci.RequestQuery) (*a
 			}, nil
 		}
 		
-		// For other addresses, return empty balances
+		// For addresses without balances (no accountBalances and not genesis), return empty balances
 		emptyResponse := &banktypes.QueryAllBalancesResponse{
 			Balances: sdk.Coins{},
 		}
@@ -756,7 +843,18 @@ func NewStandaloneApp(logger log.Logger, db cosmosdb.DB, chainID string) *Standa
 		chainID:          chainID,
 		txDecoder:        txDecoder, // Store txDecoder for CheckTx override
 		accountSequences: make(map[string]uint64),
+		accountBalances:  make(map[string]map[string]string), // Initialize balances map
 	}
+	
+	// CRITICAL: Initialize genesis account with initial balances
+	// This ensures balances are tracked in accountBalances from the start
+	genesisAccountAddress := "volnix19rl4cm2hmr8afy4kldpxz3fka4jguq0a9r0ces"
+	app.accountBalances[genesisAccountAddress] = map[string]string{
+		"uwrt": "1000000000", // 1000 WRT
+		"ulzn": "1000000000", // 1000 LZN
+		"uant": "1000000000", // 1000 ANT
+	}
+	fmt.Printf("[App] Initialized genesis account balances: %v\n", app.accountBalances[genesisAccountAddress])
 	
 	// CRITICAL: Set up params store for consensus params storage
 	// BaseApp needs params store to store consensus params during InitChain
@@ -1005,6 +1103,11 @@ func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, 
 	config.RPC.ListenAddress = "tcp://0.0.0.0:26657"
 	config.RPC.CORSAllowedOrigins = []string{"*"}
 	
+	// CRITICAL: Configure transaction indexer for tx_search endpoint
+	// Without this, tx_search will return 500 errors
+	// "kv" indexer uses key-value store (GoLevelDB) for transaction indexing
+	config.TxIndex.Indexer = "kv"
+	
 	// Create CometBFT logger
 	cmtLogger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
 	
@@ -1216,6 +1319,9 @@ func (s *StandaloneServer) initializeFiles() error {
 	// But we also write to file for consistency and debugging
 	s.config.Consensus.CreateEmptyBlocks = true
 	s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
+	// CRITICAL: Configure transaction indexer for tx_search endpoint
+	// Without this, tx_search will return 500 errors
+	s.config.TxIndex.Indexer = "kv"
 	cmtcfg.WriteConfigFile(configFile, s.config)
 	
 	// CRITICAL: Always reset priv_validator_state.json to allow block creation
