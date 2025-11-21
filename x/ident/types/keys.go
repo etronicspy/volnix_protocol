@@ -35,6 +35,9 @@ var (
 	
 	// ProofKeyPrefix defines the prefix for proof keys (anti-replay)
 	ProofKeyPrefix = []byte{0x07}
+	
+	// IdentityHashKeyPrefix defines the prefix for identity hash keys (duplicate prevention)
+	IdentityHashKeyPrefix = []byte{0x08}
 )
 
 // GetVerifiedAccountKey returns the key for a verified account
@@ -70,4 +73,9 @@ func GetVerificationRecordKey(address string) []byte {
 // GetProofKey returns the key for a proof (anti-replay)
 func GetProofKey(proofHash []byte) []byte {
 	return append(ProofKeyPrefix, proofHash...)
+}
+
+// GetIdentityHashKey returns the key for an identity hash (for duplicate checking)
+func GetIdentityHashKey(identityHash string) []byte {
+	return append(IdentityHashKeyPrefix, []byte(identityHash)...)
 }

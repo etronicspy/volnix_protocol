@@ -22,9 +22,11 @@ alwaysApply: true
 - Use `buf` for proto compilation
 - Generate Go code with `protoc-gen-go` and `protoc-gen-go-grpc`
 - Never edit generated files manually
-- Commit generated code to repository
-- Use `buf.yaml` for linting, enable strict rules
-- Check breaking changes in CI
+- Generated code: `proto/gen/go/` (in `.gitignore`, NOT committed)
+- Source proto files: `proto/volnix/` (MUST be committed)
+- Configuration: `config/buf.gen.yaml` (MUST be committed)
+- Use `buf.yaml` for linting, enable strict rules, check breaking changes in CI
+- Important: Do NOT ignore entire `proto/` directory - only `proto/gen/` is ignored
 
 ## Message Design
 - Transaction messages: Prefix with `Msg` (e.g., `MsgActivateLizenz`)

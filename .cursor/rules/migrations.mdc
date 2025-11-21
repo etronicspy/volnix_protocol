@@ -7,27 +7,22 @@ alwaysApply: true
 ## State Migrations
 - Implement `AppModule.AppModuleMigrationHandler` interface
 - Register migration handlers in module
-- Make migrations idempotent
-- Handle edge cases and missing data
-- Test migrations on testnet before mainnet
-- Provide rollback procedures
+- Make migrations idempotent, handle edge cases and missing data
+- Test migrations on testnet before mainnet, provide rollback procedures
 
 ## Upgrade Process
 - Create governance proposal for upgrades
 - Register upgrade handlers in app
 - Execute migrations in correct order
-- Verify state after upgrade
-- Handle upgrade failures gracefully
+- Verify state after upgrade, handle upgrade failures gracefully
 
 ## Compatibility
 - Maintain backward compatibility within major version
 - Don't break existing state structure
-- Add new fields as optional
-- Use default values for new fields
+- Add new fields as optional, use default values for new fields
 - Document state changes
 
 ## Testing
 - Test migrations on testnet with various state sizes
-- Test edge cases and error conditions
-- Test rollback procedures
+- Test edge cases and error conditions, test rollback procedures
 - Unit tests for migration logic, integration tests for full upgrade

@@ -1,0 +1,57 @@
+---
+alwaysApply: true
+---
+
+# File Organization and Project Structure
+
+## Testnet Directory
+- All non-project files MUST be in `testnet/` directory
+- Includes: test configs, temporary files, test node data, test logs, experimental files
+- Exceptions: Source code (`app/`, `cmd/`, `x/`, `proto/`), documentation (`docs/`), config files
+
+## Documentation Organization
+- Specifications go to `docs/`: architecture, API, protocols, system design, economic model, consensus, modules, infrastructure
+- All other documentation goes to `deprecated/`: deployment guides, improvement plans, user guides, status reports
+- Exception: `README.md` stays in root
+
+## Documentation Naming
+- Use UPPERCASE_WITH_UNDERSCORES.md format
+- Examples: `PRODUCTION_DEPLOYMENT.md`, `DOCKER_DEPLOYMENT.md`
+- Exception: `README.md` can use any case
+
+## Infrastructure Directory
+- All infrastructure files in `infrastructure/`: Docker scripts, monitoring configs, Grafana dashboards
+- Structure: `infrastructure/docker/`, `infrastructure/monitoring/`, `infrastructure/grafana/`
+- Referenced in `Dockerfile` and `docker-compose.yml`
+
+## Non-Source Files (MUST be in .gitignore)
+- Check `.gitignore` BEFORE creating non-source files
+- If pattern exists → safe to create, if not → add to `.gitignore` first
+- Non-source categories:
+  - Build artifacts: `build/`, `frontend/*/build/`, `*.exe`, `*.o`, `*.test`, `coverage/`
+  - Generated code: `proto/gen/`, `.generated/`
+  - Dependencies: `vendor/`, `node_modules/`, lock files
+  - Test data: `testnet/`, `tmp/`, `*.log`, `*.bak`
+  - Local config: `.volnix/`, `.env`, `config.toml`, `*.db`, private keys
+  - IDE/OS files: `.vscode/`, `.DS_Store`, `*.swp`
+  - Deprecated: `deprecated/`
+
+## Project Structure
+- Root: essential project files only
+- Source code: `app/`, `cmd/`, `x/`, `proto/volnix/`, `tests/`
+- Config/scripts: `config/`, `scripts/`, `docs/`, `.cursor/`
+- Infrastructure: `infrastructure/` (committed, required for deployment)
+- Test artifacts: `testnet/` (ignored)
+- Build artifacts: `build/`, `proto/gen/` (ignored)
+
+## .gitignore Rules
+- All non-source patterns MUST be in `.gitignore` before creation
+- Update both this file and `.gitignore` when adding new patterns
+- Files in `.gitignore` = safe to create, files NOT in `.gitignore` = will be committed
+
+## Best Practices
+- Always check `.gitignore` before creating non-source files
+- Never create non-source files not in `.gitignore`
+- Keep this file and `.gitignore` synchronized
+- Organize testnet files by purpose (e.g., `testnet/node0/`)
+- Clean up testnet directory periodically

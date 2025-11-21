@@ -43,6 +43,12 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 	// Generate identity hash from ZKP proof
 	identityHash := fmt.Sprintf("hash-%s", req.ZkpProof[:16])
 
+	// IMPROVED: Check for duplicate identity hash BEFORE creating account
+	// This prevents identity reuse attacks
+	if err := s.k.CheckDuplicateIdentityHash(sdkCtx, identityHash, req.Address); err != nil {
+		return nil, err
+	}
+
 	// Create verified account with user's chosen role (not default CITIZEN)
 	account := types.NewVerifiedAccount(
 		req.Address,

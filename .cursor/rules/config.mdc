@@ -7,14 +7,12 @@ alwaysApply: true
 ## Module Parameters
 - Define parameters in proto files
 - Use governance for parameter changes
-- Validate parameters on update
-- Validate in `Validate()` method: check ranges, relationships
+- Validate parameters on update in `Validate()` method: check ranges, relationships
 - Return clear error messages
 
 ## Configuration Files
 - Use TOML for configuration files
-- Node: `~/.volnix/config/config.toml`
-- App: `~/.volnix/config/app.toml`
+- Node: `~/.volnix/config/config.toml`, App: `~/.volnix/config/app.toml`
 - Organize by component, document all options, provide defaults
 
 ## Environment Variables
@@ -25,14 +23,11 @@ alwaysApply: true
 
 ## Genesis Configuration
 - Define in `genesis.proto`
-- Validate all genesis parameters
-- Check parameter relationships
+- Validate all genesis parameters, check parameter relationships
 - Verify initial state
 
 ## Best Practices
 - Keep configuration simple, use sensible defaults
-- Validate on load
-- Support configuration hot-reload where possible
-- Don't commit sensitive data
-- Use environment variables for secrets
+- Validate on load, support hot-reload where possible
+- Don't commit sensitive data, use environment variables for secrets
 - Restrict configuration file permissions

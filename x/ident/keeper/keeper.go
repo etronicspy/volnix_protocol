@@ -66,6 +66,16 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 		return types.ErrAccountAlreadyExists
 	}
 
+	// IMPROVED: Check for duplicate identity hash
+	// This prevents the same identity from being used by multiple addresses
+	identityHashKey := types.GetIdentityHashKey(account.IdentityHash)
+	if store.Has(identityHashKey) {
+		// Get the existing address that uses this identity hash
+		existingAddress := store.Get(identityHashKey)
+		return fmt.Errorf("%w: identity hash %s is already used by address %s", 
+			types.ErrDuplicateIdentityHash, account.IdentityHash, string(existingAddress))
+	}
+
 	// Check account limits
 	params := k.GetParams(ctx)
 	if err := k.checkAccountLimits(ctx, account.Role, params); err != nil {
@@ -79,6 +89,10 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 	}
 
 	store.Set(accountKey, accountBz)
+	
+	// IMPROVED: Store identity hash mapping to prevent duplicates
+	store.Set(identityHashKey, []byte(account.Address))
+	
 	return nil
 }
 
@@ -211,6 +225,29 @@ func (k Keeper) UpdateVerifiedAccount(ctx sdk.Context, account *identv1.Verified
 		return types.ErrAccountNotFound
 	}
 
+	// IMPROVED: Check for duplicate identity hash if identity hash changed
+	// Get existing account to compare identity hash
+	var existingAccount identv1.VerifiedAccount
+	existingAccountBz := store.Get(accountKey)
+	if err := k.cdc.Unmarshal(existingAccountBz, &existingAccount); err == nil {
+		// If identity hash changed, check for duplicates
+		if existingAccount.IdentityHash != account.IdentityHash {
+			identityHashKey := types.GetIdentityHashKey(account.IdentityHash)
+			if store.Has(identityHashKey) {
+				existingAddress := string(store.Get(identityHashKey))
+				if existingAddress != account.Address {
+					return fmt.Errorf("%w: identity hash %s is already used by address %s", 
+						types.ErrDuplicateIdentityHash, account.IdentityHash, existingAddress)
+				}
+			}
+			// Remove old identity hash mapping
+			oldIdentityHashKey := types.GetIdentityHashKey(existingAccount.IdentityHash)
+			store.Delete(oldIdentityHashKey)
+			// Set new identity hash mapping
+			store.Set(identityHashKey, []byte(account.Address))
+		}
+	}
+
 	// Store the updated account
 	accountBz, err := k.cdc.Marshal(account)
 	if err != nil {
@@ -256,6 +293,23 @@ func (k Keeper) GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.VerifiedAcco
 	}
 
 	return accounts, nil
+}
+
+// IMPROVED: CheckDuplicateIdentityHash checks if an identity hash is already used by another address
+func (k Keeper) CheckDuplicateIdentityHash(ctx sdk.Context, identityHash string, currentAddress string) error {
+	store := ctx.KVStore(k.storeKey)
+	identityHashKey := types.GetIdentityHashKey(identityHash)
+	
+	if store.Has(identityHashKey) {
+		existingAddress := string(store.Get(identityHashKey))
+		// Allow if it's the same address (for updates)
+		if existingAddress != currentAddress {
+			return fmt.Errorf("%w: identity hash %s is already used by address %s", 
+				types.ErrDuplicateIdentityHash, identityHash, existingAddress)
+		}
+	}
+	
+	return nil
 }
 
 // GetVerifiedAccountsByRole retrieves all verified accounts with a specific role

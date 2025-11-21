@@ -1,6 +1,10 @@
-# Запуск минимальной локальной сети Volnix Protocol
+# Запуск локальной сети для разработки Volnix Protocol
 
-Этот скрипт запускает минимальную локальную сеть с несколькими узлами для симуляции реальной работы сети.
+⚠️ **ВНИМАНИЕ:** Этот скрипт предназначен **ТОЛЬКО для локальной разработки и тестирования**.
+
+**Для production используйте Docker** - каждый валидатор должен быть в отдельном Docker контейнере. Сеть формируется из множества независимых контейнеров, каждый на своем сервере.
+
+Этот скрипт запускает несколько узлов на одной машине для разработки/тестирования.
 
 ## Требования
 
@@ -30,33 +34,33 @@ sudo dnf install jq
 ### Базовый запуск (3 узла по умолчанию)
 
 ```bash
-./scripts/start-minimal-network.sh
+./scripts/start-local-dev-network.sh
 ```
 
 ### Запуск с указанием количества узлов
 
 ```bash
 # Запуск с 2 узлами (минимум)
-./scripts/start-minimal-network.sh 2
+./scripts/start-local-dev-network.sh 2
 
 # Запуск с 4 узлами
-./scripts/start-minimal-network.sh 4
+./scripts/start-local-dev-network.sh 4
 
 # Запуск с 5 узлами
-./scripts/start-minimal-network.sh 5
+./scripts/start-local-dev-network.sh 5
 ```
 
 ### Запуск с очисткой существующих данных
 
 ```bash
-./scripts/start-minimal-network.sh --clean
+./scripts/start-local-dev-network.sh --clean
 ```
 
 ### Комбинированные опции
 
 ```bash
 # Запуск с 4 узлами и очисткой данных
-./scripts/start-minimal-network.sh 4 --clean
+./scripts/start-local-dev-network.sh 4 --clean
 ```
 
 ## Что запускается
@@ -177,7 +181,7 @@ lsof -i :26667
 
 2. Очистите данные и перезапустите:
 ```bash
-./scripts/start-minimal-network.sh --clean
+./scripts/start-local-dev-network.sh --clean
 ```
 
 ### Узлы не синхронизируются

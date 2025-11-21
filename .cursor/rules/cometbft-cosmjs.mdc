@@ -4,55 +4,24 @@ alwaysApply: true
 
 # CRITICAL: CosmJS Chain-ID and Sync Info Requirements
 
-## Problem: "must provide a non-empty value" Error
+## Problem
+CosmJS fails with "must provide a non-empty value" when connecting to node. Root cause: CometBFT returns empty `sync_info` fields when no blocks exist, and CosmJS cannot decode empty protobuf strings.
 
-**Error:** CosmJS fails with "must provide a non-empty value" when connecting to node.
+## Solution (MANDATORY)
+1. Always configure CreateEmptyBlocks: `config.Consensus.CreateEmptyBlocks = true`, `CreateEmptyBlocksInterval = 0`
+2. Always reset `priv_validator_state.json` on startup (not just when file exists): `{"height":"0","round":0,"step":0}`
+3. Always re-apply settings before writing config file to ensure they're in file and memory
+4. Verify blocks created immediately: Check `/status` endpoint - `latest_block_height` > 0 within seconds, `latest_block_hash` not empty
 
-**Root Cause:** 
-- CometBFT node returns empty fields in `sync_info` (latest_block_hash, latest_app_hash, etc.) when no blocks have been created
-- CosmJS cannot decode empty strings in protobuf fields
-- This happens when node starts but hasn't created any blocks yet
+## Files to Check
+- `cmd/volnixd-standalone/main.go`: NewStandaloneServer() and initializeFiles()
+- `testnet/node0/.volnix/config/config.toml`: `create_empty_blocks = true`
 
-**Solution (MANDATORY):**
+## Testing
+- After node start: `curl http://localhost:26657/status | jq .result.sync_info.latest_block_height`
+- Should be > 0 within 5 seconds, if 0 check logs and validator state
 
-1. **Always configure CreateEmptyBlocks in CometBFT config:**
-   ```go
-   config.Consensus.CreateEmptyBlocks = true
-   config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
-   ```
-
-2. **Always reset priv_validator_state.json on startup (ALWAYS, not just when it exists):**
-   ```go
-   privValState := `{"height":"0","round":0,"step":0}`
-   os.WriteFile(privValStateFile, []byte(privValState), 0644)
-   ```
-   **CRITICAL**: Reset it ALWAYS, not just when the file exists. This ensures correct initial state even if the file doesn't exist yet.
-
-3. **Always write config file to ensure settings are applied:**
-   ```go
-   // Re-apply critical settings before writing to ensure they're in the file
-   s.config.Consensus.CreateEmptyBlocks = true
-   s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
-   cmtcfg.WriteConfigFile(configFile, s.config)
-   ```
-   **CRITICAL**: Re-apply critical settings before writing to ensure they're always in the file and in the in-memory config object.
-
-4. **Verify blocks are created immediately after node start:**
-   - Check `/status` endpoint: `latest_block_height` should be > 0 within seconds
-   - Check `latest_block_hash` is not empty
-   - If blocks are not created, check logs for validator errors
-
-**Files to check:**
-- `cmd/volnixd-standalone/main.go`: NewStandaloneServer() - CreateEmptyBlocks settings
-- `cmd/volnixd-standalone/main.go`: initializeFiles() - priv_validator_state.json reset
-- `testnet/node0/.volnix/config/config.toml`: create_empty_blocks = true
-
-**Testing:**
-- After node start, immediately check: `curl http://localhost:26657/status | jq .result.sync_info.latest_block_height`
-- Should be > 0 within 5 seconds
-- If 0, node is not creating blocks - check logs and validator state
-
-**NEVER:**
+## NEVER
 - Remove CreateEmptyBlocks settings
 - Skip priv_validator_state.json reset
-- Use CreateEmptyBlocks = false (will cause CosmJS errors)
+- Use CreateEmptyBlocks = false

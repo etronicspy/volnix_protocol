@@ -35,20 +35,52 @@
 ./scripts/deploy.sh --moniker "MyValidator" --enable-monitoring
 ```
 
-### Запуск минимальной локальной сети
+### Запуск локальной сети для разработки ⚠️
 ```bash
+# ⚠️ ВНИМАНИЕ: Только для локальной разработки/тестирования!
+# Для production используйте Docker - каждый валидатор в отдельном контейнере
+
 # Запуск сети с несколькими узлами (по умолчанию 3 узла)
-./scripts/start-minimal-network.sh
+./scripts/start-local-dev-network.sh
 
 # Запуск с указанием количества узлов (минимум 2)
-./scripts/start-minimal-network.sh 2
-./scripts/start-minimal-network.sh 4
+./scripts/start-local-dev-network.sh 2
+./scripts/start-local-dev-network.sh 4
 
 # Запуск с очисткой данных
-./scripts/start-minimal-network.sh --clean
+./scripts/start-local-dev-network.sh --clean
 
 # Подробная документация
 cat scripts/README-minimal-network.md
+```
+
+### Production развертывание (Docker)
+```bash
+# Каждый валидатор - отдельный Docker контейнер
+# См. docs/DOCKER_DEPLOYMENT.md для подробных инструкций
+
+# Вариант 1: Используя Docker Compose (рекомендуется)
+docker-compose up -d
+
+# Вариант 2: Используя docker run
+docker build -t volnix-validator:latest .
+docker run -d \
+  --name volnix-validator \
+  --restart unless-stopped \
+  -p 26656:26656 \
+  -p 26657:26657 \
+  -v volnix-validator-data:/home/volnix/.volnix/data \
+  -v volnix-validator-config:/home/volnix/.volnix/config:ro \
+  -e MONIKER=my-validator \
+  -e CHAIN_ID=volnix-mainnet \
+  volnix-validator:latest
+```
+
+### Локальное тестирование сети (Docker Compose)
+```bash
+# Для тестирования нескольких валидаторов на одной машине
+cd testnet
+docker-compose -f docker-compose.test.yml up -d
 ```
 
 ## 🌟 Особенности

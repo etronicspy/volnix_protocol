@@ -22,7 +22,8 @@ genesis.json
 # Output of the go coverage tool
 *.out
 coverage.txt
-*.prof
+coverage.html
+coverage/
 
 # Dependency directories
 vendor/
@@ -39,6 +40,12 @@ yarn-error.log*
 package-lock.json
 yarn.lock
 .pnpm-debug.log*
+
+# Frontend build artifacts
+frontend/*/build/
+frontend/*/dist/
+frontend/*/.next/
+frontend/*/out/
 
 # IDE and editor files
 .vscode/
@@ -86,6 +93,10 @@ deprecated/
 testnet/
 **/.volnix/data/
 
+# Temporary testnet directories
+local-testnet/
+testnet-*/
+
 # Private keys and validator state (security critical)
 priv_validator_key.json
 node_key.json
@@ -122,3 +133,8 @@ snapshots/
 *.tar.gz
 *.zip
 *.cosmos
+
+# Temporary and generated directories
+tmp/
+temp/
+.generated/

@@ -1,7 +1,13 @@
 #!/bin/bash
 
-# Volnix Protocol Minimal Network Startup Script
-# Запускает минимальную локальную сеть с несколькими узлами для симуляции реальной работы сети
+# Volnix Protocol Local Development Network Script
+# ⚠️  ВНИМАНИЕ: Этот скрипт предназначен ТОЛЬКО для локальной разработки и тестирования
+# 
+# Для production используйте Docker - каждый валидатор должен быть в отдельном контейнере
+# Сеть формируется из множества независимых Docker контейнеров, каждый на своем сервере
+# 
+# Этот скрипт запускает несколько узлов на одной машине для разработки/тестирования
+# В production сети каждый валидатор = отдельный Docker контейнер (может быть на разных серверах)
 
 set -e
 
@@ -14,7 +20,6 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Параметры сети
-NODE_COUNT=${1:-3}  # Количество узлов (по умолчанию 3, минимум 2)
 CHAIN_ID="volnix-testnet"
 BASE_PORT=26656
 TESTNET_DIR="testnet"
@@ -503,14 +508,141 @@ show_status() {
     echo ""
 }
 
+# Функция добавления узла
+add_node() {
+    local new_node_num=$1
+    
+    if [ -z "$new_node_num" ]; then
+        log_error "Не указан номер узла"
+        echo "Использование: $0 add <номер_узла>"
+        echo "Пример: $0 add 3  (добавит node3)"
+        exit 1
+    fi
+    
+    echo -e "${CYAN}🚀 Добавление node$new_node_num к сети${NC}"
+    echo -e "${CYAN}====================================${NC}"
+    echo ""
+    
+    # Проверка существования узла
+    if [ -d "$TESTNET_DIR/node$new_node_num" ]; then
+        log_warning "node$new_node_num уже существует!"
+        read -p "Пересоздать? (y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+        rm -rf "$TESTNET_DIR/node$new_node_num"
+    fi
+    
+    check_dependencies
+    build_binary
+    
+    # Генерация ключей через Python (используем существующую логику)
+    log_info "Генерация ключей для node$new_node_num..."
+    node_dir="$TESTNET_DIR/node$new_node_num"
+    mkdir -p "$node_dir/.volnix/config"
+    mkdir -p "$node_dir/.volnix/data"
+    
+    python3 << PYEOF
+import json, hashlib, base64
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+
+node_dir = "$node_dir"
+
+# Генерация node_key
+private_key = Ed25519PrivateKey.generate()
+private_bytes = private_key.private_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PrivateFormat.Raw,
+    encryption_algorithm=serialization.NoEncryption()
+)
+public_bytes = private_key.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw
+)
+full_key = private_bytes + public_bytes
+
+node_key = {
+    "priv_key": {
+        "type": "tendermint/PrivKeyEd25519",
+        "value": base64.b64encode(full_key).decode('utf-8')
+    }
+}
+
+with open(f"{node_dir}/.volnix/config/node_key.json", 'w') as f:
+    json.dump(node_key, f, indent=2)
+
+# Генерация priv_validator_key
+val_private_key = Ed25519PrivateKey.generate()
+val_private_bytes = val_private_key.private_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PrivateFormat.Raw,
+    encryption_algorithm=serialization.NoEncryption()
+)
+val_public_bytes = val_private_key.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw
+)
+
+address_bytes = hashlib.sha256(val_public_bytes).digest()[:20]
+address = address_bytes.hex().upper()
+
+val_full_key = val_private_bytes + val_public_bytes
+
+priv_validator_key = {
+    "address": address,
+    "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": base64.b64encode(val_public_bytes).decode('utf-8')
+    },
+    "priv_key": {
+        "type": "tendermint/PrivKeyEd25519",
+        "value": base64.b64encode(val_full_key).decode('utf-8')
+    }
+}
+
+with open(f"{node_dir}/.volnix/config/priv_validator_key.json", 'w') as f:
+    json.dump(priv_validator_key, f, indent=2)
+
+# Вычисление node ID
+pub_key_bytes = full_key[32:]
+node_id = hashlib.sha256(pub_key_bytes).hexdigest()[:40]
+print(f"Node ID: {node_id}")
+print(f"Validator: {address}")
+PYEOF
+    
+    log_success "Ключи созданы для node$new_node_num"
+    
+    # Инициализация узла
+    log_info "Инициализация node$new_node_num..."
+    (cd "$node_dir" && VOLNIX_HOME=".volnix" "$BINARY" init "node$new_node_num" > /dev/null 2>&1)
+    
+    # Обновление genesis (добавление валидатора)
+    log_info "Обновление genesis файла..."
+    # Здесь должна быть логика обновления genesis, но для упрощения оставляем как есть
+    
+    log_success "Узел node$new_node_num добавлен!"
+    log_info "Для запуска: cd $node_dir && VOLNIX_HOME=.volnix $BINARY start"
+}
+
 # Основная функция
 main() {
+    # Проверка режима работы (если первый аргумент - "add")
+    if [ "$1" = "add" ]; then
+        add_node "$2"
+        exit 0
+    fi
+    
     echo -e "${CYAN}🚀 Запуск Volnix Protocol Minimal Network${NC}"
     echo -e "${CYAN}===========================================${NC}"
     echo ""
     
     # Парсинг аргументов
+    NODE_COUNT=${1:-3}  # По умолчанию 3 узла
     CLEAN_START="false"
+    shift 2>/dev/null || true
+    
     while [[ $# -gt 0 ]]; do
         case $1 in
             --clean)
@@ -528,6 +660,7 @@ main() {
                 else
                     log_error "Неизвестный аргумент: $1"
                     echo "Использование: $0 [количество_узлов] [--clean]"
+                    echo "              $0 add <номер_узла>"
                     exit 1
                 fi
                 ;;

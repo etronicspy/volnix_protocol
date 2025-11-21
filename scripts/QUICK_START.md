@@ -1,4 +1,8 @@
-# 🚀 Быстрый запуск минимальной локальной сети Volnix Protocol
+# 🚀 Быстрый запуск локальной сети для разработки Volnix Protocol
+
+⚠️ **ВНИМАНИЕ:** Этот скрипт предназначен **ТОЛЬКО для локальной разработки и тестирования**.
+
+**Для production используйте Docker** - каждый валидатор в отдельном контейнере.
 
 ## 📋 Требования
 
@@ -35,7 +39,7 @@
 
 ```bash
 # Запустите скрипт проверки
-./scripts/start-minimal-network.sh 2 2>&1 | head -20
+./scripts/start-local-dev-network.sh 2 2>&1 | head -20
 # Если все зависимости установлены, вы увидите успешную инициализацию
 ```
 
@@ -62,23 +66,23 @@ ls -lh build/volnixd-standalone
 ### Базовый запуск (3 узла)
 
 ```bash
-./scripts/start-minimal-network.sh 3
+./scripts/start-local-dev-network.sh 3
 ```
 
 ### Запуск с очисткой данных
 
 ```bash
-./scripts/start-minimal-network.sh 3 --clean
+./scripts/start-local-dev-network.sh 3 --clean
 ```
 
 ### Запуск с другим количеством узлов
 
 ```bash
 # Минимум 2 узла
-./scripts/start-minimal-network.sh 2 --clean
+./scripts/start-local-dev-network.sh 2 --clean
 
 # 4 узла
-./scripts/start-minimal-network.sh 4 --clean
+./scripts/start-local-dev-network.sh 4 --clean
 ```
 
 ## ✅ Проверка работы сети
@@ -194,7 +198,7 @@ lsof -i :26657
 **Решение:**
 ```bash
 # Запустите с флагом --clean
-./scripts/start-minimal-network.sh 3 --clean
+./scripts/start-local-dev-network.sh 3 --clean
 ```
 
 ### Проблема: Узлы не синхронизируются
@@ -213,7 +217,7 @@ lsof -i :26657
 3. Перезапустите с очисткой:
    ```bash
    rm -rf testnet .volnix .network_pids
-   ./scripts/start-minimal-network.sh 3 --clean
+   ./scripts/start-local-dev-network.sh 3 --clean
    ```
 
 ## 📝 Примеры использования

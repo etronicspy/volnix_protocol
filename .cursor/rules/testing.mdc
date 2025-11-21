@@ -11,10 +11,8 @@ alwaysApply: true
 - Test functions: `Test<FunctionName>`, benchmarks: `Benchmark<FunctionName>`
 
 ## Unit Testing
-- Test all public functions
-- Test edge cases and error conditions
-- Test with various inputs
-- Aim for >80% code coverage
+- Test all public functions, edge cases and error conditions
+- Test with various inputs, aim for >80% code coverage
 - Create test helpers for common setup
 - Mock external dependencies, keep tests independent
 
@@ -26,8 +24,7 @@ alwaysApply: true
 
 ## End-to-End Testing
 - Test complete user flows, economic scenarios, consensus mechanisms
-- Set up multi-node testnet
-- Configure test network, monitor test execution
+- Set up multi-node testnet, configure test network, monitor test execution
 
 ## Performance Testing
 - Write benchmarks for critical functions

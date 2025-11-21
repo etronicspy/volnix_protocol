@@ -19,20 +19,16 @@ alwaysApply: true
 
 ## Indexing
 - Index events for efficient querying
-- Use event attributes for filtering
-- Index by common query patterns
+- Use event attributes for filtering, index by common query patterns
 - Use indexed attributes in queries, avoid full table scans
 - Cache frequently queried data
 
 ## Event Listeners
 - Create event listeners for external systems
-- Handle events asynchronously
-- Implement retry logic, log event processing
+- Handle events asynchronously, implement retry logic, log event processing
 - Patterns: webhook listeners, database listeners, message queue listeners
 
 ## Best Practices
-- Emit events for all important actions
-- Include sufficient context
+- Emit events for all important actions, include sufficient context
 - Minimize event overhead, batch events when possible
-- Test event emission, verify event attributes
-- Document all events in module docs
+- Test event emission, verify event attributes, document all events in module docs

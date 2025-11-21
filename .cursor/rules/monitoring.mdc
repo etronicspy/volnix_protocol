@@ -5,17 +5,14 @@ alwaysApply: true
 # Monitoring and Metrics
 
 ## Metrics Collection
-- Use Prometheus for metrics collection
-- Expose metrics on `/metrics` endpoint
+- Use Prometheus for metrics collection, expose metrics on `/metrics` endpoint
 - Track: block height/time, TPS, validator performance, network health
 - Module-specific: ident verifications, lizenz activations, ANT trading volume, LZN burn rate
 - Consensus metrics: block creation time, validator selection
 
 ## Logging
-- Use structured logging format
-- Include context in all logs
-- Implement log rotation
-- Centralize logs for analysis (ELK, Loki, etc.)
+- Use structured logging format, include context in all logs
+- Implement log rotation, centralize logs for analysis (ELK, Loki, etc.)
 - Set up log retention policies
 
 ## Health Checks

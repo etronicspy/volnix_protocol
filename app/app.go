@@ -132,6 +132,9 @@ type VolnixApp struct {
 
 	// module manager
 	mm *module.Manager
+	
+	// IMPROVED: Upgrade manager for handling network upgrades
+	upgradeManager *UpgradeManager
 }
 
 func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig) *VolnixApp {
@@ -207,6 +210,9 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		governance.NewAppModule(governanceKeeper),
 	)
 
+	// IMPROVED: Create upgrade manager
+	upgradeManager := NewUpgradeManager(logger)
+	
 	// Create app instance
 	app := &VolnixApp{
 		BaseApp:         bapp,
@@ -225,7 +231,11 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		consensusKeeper: consensusKeeper,
 		governanceKeeper: governanceKeeper,
 		mm:              mm,
+		upgradeManager:  upgradeManager,
 	}
+	
+	// Register upgrade handlers with app reference
+	SetupUpgradeHandlers(upgradeManager, app)
 
 	// Register interfaces first
 	basicManager := module.NewBasicManager(
@@ -248,6 +258,14 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 
 	// Set BeginBlocker and EndBlocker for all modules
 	bapp.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
+		// IMPROVED: Check for upgrades at the beginning of each block
+		if app.upgradeManager != nil {
+			if err := app.upgradeManager.CheckUpgradeNeeded(ctx, app); err != nil {
+				// Log error but don't fail the block
+				logger.Error("Upgrade check failed", "error", err)
+			}
+		}
+		
 		// Execute BeginBlocker for all modules
 		if err := identKeeper.BeginBlocker(ctx); err != nil {
 			return sdk.BeginBlock{}, fmt.Errorf("ident BeginBlocker failed: %w", err)

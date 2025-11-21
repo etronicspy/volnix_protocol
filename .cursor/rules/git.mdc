@@ -11,8 +11,7 @@ alwaysApply: true
 - Examples: `feat(ident): add ZKP verification endpoint`, `fix(anteil): correct order matching`
 
 ## Branching
-- `main`: Production-ready code
-- `develop`: Integration branch
+- `main`: Production-ready code, `develop`: Integration branch
 - `feature/<name>`, `fix/<name>`, `hotfix/<name>`, `release/<version>`
 - Create feature branches from `develop`
 - Keep branches focused, delete after merge

@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+---
+
+# Docker Configuration
+
+## File Structure
+- Production: `Dockerfile`, `docker-compose.yml`, `infrastructure/docker/` scripts
+- Testing: `testnet/docker-compose.test.yml`, `infrastructure/monitoring/`, `infrastructure/grafana/`
+
+## Quick Start
+- Production: `docker-compose up -d`
+- Testing: `cd testnet && docker-compose -f docker-compose.test.yml up -d`
+
+## Configuration
+- Environment variables: `MONIKER`, `CHAIN_ID`, `RPC_PORT`, `P2P_PORT`, `CPU_LIMIT`, `MEMORY_LIMIT`
+- Volumes: `volnix-validator-data` (persistent), `volnix-validator-config` (read-only)
+
+## Commands
+- Status: `docker-compose ps`, `docker-compose logs -f`
+- Update: `docker-compose down && docker-compose build && docker-compose up -d`
+- Health: `docker-compose exec validator node-info.sh`, `curl http://localhost:26657/status | jq`
+
+## Security
+- One validator per container in production
+- Read-only config volumes, non-root user (volnix:1000)
+- Resource limits, health checks, security scanning
+
+## Important Notes
+- `docker-compose.yml` (root) - production only (single validator)
+- `testnet/docker-compose.test.yml` - local testing only
+- Network formed from independent containers with real IP addresses
+
+## Troubleshooting
+- Container issues: Check logs with `docker-compose logs validator`
+- Sync issues: Verify `persistent_peers` in config.toml, port 26656 accessibility, genesis.json match
+- Data issues: `docker system df -v`, check volume mounts
+
+## Best Practices
+- Dockerfile: Multi-stage builds, non-root user, minimal base image, security scanning
+- Docker Compose: Resource limits, read-only config, log rotation, restart policy
+- Volumes: Named volumes, separate data/config, proper permissions
+- Network: P2P port 26656 public, RPC port 26657 restricted, configure persistent_peers

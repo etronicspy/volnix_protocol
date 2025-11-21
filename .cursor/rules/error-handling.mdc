@@ -11,8 +11,7 @@ alwaysApply: true
 - Define custom error types for domain-specific errors
 - Use sentinel errors for common error conditions
 - Use `sdkerrors` package for SDK-specific errors
-- Return appropriate error codes (codespace, code)
-- Register custom error codes in module
+- Return appropriate error codes (codespace, code), register custom error codes in module
 
 ## Logging
 - Use structured logging with context fields
@@ -26,5 +25,4 @@ alwaysApply: true
 - Don't expose sensitive information in errors
 - Sanitize error messages for external APIs
 - Don't log sensitive data (private keys, passwords)
-- Mask sensitive information in logs
-- Implement log rotation and retention policies
+- Mask sensitive information in logs, implement log rotation and retention policies

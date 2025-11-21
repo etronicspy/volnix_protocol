@@ -1,0 +1,51 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'volnix-production'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  # - "alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Volnix Validator 0
+  - job_name: 'volnix-validator-0'
+    static_configs:
+      - targets: ['validator-0:26657']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Volnix Validator 1
+  - job_name: 'volnix-validator-1'
+    static_configs:
+      - targets: ['validator-1:26657']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Volnix Validator 2
+  - job_name: 'volnix-validator-2'
+    static_configs:
+      - targets: ['validator-2:26657']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Node exporter (if added)
+  # - job_name: 'node-exporter'
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']
+
