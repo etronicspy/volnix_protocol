@@ -336,11 +336,13 @@ func (app *StandaloneApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.R
 	// Log transaction results for debugging
 	for i, txResult := range resp.TxResults {
 		if i < len(req.Txs) {
-			txHash := fmt.Sprintf("%X", req.Txs[i])
-			if len(txHash) > 16 {
-				txHash = txHash[:16] + "..."
-			}
-			fmt.Printf("[StandaloneApp.FinalizeBlock]   Result %d: code=%d, log=%s\n", i, txResult.Code, txResult.Log)
+		// Log truncated tx hash for debugging
+		txHashFull := fmt.Sprintf("%X", req.Txs[i])
+		txHash := txHashFull
+		if len(txHash) > 16 {
+			txHash = txHash[:16] + "..."
+		}
+		fmt.Printf("[StandaloneApp.FinalizeBlock]   Result %d: txHash=%s, code=%d, log=%s\n", i, txHash, txResult.Code, txResult.Log)
 		}
 	}
 
@@ -907,7 +909,9 @@ func NewStandaloneApp(logger log.Logger, db cosmosdb.DB, chainID string) *Standa
 	bapp.SetInitChainer(func(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
 		// Accept any chain-id from CometBFT
 		// Set the chain ID in the context - this is critical for BaseApp to store the correct chain-id
+		// BaseApp handles chain-id internally, so we don't need to use the returned context
 		ctx = ctx.WithChainID(req.ChainId)
+		_ = ctx // Suppress unused variable warning - BaseApp uses chain-id from context internally
 		// BaseApp will automatically store the chain-id from the context
 		// This ensures consistency between genesis.json and stored chain-id
 
@@ -1618,181 +1622,6 @@ func (s *StandaloneServer) initializeFiles() error {
 	// If height is set incorrectly, CometBFT will not create blocks
 	privValStateFile := filepath.Join(dataDir, "priv_validator_state.json")
 	if err := os.WriteFile(privValStateFile, []byte(`{"height":"0","round":0,"step":0}`), 0644); err == nil {
-		s.logger.Info("Reset priv_validator_state.json to allow block creation")
-	}
-
-	return nil
-}
-
-// OLD CODE REMOVED - replaced with simpler logic above
-func (s *StandaloneServer) initializeFiles_OLD() error {
-	// This function is kept for reference but not used
-	_ = s.homeDir
-	_ = s.config.RootDir
-	return nil
-}
-
-func (s *StandaloneServer) initializeFiles_OLD2() error {
-	fmt.Fprintf(os.Stderr, "🔍 [DEBUG] initializeFiles() CALLED\n")
-	fmt.Fprintf(os.Stderr, "🔍 [DEBUG] homeDir=%s, RootDir=%s\n", s.homeDir, s.config.RootDir)
-	s.logger.Info("initializeFiles() called", "homeDir", s.homeDir, "RootDir", s.config.RootDir)
-
-	// Create directories
-	configDir := filepath.Join(s.homeDir, "config")
-	dataDir := filepath.Join(s.homeDir, "data")
-
-	fmt.Fprintf(os.Stderr, "🔍 [DEBUG] Directories: configDir=%s, dataDir=%s\n", configDir, dataDir)
-
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return err
-	}
-
-	// Create genesis file
-	genesisFile := filepath.Join(configDir, "genesis.json")
-
-	s.logger.Info("Checking genesis file", "homeDir", s.homeDir, "configDir", configDir, "genesisFile", genesisFile, "config.RootDir", s.config.RootDir)
-
-	if stat, err := os.Stat(genesisFile); err != nil {
-		// File doesn't exist or we can't access it
-		s.logger.Info("🔍 [DEBUG] os.Stat() returned error", "error", err, "isNotExist", os.IsNotExist(err))
-		fmt.Fprintf(os.Stderr, "🔍 [DEBUG] os.Stat() returned error: %v, isNotExist: %v\n", err, os.IsNotExist(err))
-
-		if os.IsNotExist(err) {
-			// File doesn't exist, create it
-			s.logger.Info("⚠️ [DEBUG] Genesis file does NOT exist, will create it", "file", genesisFile)
-			fmt.Fprintf(os.Stderr, "⚠️ [DEBUG] Genesis file does NOT exist, will create it: %s\n", genesisFile)
-			s.logger.Info("Genesis file does not exist, creating it", "file", genesisFile)
-
-			s.logger.Info("🔍 [DEBUG] About to call createGenesisFile()", "file", genesisFile)
-			fmt.Fprintf(os.Stderr, "🔍 [DEBUG] About to call createGenesisFile(): %s\n", genesisFile)
-
-			if err := s.createGenesisFile(genesisFile); err != nil {
-				s.logger.Error("❌ [DEBUG] createGenesisFile() failed", "error", err)
-				fmt.Fprintf(os.Stderr, "❌ [DEBUG] createGenesisFile() failed: %v\n", err)
-				return fmt.Errorf("failed to create genesis file: %w", err)
-			}
-
-			s.logger.Info("✅ [DEBUG] Genesis file CREATED", "file", genesisFile)
-			fmt.Fprintf(os.Stderr, "✅ [DEBUG] Genesis file CREATED: %s\n", genesisFile)
-			s.logger.Info("Genesis file created", "file", genesisFile)
-		} else {
-			// Permission error or other issue - log but don't fail
-			// This allows the node to start even if we can't check/create genesis
-			s.logger.Warn("⚠️ [DEBUG] Cannot access genesis file", "file", genesisFile, "error", err)
-			fmt.Fprintf(os.Stderr, "⚠️ [DEBUG] Cannot access genesis file: %s, error: %v\n", genesisFile, err)
-			s.logger.Warn("Cannot access genesis file, will use existing one if present", "file", genesisFile, "error", err)
-		}
-	} else {
-		// File exists and is accessible - preserve it
-		s.logger.Info("✅ [DEBUG] os.Stat() SUCCESS - file exists", "file", genesisFile, "size", stat.Size(), "modTime", stat.ModTime())
-		fmt.Fprintf(os.Stderr, "✅ [DEBUG] os.Stat() SUCCESS - file exists: %s (size=%d, modTime=%v)\n", genesisFile, stat.Size(), stat.ModTime())
-		s.logger.Info("Genesis file already exists, preserving it", "file", genesisFile, "size", stat.Size(), "modTime", stat.ModTime())
-
-		// DEBUG: Read and log validator count from existing file
-		if genDoc, err := types.GenesisDocFromFile(genesisFile); err == nil {
-			fmt.Printf("📋 [DEBUG] Existing genesis: chain_id=%s, validators=%d\n",
-				genDoc.ChainID, len(genDoc.Validators))
-			s.logger.Info("Existing genesis file info", "chain_id", genDoc.ChainID, "validators", len(genDoc.Validators))
-		} else {
-			fmt.Printf("❌ [DEBUG] Failed to read existing genesis: %v\n", err)
-		}
-	}
-
-	// Create config file
-	configFile := filepath.Join(configDir, "config.toml")
-
-	// CRITICAL: Only write config if it doesn't exist
-	// If config exists (e.g., manually configured for multinode), preserve it
-	// This prevents overwriting persistent_peers and other custom settings
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		// Config doesn't exist, create it with default settings
-		// Always write config file to ensure CreateEmptyBlocks settings are applied
-		// This is CRITICAL for CosmJS compatibility - blocks must be created immediately
-		// to populate sync_info fields, preventing "must provide a non-empty value" errors
-		s.config.Consensus.CreateEmptyBlocks = true
-		s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
-		// CRITICAL: Configure transaction indexer for tx_search endpoint
-		// Without this, tx_search will return 500 errors
-		s.config.TxIndex.Indexer = "kv"
-
-		// IMPROVED: Ensure P2P settings are optimal for multinode
-		// These settings allow localhost connections and multiple peers from same IP
-		// Note: These are set in memory config, but also need to be in config.toml
-		// The config.toml will be written with these settings
-		cmtcfg.WriteConfigFile(configFile, s.config)
-
-		// IMPROVED: After writing config, ensure P2P settings are in the file
-		// Read the file and add/update P2P settings if needed
-		configContent, err := os.ReadFile(configFile)
-		if err == nil {
-			content := string(configContent)
-			// Ensure addr_book_strict = false for localhost connections
-			if !strings.Contains(content, "addr_book_strict = false") {
-				// Add after [p2p] section
-				content = strings.Replace(content, "[p2p]", "[p2p]\naddr_book_strict = false", 1)
-			}
-			// Ensure allow_duplicate_ip = true for localhost connections
-			if !strings.Contains(content, "allow_duplicate_ip = true") {
-				// Add after [p2p] section or addr_book_strict
-				if strings.Contains(content, "addr_book_strict") {
-					content = strings.Replace(content, "addr_book_strict = false", "addr_book_strict = false\nallow_duplicate_ip = true", 1)
-				} else {
-					content = strings.Replace(content, "[p2p]", "[p2p]\nallow_duplicate_ip = true", 1)
-				}
-			}
-			os.WriteFile(configFile, []byte(content), 0644)
-			s.logger.Info("P2P settings optimized for multinode", "file", configFile)
-		}
-	} else {
-		s.logger.Info("Config file already exists, preserving custom settings", "file", configFile)
-		// IMPROVED: Even if config exists, ensure P2P settings are optimal
-		// Read and update if needed (non-destructive)
-		configContent, err := os.ReadFile(configFile)
-		if err == nil {
-			content := string(configContent)
-			updated := false
-			// Update addr_book_strict if it's true
-			if strings.Contains(content, "addr_book_strict = true") {
-				content = strings.Replace(content, "addr_book_strict = true", "addr_book_strict = false", 1)
-				updated = true
-			} else if !strings.Contains(content, "addr_book_strict") {
-				// Add if missing
-				content = strings.Replace(content, "[p2p]", "[p2p]\naddr_book_strict = false", 1)
-				updated = true
-			}
-			// Update allow_duplicate_ip if it's false
-			if strings.Contains(content, "allow_duplicate_ip = false") {
-				content = strings.Replace(content, "allow_duplicate_ip = false", "allow_duplicate_ip = true", 1)
-				updated = true
-			} else if !strings.Contains(content, "allow_duplicate_ip") {
-				// Add if missing
-				if strings.Contains(content, "addr_book_strict") {
-					content = strings.Replace(content, "addr_book_strict = false", "addr_book_strict = false\nallow_duplicate_ip = true", 1)
-				} else {
-					content = strings.Replace(content, "[p2p]", "[p2p]\nallow_duplicate_ip = true", 1)
-				}
-				updated = true
-			}
-			if updated {
-				os.WriteFile(configFile, []byte(content), 0644)
-				s.logger.Info("Updated P2P settings in existing config", "file", configFile)
-			}
-		}
-	}
-
-	// CRITICAL: Always reset priv_validator_state.json to allow block creation
-	// If height is set incorrectly, CometBFT will not create blocks
-	// We ALWAYS reset it, not just when it exists, to ensure correct initial state
-	privValStateFile := filepath.Join(dataDir, "priv_validator_state.json")
-	// Reset validator state to allow block creation from height 0
-	// Use compact JSON format (no newlines) for consistency
-	privValState := `{"height":"0","round":0,"step":0}`
-	if err := os.WriteFile(privValStateFile, []byte(privValState), 0644); err != nil {
-		s.logger.Warn("Failed to reset priv_validator_state.json", "error", err)
-	} else {
 		s.logger.Info("Reset priv_validator_state.json to allow block creation")
 	}
 
