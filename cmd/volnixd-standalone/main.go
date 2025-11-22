@@ -336,13 +336,14 @@ func (app *StandaloneApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.R
 	// Log transaction results for debugging
 	for i, txResult := range resp.TxResults {
 		if i < len(req.Txs) {
-		// Log truncated tx hash for debugging
-		txHashFull := fmt.Sprintf("%X", req.Txs[i])
-		txHash := txHashFull
-		if len(txHash) > 16 {
-			txHash = txHash[:16] + "..."
-		}
-		fmt.Printf("[StandaloneApp.FinalizeBlock]   Result %d: txHash=%s, code=%d, log=%s\n", i, txHash, txResult.Code, txResult.Log)
+			// Log truncated tx hash for debugging
+			txHashFull := fmt.Sprintf("%X", req.Txs[i])
+			txHash := txHashFull
+			if len(txHashFull) > 16 {
+				txHash = txHashFull[:16] + "..."
+			}
+			// txHash is used in fmt.Printf below
+			fmt.Printf("[StandaloneApp.FinalizeBlock]   Result %d: txHash=%s, code=%d, log=%s\n", i, txHash, txResult.Code, txResult.Log)
 		}
 	}
 
@@ -910,8 +911,8 @@ func NewStandaloneApp(logger log.Logger, db cosmosdb.DB, chainID string) *Standa
 		// Accept any chain-id from CometBFT
 		// Set the chain ID in the context - this is critical for BaseApp to store the correct chain-id
 		// BaseApp handles chain-id internally, so we don't need to use the returned context
-		ctx = ctx.WithChainID(req.ChainId)
-		_ = ctx // Suppress unused variable warning - BaseApp uses chain-id from context internally
+		// The context is used internally by BaseApp, so we assign it but don't need to use the return value
+		_ = ctx.WithChainID(req.ChainId) // BaseApp uses chain-id from context internally
 		// BaseApp will automatically store the chain-id from the context
 		// This ensures consistency between genesis.json and stored chain-id
 
