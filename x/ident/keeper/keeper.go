@@ -485,6 +485,14 @@ func (k Keeper) ExecuteRoleMigration(ctx sdk.Context, fromAddress, toAddress str
 		return err
 	}
 
+	// Remove old identity hash index to allow migration to use the same hash
+	store := ctx.KVStore(k.storeKey)
+	if sourceAccount.IdentityHash == migration.MigrationHash {
+		// If using the same identity hash, remove the old mapping
+		oldIdentityHashKey := types.GetIdentityHashKey(sourceAccount.IdentityHash)
+		store.Delete(oldIdentityHashKey)
+	}
+
 	// Create target account with same role
 	targetAccount := &identv1.VerifiedAccount{
 		Address:              toAddress,

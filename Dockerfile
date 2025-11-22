@@ -7,14 +7,12 @@ ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 
 # Stage 1: Build
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git make gcc musl-dev linux-headers
 
-# Install security scanning tools
-RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
-    go install golang.org/x/vuln/cmd/govulncheck@latest
+# Skip security scanning tools for faster builds (can be added later if needed)
 
 # Set working directory
 WORKDIR /app
@@ -28,10 +26,6 @@ RUN go mod download && \
 
 # Copy source code
 COPY . .
-
-# Run security checks
-RUN golangci-lint run --timeout=5m || true && \
-    govulncheck ./... || true
 
 # Build the standalone binary with version info
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \

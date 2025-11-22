@@ -27,9 +27,13 @@ func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context
 			return ctx, fmt.Errorf("message %d cannot be nil", i)
 		}
 
-		// Basic message validation - check if message implements validation
-		// Note: Full ValidateBasic requires proper message implementation
-		// For now, we just check that message is not nil
+		// IMPROVED: Try to call ValidateBasic if message implements it
+		// This provides better validation without requiring full auth/bank modules
+		if validator, ok := msg.(interface{ ValidateBasic() error }); ok {
+			if err := validator.ValidateBasic(); err != nil {
+				return ctx, fmt.Errorf("message %d validation failed: %w", i, err)
+			}
+		}
 	}
 
 	// IMPROVED: Validate transaction timeout height if set

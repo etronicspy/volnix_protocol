@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"sync"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdklog "cosmossdk.io/log"
@@ -19,15 +20,23 @@ type UpgradeHandler func(ctx sdk.Context, plan UpgradePlan, app *VolnixApp) erro
 
 // UpgradeManager manages upgrade handlers and migrations
 type UpgradeManager struct {
-	handlers map[string]UpgradeHandler
-	logger   sdklog.Logger
+	handlers     map[string]UpgradeHandler
+	pendingPlans map[int64]*UpgradePlan // height -> plan
+	logger       sdklog.Logger
+	mu           sync.RWMutex
 }
+
+var (
+	upgradeManagerOnce sync.Once
+	upgradeManagerMu   sync.RWMutex
+)
 
 // NewUpgradeManager creates a new upgrade manager
 func NewUpgradeManager(logger sdklog.Logger) *UpgradeManager {
 	return &UpgradeManager{
-		handlers: make(map[string]UpgradeHandler),
-		logger:   logger,
+		handlers:     make(map[string]UpgradeHandler),
+		pendingPlans: make(map[int64]*UpgradePlan),
+		logger:       logger,
 	}
 }
 
@@ -69,10 +78,80 @@ func SetupUpgradeHandlers(um *UpgradeManager, app *VolnixApp) {
 		return MigrateToV0_2_0(ctx, app)
 	})
 	
+	// Example: v0.3.0 upgrade (commented out, ready to use)
+	um.RegisterUpgradeHandler("v0.3.0", func(ctx sdk.Context, plan UpgradePlan, app *VolnixApp) error {
+		return MigrateToV0_3_0(ctx, app)
+	})
+	
 	// Add more upgrade handlers as needed
-	// um.RegisterUpgradeHandler("v0.3.0", func(ctx sdk.Context, plan UpgradePlan, app *VolnixApp) error {
-	//     return MigrateToV0_3_0(ctx, app)
-	// })
+}
+
+// MigrateToV0_3_0 performs state migration to version 0.3.0
+func MigrateToV0_3_0(ctx sdk.Context, app *VolnixApp) error {
+	// Example: Migrate all modules
+	if err := migrateIdentModuleV0_3_0(ctx, app); err != nil {
+		return fmt.Errorf("ident module migration failed: %w", err)
+	}
+	
+	if err := migrateLizenzModuleV0_3_0(ctx, app); err != nil {
+		return fmt.Errorf("lizenz module migration failed: %w", err)
+	}
+	
+	if err := migrateAnteilModuleV0_3_0(ctx, app); err != nil {
+		return fmt.Errorf("anteil module migration failed: %w", err)
+	}
+	
+	if err := migrateConsensusModuleV0_3_0(ctx, app); err != nil {
+		return fmt.Errorf("consensus module migration failed: %w", err)
+	}
+	
+	return nil
+}
+
+// migrateIdentModuleV0_3_0 migrates ident module to v0.3.0
+func migrateIdentModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
+	// Example: Add new fields or update structure
+	accounts, err := app.identKeeper.GetAllVerifiedAccounts(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get verified accounts: %w", err)
+	}
+	
+	// Perform migration for each account
+	for _, account := range accounts {
+		// Example migration logic
+		_ = account // Use account in migration
+	}
+	
+	return nil
+}
+
+// migrateLizenzModuleV0_3_0 migrates lizenz module to v0.3.0
+func migrateLizenzModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
+	// Example migration
+	lizenzs, err := app.lizenzKeeper.GetAllActivatedLizenz(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get activated lizenzs: %w", err)
+	}
+	
+	for _, lizenz := range lizenzs {
+		_ = lizenz // Use lizenz in migration
+	}
+	
+	return nil
+}
+
+// migrateAnteilModuleV0_3_0 migrates anteil module to v0.3.0
+func migrateAnteilModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
+	// Example migration for anteil module
+	// This is a placeholder - implement actual migration logic
+	return nil
+}
+
+// migrateConsensusModuleV0_3_0 migrates consensus module to v0.3.0
+func migrateConsensusModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
+	// Example migration for consensus module
+	// This is a placeholder - implement actual migration logic
+	return nil
 }
 
 // MigrateToV0_2_0 performs state migration to version 0.2.0
@@ -135,26 +214,89 @@ func migrateLizenzModuleV0_2_0(ctx sdk.Context, app *VolnixApp) error {
 	return nil
 }
 
+// ScheduleUpgrade schedules an upgrade at a specific height
+func (um *UpgradeManager) ScheduleUpgrade(plan UpgradePlan) error {
+	um.mu.Lock()
+	defer um.mu.Unlock()
+	
+	// Check if upgrade handler exists
+	if _, exists := um.handlers[plan.Name]; !exists {
+		return fmt.Errorf("upgrade handler not found for version: %s", plan.Name)
+	}
+	
+	// Check if there's already an upgrade scheduled at this height
+	if existing, exists := um.pendingPlans[plan.Height]; exists {
+		return fmt.Errorf("upgrade already scheduled at height %d: %s", plan.Height, existing.Name)
+	}
+	
+	um.pendingPlans[plan.Height] = &plan
+	um.logger.Info("Upgrade scheduled", "name", plan.Name, "height", plan.Height)
+	
+	return nil
+}
+
+// GetScheduledUpgrade returns a scheduled upgrade at a specific height
+func (um *UpgradeManager) GetScheduledUpgrade(height int64) (*UpgradePlan, bool) {
+	um.mu.RLock()
+	defer um.mu.RUnlock()
+	
+	plan, exists := um.pendingPlans[height]
+	return plan, exists
+}
+
+// CancelUpgrade cancels a scheduled upgrade
+func (um *UpgradeManager) CancelUpgrade(height int64) error {
+	um.mu.Lock()
+	defer um.mu.Unlock()
+	
+	if _, exists := um.pendingPlans[height]; !exists {
+		return fmt.Errorf("no upgrade scheduled at height %d", height)
+	}
+	
+	delete(um.pendingPlans, height)
+	um.logger.Info("Upgrade cancelled", "height", height)
+	
+	return nil
+}
+
 // CheckUpgradeNeeded checks if an upgrade is needed at the current block height
 func (um *UpgradeManager) CheckUpgradeNeeded(ctx sdk.Context, app *VolnixApp) error {
 	currentHeight := ctx.BlockHeight()
 	
-	// Example: Check if upgrade is needed at specific height
-	// In a real implementation, this would check governance proposals or config
-	upgradePlans := []UpgradePlan{
-		// Example: Upgrade at height 100000
-		// {Name: "v0.2.0", Height: 100000, Info: "Migration to v0.2.0"},
-	}
+	um.mu.RLock()
+	plan, exists := um.pendingPlans[currentHeight]
+	um.mu.RUnlock()
 	
-	for _, plan := range upgradePlans {
-		if currentHeight == plan.Height {
-			if err := um.ExecuteUpgrade(ctx, plan, app); err != nil {
-				return err
-			}
+	if exists && plan != nil {
+		um.logger.Info("Upgrade triggered", "name", plan.Name, "height", currentHeight)
+		
+		if err := um.ExecuteUpgrade(ctx, *plan, app); err != nil {
+			um.logger.Error("Upgrade execution failed", "error", err)
+			return err
 		}
+		
+		// Remove executed plan
+		um.mu.Lock()
+		delete(um.pendingPlans, currentHeight)
+		um.mu.Unlock()
+		
+		um.logger.Info("Upgrade completed and removed from schedule", "name", plan.Name)
 	}
 	
 	return nil
+}
+
+// GetPendingUpgrades returns all pending upgrade plans
+func (um *UpgradeManager) GetPendingUpgrades() []*UpgradePlan {
+	um.mu.RLock()
+	defer um.mu.RUnlock()
+	
+	plans := make([]*UpgradePlan, 0, len(um.pendingPlans))
+	for _, plan := range um.pendingPlans {
+		plans = append(plans, plan)
+	}
+	
+	return plans
 }
 
 

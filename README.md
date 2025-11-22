@@ -124,9 +124,10 @@ make build
 # Сборка (Windows)
 .\build.bat build
 
-# Или вручную
-go build -o volnixd.exe ./cmd/volnixd  # Windows
-go build -o volnixd ./cmd/volnixd      # Linux/macOS
+# Или вручную (бинарники собираются в build/)
+mkdir -p build
+go build -o build/volnixd.exe ./cmd/volnixd  # Windows
+go build -o build/volnixd ./cmd/volnixd      # Linux/macOS
 ```
 
 ### Запуск узла
@@ -134,8 +135,8 @@ go build -o volnixd ./cmd/volnixd      # Linux/macOS
 #### 1. Инициализация узла
 ```bash
 # Создание нового узла
-./volnixd init mynode        # Linux/macOS
-.\volnixd.exe init mynode    # Windows
+./build/volnixd init mynode        # Linux/macOS
+.\build\volnixd.exe init mynode    # Windows
 
 # Это создаст:
 # - Домашнюю директорию: .volnix/
@@ -146,8 +147,8 @@ go build -o volnixd ./cmd/volnixd      # Linux/macOS
 #### 2. Запуск узла
 ```bash
 # Запуск с персистентным хранилищем
-./volnixd start        # Linux/macOS
-.\volnixd.exe start    # Windows
+./build/volnixd start        # Linux/macOS
+.\build\volnixd.exe start    # Windows
 
 # Узел запустится с:
 # - Персистентной БД (GoLevelDB)
@@ -172,13 +173,13 @@ cd testnet && start.bat
 #### 4. Управление ключами
 ```bash
 # Создание ключа
-./volnixd keys add mykey
+./build/volnixd keys add mykey
 
 # Список ключей
-./volnixd keys list
+./build/volnixd keys list
 
 # Информация о ключе
-./volnixd keys show mykey
+./build/volnixd keys show mykey
 ```
 
 ## 🏗️ Архитектура
@@ -233,9 +234,9 @@ go test ./x/... -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html
 
 # Тестирование CLI
-./volnixd version
-./volnixd status
-./volnixd init testnode
+./build/volnixd version
+./build/volnixd status
+./build/volnixd init testnode
 ```
 
 ### 📊 Статус тестов (обновлено: 9 ноября 2025)

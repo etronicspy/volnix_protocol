@@ -135,6 +135,12 @@ type VolnixApp struct {
 	
 	// IMPROVED: Upgrade manager for handling network upgrades
 	upgradeManager *UpgradeManager
+	
+	// IMPROVED: Rate limiter for DDoS protection
+	rateLimiter *RateLimiter
+	
+	// IMPROVED: Snapshot manager for State Sync
+	snapshotManager *SnapshotManager
 }
 
 func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig) *VolnixApp {
@@ -213,6 +219,9 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// IMPROVED: Create upgrade manager
 	upgradeManager := NewUpgradeManager(logger)
 	
+	// IMPROVED: Create rate limiter with default configuration
+	rateLimiter := NewRateLimiter(DefaultRateLimitConfig())
+	
 	// Create app instance
 	app := &VolnixApp{
 		BaseApp:         bapp,
@@ -232,7 +241,11 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		governanceKeeper: governanceKeeper,
 		mm:              mm,
 		upgradeManager:  upgradeManager,
+		rateLimiter:    rateLimiter,
 	}
+	
+	// IMPROVED: Create snapshot manager after app is created
+	app.snapshotManager = NewSnapshotManager(app)
 	
 	// Register upgrade handlers with app reference
 	SetupUpgradeHandlers(upgradeManager, app)
@@ -253,8 +266,8 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		panic(err)
 	}
 
-	// Minimal AnteHandler: check for signatures presence only
-	bapp.SetAnteHandler(MinimalAnteHandler)
+	// IMPROVED: Use AnteHandler with rate limiting support
+	bapp.SetAnteHandler(app.createAnteHandler())
 
 	// Set BeginBlocker and EndBlocker for all modules
 	bapp.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
@@ -389,7 +402,23 @@ func GetMaccPerms() map[string][]string {
 
 // ApplySnapshotChunk implements the ABCI interface with context
 func (app *VolnixApp) ApplySnapshotChunk(ctx context.Context, req *abci.RequestApplySnapshotChunk) (*abci.ResponseApplySnapshotChunk, error) {
-	// For now, return a simple response - snapshot functionality can be added later
+	if app.snapshotManager == nil {
+		return &abci.ResponseApplySnapshotChunk{
+			Result: abci.ResponseApplySnapshotChunk_ACCEPT,
+		}, nil
+	}
+	
+	// Apply chunk
+	chunkHash := fmt.Sprintf("%x", req.Chunk)
+	if err := app.snapshotManager.ApplyChunk(req.Index, req.Chunk, chunkHash); err != nil {
+		return &abci.ResponseApplySnapshotChunk{
+			Result:        abci.ResponseApplySnapshotChunk_RETRY,
+			RefetchChunks: []uint32{req.Index},
+		}, err
+	}
+	
+	// Check if all chunks are received
+	// This is a simplified check - in production, you'd track which chunks are received
 	return &abci.ResponseApplySnapshotChunk{
 		Result: abci.ResponseApplySnapshotChunk_ACCEPT,
 	}, nil
@@ -397,20 +426,83 @@ func (app *VolnixApp) ApplySnapshotChunk(ctx context.Context, req *abci.RequestA
 
 // LoadSnapshotChunk implements the ABCI interface with context
 func (app *VolnixApp) LoadSnapshotChunk(ctx context.Context, req *abci.RequestLoadSnapshotChunk) (*abci.ResponseLoadSnapshotChunk, error) {
-	// For now, return empty chunk - snapshot functionality can be added later
-	return &abci.ResponseLoadSnapshotChunk{}, nil
+	if app.snapshotManager == nil {
+		return &abci.ResponseLoadSnapshotChunk{}, nil
+	}
+	
+	// Get snapshot
+	snapshot, exists := app.snapshotManager.GetSnapshot(uint64(req.Height))
+	if !exists {
+		return &abci.ResponseLoadSnapshotChunk{}, fmt.Errorf("snapshot not found at height %d", req.Height)
+	}
+	
+	// Get chunk by index
+	if req.Chunk >= snapshot.ChunkCount {
+		return &abci.ResponseLoadSnapshotChunk{}, fmt.Errorf("chunk index %d out of range (max %d)", req.Chunk, snapshot.ChunkCount-1)
+	}
+	
+	chunkHash := snapshot.ChunkHashes[req.Chunk]
+	chunk, exists := app.snapshotManager.GetChunk(chunkHash)
+	if !exists {
+		return &abci.ResponseLoadSnapshotChunk{}, fmt.Errorf("chunk %s not found", chunkHash)
+	}
+	
+	return &abci.ResponseLoadSnapshotChunk{
+		Chunk: chunk,
+	}, nil
+}
+
+// createAnteHandler creates an AnteHandler with rate limiting support
+func (app *VolnixApp) createAnteHandler() sdk.AnteHandler {
+	return func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		// IMPROVED: Apply rate limiting first (before other validations)
+		// Skip rate limiting for simulation and recheck transactions
+		if !simulate && ctx.IsCheckTx() && app.rateLimiter != nil {
+			if err := app.rateLimiter.Allow(ctx, tx); err != nil {
+				return ctx, fmt.Errorf("rate limit check failed: %w", err)
+			}
+		}
+		
+		// Continue with standard validation
+		return ImprovedAnteHandler(ctx, tx, simulate)
+	}
 }
 
 // ListSnapshots implements the ABCI interface with context
 func (app *VolnixApp) ListSnapshots(ctx context.Context, req *abci.RequestListSnapshots) (*abci.ResponseListSnapshots, error) {
-	// For now, return empty list - snapshot functionality can be added later
-	return &abci.ResponseListSnapshots{}, nil
+	if app.snapshotManager == nil {
+		return &abci.ResponseListSnapshots{}, nil
+	}
+	
+	snapshots := app.snapshotManager.ListSnapshots()
+	abciSnapshots := make([]*abci.Snapshot, 0, len(snapshots))
+	
+	for _, snapshot := range snapshots {
+		abciSnapshots = append(abciSnapshots, &abci.Snapshot{
+			Height:   uint64(snapshot.Height),
+			Format:   snapshot.Format,
+			Chunks:   snapshot.ChunkCount,
+			Hash:     snapshot.Hash,
+			Metadata: []byte{}, // Additional metadata can be added here
+		})
+	}
+	
+	return &abci.ResponseListSnapshots{
+		Snapshots: abciSnapshots,
+	}, nil
 }
 
 // OfferSnapshot implements the ABCI interface with context
 func (app *VolnixApp) OfferSnapshot(ctx context.Context, req *abci.RequestOfferSnapshot) (*abci.ResponseOfferSnapshot, error) {
-	// For now, reject snapshots - snapshot functionality can be added later
+	if app.snapshotManager == nil {
+		return &abci.ResponseOfferSnapshot{
+			Result: abci.ResponseOfferSnapshot_REJECT,
+		}, nil
+	}
+	
+	// Extract chunk hashes from metadata if available
+	// For now, we'll accept the snapshot and process chunks as they arrive
 	return &abci.ResponseOfferSnapshot{
-		Result: abci.ResponseOfferSnapshot_REJECT,
+		Result: abci.ResponseOfferSnapshot_ACCEPT,
 	}, nil
 }

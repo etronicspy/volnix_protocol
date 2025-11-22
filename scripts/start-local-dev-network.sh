@@ -327,14 +327,48 @@ create_shared_genesis() {
     echo "" >&2
 }
 
+# Получение Node ID из node_key.json
+get_node_id() {
+    local node_key_file="$1"
+    if [ ! -f "$node_key_file" ]; then
+        return 1
+    fi
+    
+    # Извлекаем публичный ключ из node_key.json и вычисляем Node ID
+    local pub_key_b64=$(jq -r '.priv_key.value' "$node_key_file" 2>/dev/null)
+    if [ -z "$pub_key_b64" ] || [ "$pub_key_b64" = "null" ]; then
+        return 1
+    fi
+    
+    # Декодируем base64 и берем последние 32 байта (публичный ключ)
+    local pub_key_bytes=$(echo "$pub_key_b64" | base64 -d 2>/dev/null | tail -c 32)
+    if [ -z "$pub_key_bytes" ]; then
+        return 1
+    fi
+    
+    # Вычисляем SHA256 и берем первые 40 символов (Node ID)
+    echo -n "$pub_key_bytes" | shasum -a 256 | cut -c1-40
+}
+
 # Настройка peer connections
 setup_peers() {
     log_info "Настройка peer connections..." >&2
     
     local nodes_info=("$@")
     
-    # Сначала запускаем первый узел, чтобы получить его node ID
-    # Для этого нам нужно будет запустить его временно или использовать другой метод
+    # Собираем Node ID для всех узлов (используем временный файл для совместимости)
+    local temp_node_ids=$(mktemp)
+    for node_info in "${nodes_info[@]}"; do
+        IFS=':' read -r name dir p2p_port rpc_port <<< "$node_info"
+        local node_key_file="$dir/.volnix/config/node_key.json"
+        local node_id=$(get_node_id "$node_key_file")
+        if [ -n "$node_id" ]; then
+            echo "$name:$node_id" >> "$temp_node_ids"
+            log_info "Node ID для $name: $node_id" >&2
+        else
+            log_warning "Не удалось получить Node ID для $name" >&2
+        fi
+    done
     
     # Обновляем persistent_peers для каждого узла
     for node_info in "${nodes_info[@]}"; do
@@ -347,9 +381,15 @@ setup_peers() {
             for peer_info in "${nodes_info[@]}"; do
                 IFS=':' read -r peer_name peer_dir peer_p2p peer_rpc <<< "$peer_info"
                 if [ "$peer_name" != "$name" ]; then
-                    # Используем формат с node ID (будет получен при запуске)
-                    # Пока используем только IP:PORT, node ID добавится автоматически
-                    peers_for_node+=("127.0.0.1:$peer_p2p")
+                    # Используем формат с node ID: <node_id>@<ip>:<port>
+                    local peer_node_id=$(grep "^${peer_name}:" "$temp_node_ids" 2>/dev/null | cut -d: -f2)
+                    if [ -n "$peer_node_id" ]; then
+                        peers_for_node+=("${peer_node_id}@127.0.0.1:$peer_p2p")
+                    else
+                        # Fallback: используем только IP:PORT (может не работать)
+                        log_warning "Используется формат без Node ID для $peer_name" >&2
+                        peers_for_node+=("127.0.0.1:$peer_p2p")
+                    fi
                 fi
             done
             
@@ -384,6 +424,9 @@ persistent_peers = \"$peers_str\"
             fi
         fi
     done
+    
+    # Удаляем временный файл
+    rm -f "$temp_node_ids"
     
     log_success "Peer connections настроены" >&2
     echo "" >&2

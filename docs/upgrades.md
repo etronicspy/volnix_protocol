@@ -102,6 +102,22 @@ func migrateIdentModuleV0_2_0(ctx sdk.Context, app *VolnixApp) error {
 
 ## Выполнение обновлений
 
+### Планирование обновлений
+
+Обновления можно запланировать заранее:
+
+```go
+plan := UpgradePlan{
+    Name:   "v0.2.0",
+    Height: 100000,
+    Info:   "Migration to v0.2.0 with new features",
+}
+
+if err := upgradeManager.ScheduleUpgrade(plan); err != nil {
+    return err
+}
+```
+
 ### Автоматическое выполнение
 
 Upgrade manager автоматически проверяет необходимость обновления в начале каждого блока:
@@ -110,14 +126,32 @@ Upgrade manager автоматически проверяет необходим
 func (um *UpgradeManager) CheckUpgradeNeeded(ctx sdk.Context, app *VolnixApp) error {
     currentHeight := ctx.BlockHeight()
     
-    // Проверить, нужен ли upgrade на текущей высоте
-    for _, plan := range upgradePlans {
-        if currentHeight == plan.Height {
-            return um.ExecuteUpgrade(ctx, plan, app)
-        }
+    // Проверить, есть ли запланированное обновление на текущей высоте
+    plan, exists := um.pendingPlans[currentHeight]
+    if exists {
+        return um.ExecuteUpgrade(ctx, *plan, app)
     }
     
     return nil
+}
+```
+
+### Отмена обновлений
+
+Запланированное обновление можно отменить:
+
+```go
+if err := upgradeManager.CancelUpgrade(100000); err != nil {
+    return err
+}
+```
+
+### Получение списка запланированных обновлений
+
+```go
+pendingUpgrades := upgradeManager.GetPendingUpgrades()
+for _, plan := range pendingUpgrades {
+    fmt.Printf("Upgrade %s scheduled at height %d\n", plan.Name, plan.Height)
 }
 ```
 

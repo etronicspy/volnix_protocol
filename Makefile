@@ -15,23 +15,26 @@ PURPLE=\033[0;35m
 CYAN=\033[0;36m
 NC=\033[0m # No Color
 
-.PHONY: help build build-standalone install test clean run init start status keys version
+.PHONY: help build build-standalone install test clean run init start status keys version check-binaries
 
 # Default target
-all: build build-standalone
+all: check-binaries build build-standalone
 
 help: ## Show this help message
 	@echo "$(CYAN)🚀 Volnix Protocol - Build Commands$(NC)"
 	@echo "$(CYAN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "$(YELLOW)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: ## Build the volnixd binary
+check-binaries: ## Check for binaries in root directory
+	@./scripts/check-binaries.sh || true
+
+build: check-binaries ## Build the volnixd binary
 	@echo "$(GREEN)🔨 Building Volnix Protocol...$(NC)"
 	@mkdir -p $(BUILD_DIR)
 	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/volnixd
 	@echo "$(GREEN)✅ Build completed: $(BUILD_DIR)/$(BINARY_NAME)$(NC)"
 
-build-standalone: ## Build the volnixd-standalone binary
+build-standalone: check-binaries ## Build the volnixd-standalone binary
 	@echo "$(GREEN)🔨 Building Volnix Protocol Standalone...$(NC)"
 	@mkdir -p $(BUILD_DIR)
 	@go build -o $(BUILD_DIR)/volnixd-standalone ./cmd/volnixd-standalone
@@ -87,8 +90,9 @@ clean: ## Clean build artifacts
 	@echo "$(YELLOW)🧹 Cleaning build artifacts...$(NC)"
 	@rm -rf $(BUILD_DIR)
 	@rm -f coverage.out coverage.html
-	@rm -f volnixd-standalone volnixd-standalone.exe
+	@rm -f volnixd-standalone volnixd-standalone.exe volnixd volnixd.exe
 	@echo "$(GREEN)✅ Clean completed$(NC)"
+	@echo "$(YELLOW)⚠️  Note: Binaries should be in build/ directory, not in project root$(NC)"
 
 deps: ## Download and tidy dependencies
 	@echo "$(BLUE)📦 Managing dependencies...$(NC)"
