@@ -336,7 +336,24 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		if err != nil {
 			return nil, err
 		}
-		return &abci.ResponseInitChain{}, nil
+		
+		// CRITICAL: Return validators in ResponseInitChain
+		// CometBFT uses this to verify validator consistency during replay
+		// If validators are not returned, CometBFT will see mismatch during replay
+		// This is required for proper P2P authentication between validators
+		validators := make([]abci.ValidatorUpdate, len(req.Validators))
+		for i, val := range req.Validators {
+			validators[i] = abci.ValidatorUpdate{
+				PubKey: val.PubKey,
+				Power:  val.Power,
+			}
+		}
+		
+		return &abci.ResponseInitChain{
+			Validators:      validators,
+			ConsensusParams: req.ConsensusParams,
+			AppHash:         []byte{},
+		}, nil
 	})
 
 	return app

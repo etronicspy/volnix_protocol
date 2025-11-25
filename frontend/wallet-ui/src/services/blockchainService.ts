@@ -6,7 +6,7 @@ import { Registry } from '@cosmjs/proto-signing';
 
 // Конфигурация сети
 const RPC_ENDPOINT = process.env.REACT_APP_RPC_ENDPOINT || 'http://localhost:26657';
-const CHAIN_ID = process.env.REACT_APP_CHAIN_ID || 'volnix-standalone';
+const CHAIN_ID = process.env.REACT_APP_CHAIN_ID || 'volnix-testnet';
 const PREFIX = 'volnix';
 
 // Типы для балансов
@@ -59,18 +59,43 @@ class BlockchainService {
       
       try {
         // Use standard CosmJS API - StargateClient.connect()
-        // The node is now configured to create blocks immediately, so sync_info will be populated
+        // CRITICAL: Get chain-id from /status endpoint directly to avoid "empty chain-id" error
+        // when blocks haven't been created yet
         console.log('🔍 Connecting to RPC endpoint:', RPC_ENDPOINT);
         
-        // Create StargateClient using standard API
-        // This will use Comet38Client internally, which should work now that blocks are being created
-        const readClient = await StargateClient.connect(RPC_ENDPOINT);
-        const actualChainId = await readClient.getChainId();
-        console.log('✅ Chain ID from StargateClient:', actualChainId);
+        // First, try to get chain-id from /status endpoint directly
+        let actualChainId = CHAIN_ID; // Use configured chain-id as fallback
+        try {
+          const statusResponse = await fetch(`${RPC_ENDPOINT}/status`);
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            const nodeChainId = statusData?.result?.node_info?.network;
+            if (nodeChainId && nodeChainId.trim() !== '') {
+              actualChainId = nodeChainId;
+              console.log('✅ Chain ID from /status endpoint:', actualChainId);
+            } else {
+              console.warn('⚠️ Chain ID from /status is empty, using configured:', CHAIN_ID);
+              actualChainId = CHAIN_ID;
+            }
+          }
+        } catch (statusError) {
+          console.warn('⚠️ Could not fetch chain-id from /status, using configured:', CHAIN_ID);
+          actualChainId = CHAIN_ID;
+        }
         
-        if (!actualChainId || actualChainId.trim() === '') {
-          readClient.disconnect();
-          throw new Error('Node returned empty chain-id. Make sure the node is running and properly initialized.');
+        // Create StargateClient - it will use the chain-id from node_info if available
+        const readClient = await StargateClient.connect(RPC_ENDPOINT);
+        console.log('✅ StargateClient connected');
+        
+        // Try to get chain-id from client, but don't fail if it's empty
+        try {
+          const clientChainId = await readClient.getChainId();
+          if (clientChainId && clientChainId.trim() !== '') {
+            actualChainId = clientChainId;
+            console.log('✅ Chain ID from StargateClient:', actualChainId);
+          }
+        } catch (chainIdError) {
+          console.warn('⚠️ Could not get chain-id from client, using:', actualChainId);
         }
         
         // Create SigningStargateClient using standard API
@@ -78,6 +103,8 @@ class BlockchainService {
         // This ensures CosmJS can properly encode MsgSend messages
         const registry = new Registry(defaultRegistryTypes);
         
+        // CRITICAL: Use explicit chain-id to avoid "must provide a non-empty value" error
+        // when blocks haven't been created yet
         this.signingClient = await SigningStargateClient.connectWithSigner(
           RPC_ENDPOINT,
           this.wallet,
@@ -86,16 +113,7 @@ class BlockchainService {
             registry: registry, // CRITICAL: Register types for message encoding
           }
         );
-        console.log('✅ SigningStargateClient connected');
-        
-        // Verify chain-id is available
-        const chainId = await this.signingClient.getChainId();
-        console.log('✅ Chain ID from signing client:', chainId);
-        
-        if (!chainId || chainId.trim() === '') {
-          readClient.disconnect();
-          throw new Error('SigningStargateClient returned empty chain-id. This should not happen.');
-        }
+        console.log('✅ SigningStargateClient connected with chain-id:', actualChainId);
         
         // Close read client as SigningStargateClient has its own connection
         readClient.disconnect();

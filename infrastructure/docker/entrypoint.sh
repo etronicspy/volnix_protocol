@@ -105,20 +105,22 @@ if [ ! -f "$VOLNIX_HOME/config/config.toml" ]; then
 fi
 
 # Настройка persistent_peers если указано
+# ВАЖНО: Не перезаписываем persistent_peers если они уже настроены в config.toml
+# Это позволяет использовать update-persistent-peers.sh для правильной настройки
 if [ -n "$PERSISTENT_PEERS" ]; then
-    echo "🔗 Настройка persistent peers..."
     CONFIG_FILE="$VOLNIX_HOME/config/config.toml"
     
-    # Обновляем persistent_peers в config.toml
+    # Проверяем, есть ли уже persistent_peers в config.toml
     if grep -q "^persistent_peers" "$CONFIG_FILE"; then
-        # Обновляем существующую строку
-        sed -i "s|^persistent_peers = \".*\"|persistent_peers = \"$PERSISTENT_PEERS\"|" "$CONFIG_FILE"
+        # Если persistent_peers уже настроены, не перезаписываем их
+        # Это позволяет использовать update-persistent-peers.sh для правильной настройки
+        echo "ℹ️  Persistent peers уже настроены в config.toml, пропускаем обновление из переменной окружения"
     else
-        # Добавляем новую строку после [p2p]
+        # Только если persistent_peers отсутствуют, добавляем их
+        echo "🔗 Настройка persistent peers из переменной окружения..."
         sed -i "/\[p2p\]/a persistent_peers = \"$PERSISTENT_PEERS\"" "$CONFIG_FILE"
+        echo "✅ Persistent peers настроены: $PERSISTENT_PEERS"
     fi
-    
-    echo "✅ Persistent peers настроены: $PERSISTENT_PEERS"
     echo ""
 fi
 
@@ -137,6 +139,45 @@ if [ -f "$CONFIG_FILE" ]; then
         sed -i 's|^create_empty_blocks_interval = .*|create_empty_blocks_interval = "0s"|' "$CONFIG_FILE"
     else
         sed -i "/create_empty_blocks = true/a create_empty_blocks_interval = \"0s\"" "$CONFIG_FILE"
+    fi
+    
+    # КРИТИЧЕСКИ ВАЖНО: Настройка параметров для подключения ко всем пирам
+    # persistent_peers_max_dial_period = "0s" - узлы пытаются подключиться сразу
+    if grep -q "^persistent_peers_max_dial_period" "$CONFIG_FILE"; then
+        sed -i 's|^persistent_peers_max_dial_period = .*|persistent_peers_max_dial_period = "0s"|' "$CONFIG_FILE"
+    else
+        sed -i "/\[p2p\]/a persistent_peers_max_dial_period = \"0s\"" "$CONFIG_FILE"
+    fi
+    
+    # allow_duplicate_ip = true - разрешает несколько узлов на одном IP
+    if grep -q "^allow_duplicate_ip" "$CONFIG_FILE"; then
+        sed -i 's|^allow_duplicate_ip = .*|allow_duplicate_ip = true|' "$CONFIG_FILE"
+    else
+        sed -i "/\[p2p\]/a allow_duplicate_ip = true" "$CONFIG_FILE"
+    fi
+    
+    # max_num_outbound_peers = 20 - достаточно для подключения ко всем пирам
+    if grep -q "^max_num_outbound_peers" "$CONFIG_FILE"; then
+        sed -i 's|^max_num_outbound_peers = .*|max_num_outbound_peers = 20|' "$CONFIG_FILE"
+    else
+        sed -i "/\[p2p\]/a max_num_outbound_peers = 20" "$CONFIG_FILE"
+    fi
+    
+    # Настройка unconditional_peer_ids из persistent_peers (если они есть)
+    if grep -q "^persistent_peers" "$CONFIG_FILE"; then
+        PERSISTENT_PEERS=$(grep "^persistent_peers" "$CONFIG_FILE" | sed 's/.*= "\(.*\)"/\1/')
+        if [ -n "$PERSISTENT_PEERS" ]; then
+            # Извлекаем Node IDs из persistent_peers (формат: node_id@address:port)
+            UNCONDITIONAL_IDS=$(echo "$PERSISTENT_PEERS" | tr ',' '\n' | cut -d'@' -f1 | tr '\n' ',' | sed 's/,$//')
+            if [ -n "$UNCONDITIONAL_IDS" ]; then
+                if grep -q "^unconditional_peer_ids" "$CONFIG_FILE"; then
+                    sed -i "s|^unconditional_peer_ids = .*|unconditional_peer_ids = \"$UNCONDITIONAL_IDS\"|" "$CONFIG_FILE"
+                else
+                    sed -i "/\[p2p\]/a unconditional_peer_ids = \"$UNCONDITIONAL_IDS\"" "$CONFIG_FILE"
+                fi
+                echo "✅ unconditional_peer_ids настроен из persistent_peers"
+            fi
+        fi
     fi
 fi
 

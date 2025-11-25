@@ -160,10 +160,92 @@ init_node() {
             }
             
             # Проверяем, что ключ валидатора создан (может создаваться при первом запуске)
-            # Если ключа нет, volnixd-standalone создаст его при запуске
+            # Если ключа нет, создаем его вручную
             local priv_val_key="$node_dir/.volnix/config/priv_validator_key.json"
             if [ ! -f "$priv_val_key" ]; then
-                log_warning "Ключ валидатора для $node_name не найден после init, будет создан при запуске" >&2
+                log_info "Создание ключа валидатора для $node_name..." >&2
+                # Создаем директории если нужно
+                mkdir -p "$node_dir/.volnix/config"
+                mkdir -p "$node_dir/.volnix/data"
+                
+                # Генерируем ключ валидатора используя Python (как в add_node)
+                python3 <<PYEOF
+import json, hashlib, base64
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+
+node_dir = "$node_dir"
+
+# Генерация priv_validator_key
+val_private_key = Ed25519PrivateKey.generate()
+val_private_bytes = val_private_key.private_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PrivateFormat.Raw,
+    encryption_algorithm=serialization.NoEncryption()
+)
+val_public_bytes = val_private_key.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw
+)
+
+address_bytes = hashlib.sha256(val_public_bytes).digest()[:20]
+address = address_bytes.hex().upper()
+
+val_full_key = val_private_bytes + val_public_bytes
+
+priv_validator_key = {
+    "address": address,
+    "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": base64.b64encode(val_public_bytes).decode('utf-8')
+    },
+    "priv_key": {
+        "type": "tendermint/PrivKeyEd25519",
+        "value": base64.b64encode(val_full_key).decode('utf-8')
+    }
+}
+
+with open(f"{node_dir}/.volnix/config/priv_validator_key.json", 'w') as f:
+    json.dump(priv_validator_key, f, indent=2)
+PYEOF
+                log_success "Ключ валидатора создан для $node_name" >&2
+            fi
+            
+            # Проверяем и создаем node_key.json если его нет
+            local node_key="$node_dir/.volnix/config/node_key.json"
+            if [ ! -f "$node_key" ]; then
+                log_info "Создание node_key для $node_name..." >&2
+                python3 <<PYEOF
+import json, hashlib, base64
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+
+node_dir = "$node_dir"
+
+# Генерация node_key
+private_key = Ed25519PrivateKey.generate()
+private_bytes = private_key.private_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PrivateFormat.Raw,
+    encryption_algorithm=serialization.NoEncryption()
+)
+public_bytes = private_key.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw
+)
+full_key = private_bytes + public_bytes
+
+node_key = {
+    "priv_key": {
+        "type": "tendermint/PrivKeyEd25519",
+        "value": base64.b64encode(full_key).decode('utf-8')
+    }
+}
+
+with open(f"{node_dir}/.volnix/config/node_key.json", 'w') as f:
+    json.dump(node_key, f, indent=2)
+PYEOF
+                log_success "node_key создан для $node_name" >&2
             fi
         else
             log_error "volnixd-standalone не найден" >&2
@@ -280,13 +362,35 @@ create_shared_genesis() {
             local pub_key_type=$(jq -r '.pub_key.type' "$priv_val_key")
             local pub_key_value=$(jq -r '.pub_key.value' "$priv_val_key")
             
-            # Используем адрес валидатора из genesis файла узла (уже правильно вычислен)
-            local validator_address=$(jq -r '.validators[0].address // empty' "$genesis_file")
+            # CRITICAL: Всегда используем адрес из priv_validator_key.json
+            # Это гарантирует, что адрес совпадает с публичным ключом
+            local validator_address=$(jq -r '.address // empty' "$priv_val_key")
             
-            # Если адрес не найден, пропускаем этот узел
+            # Если адрес не найден в ключе, вычисляем его из публичного ключа
             if [ -z "$validator_address" ] || [ "$validator_address" = "null" ] || [ "$validator_address" = "" ]; then
-                log_warning "Не удалось получить адрес валидатора для $name, пропускаем..." >&2
-                continue
+                log_info "Вычисление адреса валидатора из публичного ключа для $name..." >&2
+                # Вычисляем адрес валидатора из публичного ключа (первые 20 байт SHA256)
+                validator_address=$(python3 <<PYTHON_SCRIPT
+import json
+import hashlib
+import base64
+
+priv_val_key_file = "$priv_val_key"
+with open(priv_val_key_file, 'r') as f:
+    priv_val_key = json.load(f)
+
+pub_key_value = priv_val_key['pub_key']['value']
+pub_key_bytes = base64.b64decode(pub_key_value)
+address_bytes = hashlib.sha256(pub_key_bytes).digest()[:20]
+address = address_bytes.hex().upper()
+print(address)
+PYTHON_SCRIPT
+)
+                if [ -z "$validator_address" ]; then
+                    log_warning "Не удалось вычислить адрес валидатора для $name, пропускаем..." >&2
+                    continue
+                fi
+                log_info "Адрес валидатора вычислен: $validator_address" >&2
             fi
             
             # Создаем JSON валидатора

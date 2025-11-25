@@ -1162,8 +1162,18 @@ func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, 
 	// MaxNumInboundPeers: Maximum number of incoming peer connections
 	// MaxNumOutboundPeers: Maximum number of outgoing peer connections
 	// Increased outbound peers to allow more connections in multinode setup
+	// For n nodes, each node needs n-1 outbound connections
 	config.P2P.MaxNumInboundPeers = 40
 	config.P2P.MaxNumOutboundPeers = 20 // Increased from 10 to 20 for better connectivity
+	
+	// CRITICAL: Ensure persistent peers are always dialed
+	// PersistentPeersMaxDialPeriod: Maximum time between dial attempts for persistent peers
+	// Set to 0 to dial immediately and continuously
+	config.P2P.PersistentPeersMaxDialPeriod = 0 * time.Second
+	
+	// CRITICAL: Allow duplicate IPs for local multinode setup
+	// This is required when running multiple nodes on the same machine
+	config.P2P.AllowDuplicateIP = true
 
 	// IMPROVED: P2P performance settings
 	// FlushThrottleTimeout: Time to wait before flushing messages to peers
