@@ -26,7 +26,7 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "$(YELLOW)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check-binaries: ## Check for binaries in root directory
-	@./scripts/check-binaries.sh || true
+	@./scripts/check-binaries.sh
 
 build: check-binaries ## Build the volnixd binary
 	@echo "$(GREEN)🔨 Building Volnix Protocol...$(NC)"
@@ -40,19 +40,19 @@ build-standalone: check-binaries ## Build the volnixd-standalone binary
 	@go build -o $(BUILD_DIR)/volnixd-standalone ./cmd/volnixd-standalone
 	@echo "$(GREEN)✅ Standalone build completed: $(BUILD_DIR)/volnixd-standalone$(NC)"
 
-build-linux: ## Build for Linux
+build-linux: check-binaries ## Build for Linux
 	@echo "$(GREEN)🔨 Building for Linux...$(NC)"
 	@mkdir -p $(BUILD_DIR)
 	@GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux ./cmd/volnixd
 	@echo "$(GREEN)✅ Linux build completed: $(BUILD_DIR)/$(BINARY_NAME)-linux$(NC)"
 
-build-windows: ## Build for Windows
+build-windows: check-binaries ## Build for Windows
 	@echo "$(GREEN)🔨 Building for Windows...$(NC)"
 	@mkdir -p $(BUILD_DIR)
 	@GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME).exe ./cmd/volnixd
 	@echo "$(GREEN)✅ Windows build completed: $(BUILD_DIR)/$(BINARY_NAME).exe$(NC)"
 
-build-darwin: ## Build for macOS
+build-darwin: check-binaries ## Build for macOS
 	@echo "$(GREEN)🔨 Building for macOS...$(NC)"
 	@mkdir -p $(BUILD_DIR)
 	@GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin ./cmd/volnixd

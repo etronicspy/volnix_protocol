@@ -1,6 +1,8 @@
 # Binaries
 build/
 *.exe
+volnixd
+volnixd.exe
 volnixd-standalone
 volnixd-standalone.exe
 
