@@ -49,6 +49,11 @@ var (
 	KeyCitizenAntRewardRate      = []byte("CitizenAntRewardRate")
 	KeyCitizenAntAccumulationLimit = []byte("CitizenAntAccumulationLimit")
 	KeyCitizenAntDistributionPeriod = []byte("CitizenAntDistributionPeriod")
+	
+	// Market making parameter keys
+	KeyMarketMakingBuyDiscount  = []byte("MarketMakingBuyDiscount")  // Buy price discount (e.g., "0.99" = 1% below)
+	KeyMarketMakingSellPremium  = []byte("MarketMakingSellPremium")  // Sell price premium (e.g., "1.01" = 1% above)
+	KeyMarketMakingOrderSize    = []byte("MarketMakingOrderSize")   // Order size in ANT (e.g., "1000.0")
 )
 
 // ParamKeyTable returns the parameter key table
@@ -80,6 +85,11 @@ type Params struct {
 	CitizenAntRewardRate       string        `json:"citizen_ant_reward_rate"`        // Base rate (e.g., "10" ANT per day)
 	CitizenAntAccumulationLimit string        `json:"citizen_ant_accumulation_limit"` // Max accumulation (e.g., "1000" ANT)
 	CitizenAntDistributionPeriod time.Duration `json:"citizen_ant_distribution_period"` // Distribution period (e.g., 24 hours)
+	
+	// Market making parameters
+	MarketMakingBuyDiscount string `json:"market_making_buy_discount"`  // Buy price discount multiplier (e.g., "0.99" = 1% below market)
+	MarketMakingSellPremium string `json:"market_making_sell_premium"`  // Sell price premium multiplier (e.g., "1.01" = 1% above market)
+	MarketMakingOrderSize   string `json:"market_making_order_size"`    // Order size in ANT (e.g., "1000.0")
 }
 
 // ParamSetPairs returns the parameter set pairs
@@ -107,6 +117,11 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 		paramtypes.NewParamSetPair(KeyCitizenAntRewardRate, &p.CitizenAntRewardRate, validateString),
 		paramtypes.NewParamSetPair(KeyCitizenAntAccumulationLimit, &p.CitizenAntAccumulationLimit, validateString),
 		paramtypes.NewParamSetPair(KeyCitizenAntDistributionPeriod, &p.CitizenAntDistributionPeriod, validateDuration),
+		
+		// Market making parameter pairs
+		paramtypes.NewParamSetPair(KeyMarketMakingBuyDiscount, &p.MarketMakingBuyDiscount, validateString),
+		paramtypes.NewParamSetPair(KeyMarketMakingSellPremium, &p.MarketMakingSellPremium, validateString),
+		paramtypes.NewParamSetPair(KeyMarketMakingOrderSize, &p.MarketMakingOrderSize, validateString),
 	}
 }
 
@@ -135,6 +150,11 @@ func DefaultParams() Params {
 		CitizenAntRewardRate:       "10000000",        // 10 ANT in micro units (10 * 1,000,000)
 		CitizenAntAccumulationLimit: "1000000000",     // 1000 ANT in micro units (1000 * 1,000,000)
 		CitizenAntDistributionPeriod: 24 * time.Hour, // 24 hours
+		
+		// Market making parameters (default: 1% spread, 1000 ANT order size)
+		MarketMakingBuyDiscount: "0.99",  // 1% below market price
+		MarketMakingSellPremium: "1.01",  // 1% above market price
+		MarketMakingOrderSize:   "1000.0", // 1000 ANT per order
 	}
 }
 

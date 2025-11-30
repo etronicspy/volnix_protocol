@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	storetypes "cosmossdk.io/store/types"
@@ -297,17 +298,29 @@ func (k Keeper) CalculateBlockTime(ctx sdk.Context, antAmount string) (time.Dura
 		baseBlockTime = 5 * time.Second // Default fallback
 	}
 
-	// Calculate activity factor
+	// Calculate activity factor from params
 	highThreshold := params.HighActivityThreshold
 	lowThreshold := params.LowActivityThreshold
 
 	var activityFactor float64
 	if antAmountInt >= highThreshold {
-		activityFactor = 0.5 // Faster blocks for high activity
+		// Parse activity factor for high activity
+		activityFactor, err = strconv.ParseFloat(params.ActivityFactorHigh, 64)
+		if err != nil || activityFactor == 0 {
+			activityFactor = 0.5 // Default fallback
+		}
 	} else if antAmountInt >= lowThreshold {
-		activityFactor = 0.75 // Moderate speed
+		// Parse activity factor for medium activity
+		activityFactor, err = strconv.ParseFloat(params.ActivityFactorMedium, 64)
+		if err != nil || activityFactor == 0 {
+			activityFactor = 0.75 // Default fallback
+		}
 	} else {
-		activityFactor = 1.0 // Normal speed
+		// Parse activity factor for normal activity
+		activityFactor, err = strconv.ParseFloat(params.ActivityFactorNormal, 64)
+		if err != nil || activityFactor == 0 {
+			activityFactor = 1.0 // Default fallback
+		}
 	}
 
 	// Calculate dynamic block time
@@ -358,7 +371,11 @@ func (k Keeper) GetAverageBlockTime(ctx sdk.Context) (time.Duration, error) {
 // updateAverageBlockTime updates the average block time based on recent blocks
 func (k Keeper) updateAverageBlockTime(ctx sdk.Context) error {
 	currentHeight := uint64(ctx.BlockHeight())
-	windowSize := uint64(1000) // Use last 1000 blocks for average
+	params := k.GetParams(ctx)
+	windowSize := params.AverageBlockTimeWindowSize
+	if windowSize == 0 {
+		windowSize = 1000 // Default fallback
+	}
 	
 	startHeight := uint64(0)
 	if currentHeight > windowSize {
@@ -501,10 +518,11 @@ func (k Keeper) GetHalvingInfo(ctx sdk.Context) (types.HalvingInfo, error) {
 	bz := store.Get(halvingKey)
 	if bz == nil {
 		// Return default halving info if not exists
+		// Use HalvingInterval constant for consistency
 		return types.HalvingInfo{
 			LastHalvingHeight: 0,
-			NextHalvingHeight: 100000,
-			HalvingInterval:   100000,
+			NextHalvingHeight: HalvingInterval,
+			HalvingInterval:   HalvingInterval,
 		}, nil
 	}
 
@@ -1066,10 +1084,17 @@ func (k Keeper) ValidateAuctionBid(ctx sdk.Context, validator, bidAmount string)
 	}
 
 	// 3. Check for bid manipulation (prevent extremely large bids)
-	// This is a simplified check - in production, use governance parameters
-	maxBid := uint64(1000000000000) // 1 trillion ANT (example limit)
-	if bidUint > maxBid {
-		return fmt.Errorf("bid amount exceeds maximum: %d", maxBid)
+	// Use MaxBurnAmount from params
+	params := k.GetParams(ctx)
+	maxBurnAmountStr := params.MaxBurnAmount
+	if maxBurnAmountStr != "" {
+		// Parse MaxBurnAmount (remove "uvx" suffix if present)
+		maxBurnAmountStr = strings.TrimSuffix(maxBurnAmountStr, "uvx")
+		maxBurnAmountStr = strings.TrimSpace(maxBurnAmountStr)
+		maxBid, err := strconv.ParseUint(maxBurnAmountStr, 10, 64)
+		if err == nil && bidUint > maxBid {
+			return fmt.Errorf("bid amount exceeds maximum: %d", maxBid)
+		}
 	}
 
 	// 4. Check for rapid bid changes (potential manipulation)
@@ -1094,8 +1119,13 @@ func (k Keeper) ValidateAuctionBid(ctx sdk.Context, validator, bidAmount string)
 				}
 			}
 			
-			// Prevent more than 5 bids in rapid succession
-			if recentBids >= 5 {
+			// Prevent too many rapid bids (configurable limit)
+			params := k.GetParams(ctx)
+			rapidBidLimit := params.RapidBidLimit
+			if rapidBidLimit == 0 {
+				rapidBidLimit = 5 // Default fallback
+			}
+			if recentBids >= int(rapidBidLimit) {
 				return fmt.Errorf("too many rapid bid changes detected - potential manipulation")
 			}
 		}
@@ -1125,9 +1155,14 @@ func (k Keeper) RecordBidHistory(ctx sdk.Context, validator, bidAmount string) {
 	
 	history = append(history, entry)
 	
-	// Keep only last 100 entries
-	if len(history) > 100 {
-		history = history[len(history)-100:]
+	// Keep only last N entries (configurable limit)
+	params := k.GetParams(ctx)
+	bidHistoryLimit := int(params.BidHistoryLimit)
+	if bidHistoryLimit == 0 {
+		bidHistoryLimit = 100 // Default fallback
+	}
+	if len(history) > bidHistoryLimit {
+		history = history[len(history)-bidHistoryLimit:]
 	}
 	
 	// Store updated history
@@ -1428,12 +1463,15 @@ func (k Keeper) TransitionAuctionPhase(ctx sdk.Context, height uint64) error {
 }
 
 // CleanupOldAuctions removes old completed auctions to prevent storage bloat
-// Keeps only the last N completed auctions for history (default: 100 blocks)
+// Keeps only the last N completed auctions for history (configurable)
 // According to whitepaper: auctions are per-block, so old ones can be safely removed
 func (k Keeper) CleanupOldAuctions(ctx sdk.Context, currentHeight uint64) error {
-	// Keep last N completed auctions for history (configurable, default 100)
-	// This means we keep auctions from the last 100 blocks
-	keepHistoryBlocks := uint64(100)
+	// Keep last N completed auctions for history (from params)
+	params := k.GetParams(ctx)
+	keepHistoryBlocks := params.AuctionHistoryBlocks
+	if keepHistoryBlocks == 0 {
+		keepHistoryBlocks = 100 // Default fallback
+	}
 	
 	// Calculate the oldest height we want to keep
 	// We keep auctions from (currentHeight - keepHistoryBlocks) to currentHeight
@@ -1477,8 +1515,6 @@ func (k Keeper) CleanupOldAuctions(ctx sdk.Context, currentHeight uint64) error 
 // ============================================================================
 
 const (
-	// BaseBlockReward is the base reward per block in micro WRT (50 WRT = 50,000,000 uwrt)
-	BaseBlockReward = 50_000_000 // 50 WRT in micro units
 	// HalvingInterval is the number of blocks between halvings (210,000 blocks)
 	HalvingInterval = 210_000
 )
@@ -1487,12 +1523,31 @@ const (
 // Formula: base_reward = BASE_BLOCK_REWARD / (2^halving_count)
 // where halving_count = floor(block_height / HALVING_INTERVAL)
 func (k Keeper) CalculateBaseReward(ctx sdk.Context, height uint64) (uint64, error) {
+	params := k.GetParams(ctx)
+	
+	// Parse base block reward from params (e.g., "50000000uwrt")
+	// Extract numeric part before "uwrt" or parse as coin
+	baseRewardStr := params.BaseBlockReward
+	if baseRewardStr == "" {
+		// Fallback to default if not set
+		baseRewardStr = "50000000uwrt"
+	}
+	
+	// Parse the amount (remove "uwrt" suffix if present)
+	baseRewardStr = strings.TrimSuffix(baseRewardStr, "uwrt")
+	baseRewardStr = strings.TrimSpace(baseRewardStr)
+	
+	baseReward, err := strconv.ParseUint(baseRewardStr, 10, 64)
+	if err != nil {
+		// Fallback to default if parsing fails
+		baseReward = 50_000_000 // 50 WRT in micro units
+	}
+	
 	// Calculate halving count
 	halvingCount := height / HalvingInterval
 
 	// Calculate reward: base_reward / (2^halving_count)
-	// Use bit shift for efficiency: 2^halving_count = 1 << halvingCount
-	reward := uint64(BaseBlockReward)
+	reward := baseReward
 	if halvingCount > 0 {
 		// Right shift by halvingCount is equivalent to dividing by 2^halvingCount
 		// But we need to be careful with large halvingCount values
@@ -1560,19 +1615,39 @@ func extractAntBalance(positionInterface interface{}) (string, error) {
 
 // CalculateMOAPenaltyMultiplier calculates the penalty multiplier based on MOA compliance
 // According to whitepaper and economic-formulas.md:
-// - >= 1.0: no penalty (1.0)
-// - 0.9-1.0: warning (1.0, but logged)
-// - 0.7-0.9: 25% penalty (0.75)
-// - 0.5-0.7: 50% penalty (0.5)
-// - < 0.5: deactivation (0.0)
-func CalculateMOAPenaltyMultiplier(moaCompliance float64) float64 {
-	if moaCompliance >= 1.0 {
+// - >= threshold_high: no penalty (1.0)
+// - >= threshold_warning: warning (1.0, but logged)
+// - >= threshold_medium: 25% penalty (0.75)
+// - >= threshold_low: 50% penalty (0.5)
+// - < threshold_low: deactivation (0.0)
+func (k Keeper) CalculateMOAPenaltyMultiplier(ctx sdk.Context, moaCompliance float64) float64 {
+	params := k.GetParams(ctx)
+	
+	// Parse thresholds from params with fallback to defaults
+	thresholdHigh, _ := strconv.ParseFloat(params.MoaPenaltyThresholdHigh, 64)
+	if thresholdHigh == 0 {
+		thresholdHigh = 1.0
+	}
+	thresholdWarning, _ := strconv.ParseFloat(params.MoaPenaltyThresholdWarning, 64)
+	if thresholdWarning == 0 {
+		thresholdWarning = 0.9
+	}
+	thresholdMedium, _ := strconv.ParseFloat(params.MoaPenaltyThresholdMedium, 64)
+	if thresholdMedium == 0 {
+		thresholdMedium = 0.7
+	}
+	thresholdLow, _ := strconv.ParseFloat(params.MoaPenaltyThresholdLow, 64)
+	if thresholdLow == 0 {
+		thresholdLow = 0.5
+	}
+	
+	if moaCompliance >= thresholdHigh {
 		return 1.0 // No penalty
-	} else if moaCompliance >= 0.9 {
+	} else if moaCompliance >= thresholdWarning {
 		return 1.0 // Warning, but no penalty
-	} else if moaCompliance >= 0.7 {
+	} else if moaCompliance >= thresholdMedium {
 		return 0.75 // 25% penalty
-	} else if moaCompliance >= 0.5 {
+	} else if moaCompliance >= thresholdLow {
 		return 0.5 // 50% penalty
 	} else {
 		return 0.0 // Deactivation, no reward
@@ -1634,7 +1709,7 @@ func (k Keeper) CalculateRewardDistribution(ctx sdk.Context, baseReward uint64, 
 		}
 
 		// Calculate penalty multiplier
-		penaltyMultiplier := CalculateMOAPenaltyMultiplier(moaCompliance)
+		penaltyMultiplier := k.CalculateMOAPenaltyMultiplier(ctx, moaCompliance)
 
 		// Calculate final reward after penalty
 		finalRewardAmount := uint64(float64(baseRewardAmount) * penaltyMultiplier)

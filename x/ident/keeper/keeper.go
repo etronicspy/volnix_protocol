@@ -368,7 +368,9 @@ func (k Keeper) GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.VerifiedAcco
 	iterator := accountStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
 		}
 	}()
 

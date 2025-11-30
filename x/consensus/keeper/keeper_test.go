@@ -477,39 +477,41 @@ func (suite *KeeperTestSuite) TestGetHalvingCount() {
 }
 
 func (suite *KeeperTestSuite) TestCalculateMOAPenaltyMultiplier() {
+	ctx := suite.ctx
+	
 	// Test perfect compliance (>= 1.0) - no penalty
-	multiplier := keeper.CalculateMOAPenaltyMultiplier(1.0)
+	multiplier := suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 1.0)
 	require.Equal(suite.T(), 1.0, multiplier)
 
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(1.5)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 1.5)
 	require.Equal(suite.T(), 1.0, multiplier)
 
 	// Test warning zone (0.9-1.0) - no penalty but warning
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.95)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.95)
 	require.Equal(suite.T(), 1.0, multiplier)
 
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.9)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.9)
 	require.Equal(suite.T(), 1.0, multiplier)
 
 	// Test 25% penalty zone (0.7-0.9)
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.8)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.8)
 	require.Equal(suite.T(), 0.75, multiplier)
 
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.7)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.7)
 	require.Equal(suite.T(), 0.75, multiplier)
 
 	// Test 50% penalty zone (0.5-0.7)
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.6)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.6)
 	require.Equal(suite.T(), 0.5, multiplier)
 
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.5)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.5)
 	require.Equal(suite.T(), 0.5, multiplier)
 
 	// Test deactivation zone (< 0.5) - no reward
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.4)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.4)
 	require.Equal(suite.T(), 0.0, multiplier)
 
-	multiplier = keeper.CalculateMOAPenaltyMultiplier(0.0)
+	multiplier = suite.keeper.CalculateMOAPenaltyMultiplier(ctx, 0.0)
 	require.Equal(suite.T(), 0.0, multiplier)
 }
 
@@ -2924,7 +2926,8 @@ func (suite *KeeperTestSuite) TestCalculateBlockTime_ValidAnt() {
 func (suite *KeeperTestSuite) TestCalculateBaseReward_ZeroHeight() {
 	reward, err := suite.keeper.CalculateBaseReward(suite.ctx, 0)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), uint64(keeper.BaseBlockReward), reward)
+	// BaseBlockReward is now in params, default is 50000000uwrt = 50000000
+	require.Equal(suite.T(), uint64(50_000_000), reward)
 }
 
 // TestCalculateBaseReward_FirstHalving tests CalculateBaseReward at first halving
@@ -2932,7 +2935,7 @@ func (suite *KeeperTestSuite) TestCalculateBaseReward_FirstHalving() {
 	halvingHeight := uint64(keeper.HalvingInterval)
 	reward, err := suite.keeper.CalculateBaseReward(suite.ctx, halvingHeight)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), uint64(keeper.BaseBlockReward/2), reward)
+	require.Equal(suite.T(), uint64(50_000_000/2), reward)
 }
 
 // TestCalculateBaseReward_SecondHalving tests CalculateBaseReward at second halving
@@ -2940,7 +2943,7 @@ func (suite *KeeperTestSuite) TestCalculateBaseReward_SecondHalving() {
 	halvingHeight := uint64(keeper.HalvingInterval * 2)
 	reward, err := suite.keeper.CalculateBaseReward(suite.ctx, halvingHeight)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), uint64(keeper.BaseBlockReward/4), reward)
+	require.Equal(suite.T(), uint64(50_000_000/4), reward)
 }
 
 // TestCalculateBaseReward_BetweenHalvings tests CalculateBaseReward between halvings
@@ -2948,7 +2951,8 @@ func (suite *KeeperTestSuite) TestCalculateBaseReward_BetweenHalvings() {
 	height := uint64(keeper.HalvingInterval / 2)
 	reward, err := suite.keeper.CalculateBaseReward(suite.ctx, height)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), uint64(keeper.BaseBlockReward), reward)
+	// BaseBlockReward is now in params, default is 50000000uwrt = 50000000
+	require.Equal(suite.T(), uint64(50_000_000), reward)
 }
 
 // TestBeginBlocker tests BeginBlocker functionality

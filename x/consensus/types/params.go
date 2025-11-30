@@ -31,6 +31,18 @@ func (p *ConsensusParams) ParamSetPairs() paramtypes.ParamSetPairs {
 		paramtypes.NewParamSetPair(KeyBlockCreatorSelectionRounds, &p.BlockCreatorSelectionRounds, validateBlockCreatorSelectionRounds),
 		paramtypes.NewParamSetPair(KeyActivityDecayRate, &p.ActivityDecayRate, validateActivityDecayRate),
 		paramtypes.NewParamSetPair(KeyMoaPenaltyRate, &p.MoaPenaltyRate, validateMoaPenaltyRate),
+		paramtypes.NewParamSetPair(KeyBaseBlockReward, &p.BaseBlockReward, validateBaseBlockReward),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdHigh, &p.MoaPenaltyThresholdHigh, validateMoaPenaltyThreshold),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdWarning, &p.MoaPenaltyThresholdWarning, validateMoaPenaltyThreshold),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdMedium, &p.MoaPenaltyThresholdMedium, validateMoaPenaltyThreshold),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdLow, &p.MoaPenaltyThresholdLow, validateMoaPenaltyThreshold),
+		paramtypes.NewParamSetPair(KeyActivityFactorHigh, &p.ActivityFactorHigh, validateActivityFactor),
+		paramtypes.NewParamSetPair(KeyActivityFactorMedium, &p.ActivityFactorMedium, validateActivityFactor),
+		paramtypes.NewParamSetPair(KeyActivityFactorNormal, &p.ActivityFactorNormal, validateActivityFactor),
+		paramtypes.NewParamSetPair(KeyAverageBlockTimeWindowSize, &p.AverageBlockTimeWindowSize, validateUint64),
+		paramtypes.NewParamSetPair(KeyBidHistoryLimit, &p.BidHistoryLimit, validateUint64),
+		paramtypes.NewParamSetPair(KeyAuctionHistoryBlocks, &p.AuctionHistoryBlocks, validateUint64),
+		paramtypes.NewParamSetPair(KeyRapidBidLimit, &p.RapidBidLimit, validateUint64),
 	}
 }
 

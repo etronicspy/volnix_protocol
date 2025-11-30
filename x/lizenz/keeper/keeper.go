@@ -641,7 +641,9 @@ func (k Keeper) GetAllDeactivatingLizenz(ctx sdk.Context) ([]*lizenzv1.Deactivat
 	iterator := lizenzStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
 		}
 	}()
 
@@ -723,7 +725,9 @@ func (k Keeper) GetAllMOAStatus(ctx sdk.Context) ([]*lizenzv1.MOAStatus, error) 
 	iterator := statusStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
 		}
 	}()
 

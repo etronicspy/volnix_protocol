@@ -176,12 +176,14 @@ func (ms *MonitoringService) getConsensusMetrics() map[string]interface{} {
 		"next_halving_height":  0,
 	}
 
-	// In production, would get actual metrics from consensus keeper
-	// For now, return mock data
-	metrics["total_validators"] = 10
-	metrics["active_validators"] = 8
-	metrics["total_burned_tokens"] = 50000
-	metrics["total_weight"] = 75000
+	// TODO: Get actual metrics from consensus keeper via context
+	// For now, return zero values - real implementation should query keeper
+	// Example: consensusKeeper := ms.app.GetConsensusKeeper()
+	//          validators := consensusKeeper.GetAllValidators(ctx)
+	metrics["total_validators"] = 0
+	metrics["active_validators"] = 0
+	metrics["total_burned_tokens"] = 0
+	metrics["total_weight"] = 0
 
 	return metrics
 }
@@ -198,14 +200,16 @@ func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 		"avg_price":        0,
 	}
 
-	// In production, would get actual metrics from anteil keeper
-	// For now, return mock data
-	metrics["total_orders"] = 1250
-	metrics["active_orders"] = 45
-	metrics["completed_orders"] = 1205
-	metrics["volume_24h"] = 125000
-	metrics["total_volume"] = 2500000
-	metrics["active_auctions"] = 3
+	// TODO: Get actual metrics from anteil keeper via context
+	// For now, return zero values - real implementation should query keeper
+	// Example: anteilKeeper := ms.app.GetAnteilKeeper()
+	//          orders, _ := anteilKeeper.GetAllOrders(ctx)
+	metrics["total_orders"] = 0
+	metrics["active_orders"] = 0
+	metrics["completed_orders"] = 0
+	metrics["volume_24h"] = 0
+	metrics["total_volume"] = 0
+	metrics["active_auctions"] = 0
 
 	return metrics
 }
@@ -220,19 +224,25 @@ func (ms *MonitoringService) getIdentityMetrics() map[string]interface{} {
 		"verification_success_rate": 0.0,
 	}
 
-	// In production, would get actual metrics from ident keeper
-	// For now, return mock data
-	metrics["verified_accounts"] = 850
-	metrics["pending_verifications"] = 25
-	metrics["total_accounts"] = 875
-	metrics["role_migrations"] = 12
-	metrics["verification_success_rate"] = 0.97
+	// TODO: Get actual metrics from ident keeper via context
+	// For now, return zero values - real implementation should query keeper
+	// Example: identKeeper := ms.app.GetIdentKeeper()
+	//          accounts, _ := identKeeper.GetAllVerifiedAccounts(ctx)
+	metrics["verified_accounts"] = 0
+	metrics["pending_verifications"] = 0
+	metrics["total_accounts"] = 0
+	metrics["role_migrations"] = 0
+	metrics["verification_success_rate"] = 0.0
 
 	return metrics
 }
 
 // getValidatorCount gets the current validator count
 func (ms *MonitoringService) getValidatorCount() int {
-	// In production, would get from consensus keeper
-	return 10
+	// TODO: Get actual validator count from consensus keeper via context
+	// For now, return zero - real implementation should query keeper
+	// Example: consensusKeeper := ms.app.GetConsensusKeeper()
+	//          validators := consensusKeeper.GetAllValidators(ctx)
+	//          return len(validators)
+	return 0
 }

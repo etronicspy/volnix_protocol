@@ -66,6 +66,22 @@ message Params {
   uint64 block_creator_selection_rounds = 6;
   string activity_decay_rate = 7;
   string moa_penalty_rate = 8;
+  // Base block reward in micro WRT (e.g., "50000000uwrt" for 50 WRT)
+  string base_block_reward = 9;
+  // MOA penalty thresholds (0.0 to 1.0)
+  string moa_penalty_threshold_high = 10;   // >= 1.0: no penalty
+  string moa_penalty_threshold_warning = 11; // >= 0.9: warning
+  string moa_penalty_threshold_medium = 12;  // >= 0.7: 25% penalty
+  string moa_penalty_threshold_low = 13;     // >= 0.5: 50% penalty
+  // Activity factors for dynamic block time (0.0 to 1.0)
+  string activity_factor_high = 14;    // High activity: faster blocks
+  string activity_factor_medium = 15;  // Medium activity: moderate speed
+  string activity_factor_normal = 16;  // Normal activity: normal speed
+  // History limits for consensus operations
+  uint64 average_block_time_window_size = 17; // Window size for average block time calculation (default: 1000)
+  uint64 bid_history_limit = 18;              // Maximum number of bid history entries per validator (default: 100)
+  uint64 auction_history_blocks = 19;         // Number of blocks to keep auction history (default: 100)
+  uint64 rapid_bid_limit = 20;                // Maximum rapid bids allowed (default: 5)
 }
 
 // GenesisState moved to genesis.proto to avoid duplication

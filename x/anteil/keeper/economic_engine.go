@@ -373,26 +373,47 @@ func (ee *EconomicEngine) calculateCurrentMarketPrice(ctx sdk.Context) (*MarketM
 
 // createMarketMakingOrders creates market making orders
 func (ee *EconomicEngine) createMarketMakingOrders(ctx sdk.Context, marketPrice float64) error {
+	// Get market making parameters
+	params := ee.keeper.GetParams(ctx)
+	
+	// Parse buy discount (default: 0.99 = 1% below market)
+	buyDiscount, err := strconv.ParseFloat(params.MarketMakingBuyDiscount, 64)
+	if err != nil || buyDiscount <= 0 {
+		buyDiscount = 0.99 // Default fallback
+	}
+	
+	// Parse sell premium (default: 1.01 = 1% above market)
+	sellPremium, err := strconv.ParseFloat(params.MarketMakingSellPremium, 64)
+	if err != nil || sellPremium <= 0 {
+		sellPremium = 1.01 // Default fallback
+	}
+	
+	// Get order size (default: "1000.0")
+	orderSize := params.MarketMakingOrderSize
+	if orderSize == "" {
+		orderSize = "1000.0" // Default fallback
+	}
+	
 	// Create buy order slightly below market price
-	buyPrice := marketPrice * 0.99 // 1% below market
+	buyPrice := marketPrice * buyDiscount
 	buyOrder := &anteilv1.Order{
 		OrderId:   fmt.Sprintf("mm_buy_%d", ctx.BlockTime().Unix()),
 		Owner:     "market_maker_system",
 		OrderType: anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide: anteilv1.OrderSide_ORDER_SIDE_BUY,
-		AntAmount: "1000.0",
+		AntAmount: orderSize,
 		Price:     fmt.Sprintf("%.6f", buyPrice),
 		Status:    anteilv1.OrderStatus_ORDER_STATUS_OPEN,
 	}
 
 	// Create sell order slightly above market price
-	sellPrice := marketPrice * 1.01 // 1% above market
+	sellPrice := marketPrice * sellPremium
 	sellOrder := &anteilv1.Order{
 		OrderId:   fmt.Sprintf("mm_sell_%d", ctx.BlockTime().Unix()),
 		Owner:     "market_maker_system",
 		OrderType: anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide: anteilv1.OrderSide_ORDER_SIDE_SELL,
-		AntAmount: "1000.0",
+		AntAmount: orderSize,
 		Price:     fmt.Sprintf("%.6f", sellPrice),
 		Status:    anteilv1.OrderStatus_ORDER_STATUS_OPEN,
 	}

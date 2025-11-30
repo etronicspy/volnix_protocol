@@ -538,7 +538,9 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// Register Msg/Query services
 	configurator := module.NewConfigurator(encoding.Codec, bapp.MsgServiceRouter(), bapp.GRPCQueryRouter())
 	if err := mm.RegisterServices(configurator); err != nil {
-		panic(err)
+		// Log critical error before panicking - this is a fatal initialization error
+		logger.Error("CRITICAL: Failed to register module services", "error", err)
+		panic(fmt.Errorf("failed to register module services: %w", err))
 	}
 
 	// IMPROVED: Use AnteHandler with rate limiting support
@@ -603,7 +605,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			govGenState := governance.DefaultGenesis()
 			govGenBz, err := json.Marshal(govGenState)
 			if err != nil {
-				panic(fmt.Errorf("failed to marshal governance genesis: %w", err))
+				return nil, fmt.Errorf("failed to marshal governance genesis: %w", err)
 			}
 			genesisState[governancetypes.ModuleName] = govGenBz
 		}

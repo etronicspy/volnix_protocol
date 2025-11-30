@@ -457,7 +457,9 @@ func (k Keeper) GetAllAuctions(ctx sdk.Context) ([]*anteilv1.Auction, error) {
 	iterator := auctionStore.Iterator(nil, nil)
 	defer func() {
 		if err := iterator.Close(); err != nil {
-			panic(fmt.Sprintf("failed to close iterator: %v", err))
+			// Log error instead of panicking - iterator close failures are non-critical
+			// but should be logged for debugging
+			ctx.Logger().Error("failed to close iterator", "error", err)
 		}
 	}()
 

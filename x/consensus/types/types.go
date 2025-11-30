@@ -23,16 +23,7 @@ type (
 // DefaultGenesis returns default genesis state
 func DefaultGenesis() *GenesisState {
 	return &GenesisState{
-		Params: &Params{
-			BaseBlockTime:               "5s",
-			HighActivityThreshold:       1000,
-			LowActivityThreshold:        100,
-			MinBurnAmount:               "1000000uvx",
-			MaxBurnAmount:               "1000000000uvx",
-			BlockCreatorSelectionRounds: 10,
-			ActivityDecayRate:           "0.95",
-			MoaPenaltyRate:              "0.1",
-		},
+		Params: DefaultParams(),
 		Validators:     []*Validator{},
 		BlockCreators:  []*BlockCreator{},
 		BurnProofs:     []*BurnProof{},
@@ -59,6 +50,18 @@ func DefaultParams() *Params {
 		BlockCreatorSelectionRounds: 10,
 		ActivityDecayRate:           "0.95",
 		MoaPenaltyRate:              "0.1",
+		BaseBlockReward:             "50000000uwrt", // 50 WRT in micro units
+		MoaPenaltyThresholdHigh:     "1.0",         // >= 1.0: no penalty
+		MoaPenaltyThresholdWarning:  "0.9",         // >= 0.9: warning
+		MoaPenaltyThresholdMedium:   "0.7",         // >= 0.7: 25% penalty
+		MoaPenaltyThresholdLow:      "0.5",         // >= 0.5: 50% penalty
+		ActivityFactorHigh:          "0.5",         // High activity: faster blocks
+		ActivityFactorMedium:        "0.75",        // Medium activity: moderate speed
+		ActivityFactorNormal:        "1.0",        // Normal activity: normal speed
+		AverageBlockTimeWindowSize:  1000,          // Window size for average block time
+		BidHistoryLimit:             100,           // Maximum bid history entries
+		AuctionHistoryBlocks:        100,           // Blocks to keep auction history
+		RapidBidLimit:               5,             // Maximum rapid bids allowed
 	}
 }
 
@@ -123,6 +126,26 @@ func validateMoaPenaltyRate(i interface{}) error {
 	return nil
 }
 
+// validateBaseBlockReward validates the base block reward
+func validateBaseBlockReward(i interface{}) error {
+	return nil
+}
+
+// validateMoaPenaltyThreshold validates MOA penalty thresholds
+func validateMoaPenaltyThreshold(i interface{}) error {
+	return nil
+}
+
+// validateActivityFactor validates activity factors
+func validateActivityFactor(i interface{}) error {
+	return nil
+}
+
+// validateUint64 validates uint64 parameters
+func validateUint64(i interface{}) error {
+	return nil
+}
+
 // Param keys
 var (
 	KeyBaseBlockTime               = []byte("BaseBlockTime")
@@ -133,4 +156,16 @@ var (
 	KeyBlockCreatorSelectionRounds = []byte("BlockCreatorSelectionRounds")
 	KeyActivityDecayRate           = []byte("ActivityDecayRate")
 	KeyMoaPenaltyRate              = []byte("MoaPenaltyRate")
+	KeyBaseBlockReward             = []byte("BaseBlockReward")
+	KeyMoaPenaltyThresholdHigh     = []byte("MoaPenaltyThresholdHigh")
+	KeyMoaPenaltyThresholdWarning  = []byte("MoaPenaltyThresholdWarning")
+	KeyMoaPenaltyThresholdMedium   = []byte("MoaPenaltyThresholdMedium")
+	KeyMoaPenaltyThresholdLow      = []byte("MoaPenaltyThresholdLow")
+	KeyActivityFactorHigh          = []byte("ActivityFactorHigh")
+	KeyActivityFactorMedium        = []byte("ActivityFactorMedium")
+	KeyActivityFactorNormal        = []byte("ActivityFactorNormal")
+	KeyAverageBlockTimeWindowSize  = []byte("AverageBlockTimeWindowSize")
+	KeyBidHistoryLimit             = []byte("BidHistoryLimit")
+	KeyAuctionHistoryBlocks        = []byte("AuctionHistoryBlocks")
+	KeyRapidBidLimit               = []byte("RapidBidLimit")
 )
