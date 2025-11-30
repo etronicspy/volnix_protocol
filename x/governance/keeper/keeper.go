@@ -1,10 +1,8 @@
 package keeper
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 
 	"cosmossdk.io/store/prefix"
 	storetypes "cosmossdk.io/store/types"
@@ -13,73 +11,20 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	// TODO: Uncomment after proto generation
-	// governancev1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1"
+	governancev1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/governance/types"
 )
 
-// Temporary types until proto is generated
-// These will be replaced with proto types after buf generate
-type Proposal struct {
-	ProposalId       uint64
-	Proposer         string
-	ProposalType     int32
-	Title            string
-	Description      string
-	Status           int32
-	SubmitTime       *timestamppb.Timestamp
-	VotingStartTime  *timestamppb.Timestamp
-	VotingPeriod     *time.Duration
-	VotingEndTime    *timestamppb.Timestamp
-	ExecutionTime    *timestamppb.Timestamp
-	TimelockPeriod   *time.Duration
-	YesVotes         string
-	NoVotes          string
-	AbstainVotes     string
-	TotalVotes       string
-	ParameterChanges []ParameterChange
-}
-
-type ParameterChange struct {
-	Module      string
-	Parameter   string
-	OldValue    string
-	NewValue    string
-	Description string
-}
-
-type Vote struct {
-	ProposalId  uint64
-	Voter       string
-	Option      int32
-	VotingPower string
-	VoteTime    *timestamppb.Timestamp
-}
-
-// VoteOption constants (temporary until proto generation)
-const (
-	VOTE_OPTION_UNSPECIFIED = 0
-	VOTE_OPTION_YES         = 1
-	VOTE_OPTION_NO          = 2
-	VOTE_OPTION_ABSTAIN     = 3
-)
+// Type aliases for convenience
+type Proposal = governancev1.Proposal
+type Vote = governancev1.Vote
+type ParameterChange = governancev1.ParameterChange
 
 // WRT tokenomics constants (from whitepaper)
 const (
 	// TotalWRTSupply is the total supply of WRT tokens
 	// According to whitepaper: 21,000,000 WRT (similar to Bitcoin)
 	TotalWRTSupply = uint64(21000000000000) // 21M WRT in micro units (uwrt)
-)
-
-// ProposalStatus constants (temporary until proto generation)
-const (
-	PROPOSAL_STATUS_UNSPECIFIED = 0
-	PROPOSAL_STATUS_SUBMITTED   = 1
-	PROPOSAL_STATUS_VOTING      = 2
-	PROPOSAL_STATUS_PASSED      = 3
-	PROPOSAL_STATUS_EXECUTED    = 4
-	PROPOSAL_STATUS_REJECTED    = 5
-	PROPOSAL_STATUS_EXPIRED     = 6
 )
 
 // BankKeeperInterface defines the interface for interacting with bank module
@@ -175,8 +120,8 @@ func (k Keeper) SetProposal(ctx sdk.Context, proposal *Proposal) error {
 	store := ctx.KVStore(k.storeKey)
 	proposalKey := types.GetProposalKey(proposal.ProposalId)
 
-	// Use JSON encoding for temporary types (will use proto after generation)
-	proposalBz, err := json.Marshal(proposal)
+	// Use proto encoding
+	proposalBz, err := k.cdc.Marshal(proposal)
 	if err != nil {
 		return fmt.Errorf("failed to marshal proposal: %w", err)
 	}
@@ -196,7 +141,7 @@ func (k Keeper) GetProposal(ctx sdk.Context, proposalID uint64) (*Proposal, erro
 	}
 
 	var proposal Proposal
-	if err := json.Unmarshal(bz, &proposal); err != nil {
+	if err := k.cdc.Unmarshal(bz, &proposal); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal proposal: %w", err)
 	}
 
@@ -214,7 +159,7 @@ func (k Keeper) GetAllProposals(ctx sdk.Context) ([]*Proposal, error) {
 
 	for ; iterator.Valid(); iterator.Next() {
 		var proposal Proposal
-		if err := json.Unmarshal(iterator.Value(), &proposal); err != nil {
+		if err := k.cdc.Unmarshal(iterator.Value(), &proposal); err != nil {
 			continue // Skip invalid proposals
 		}
 		proposals = append(proposals, &proposal)
@@ -228,8 +173,8 @@ func (k Keeper) SetVote(ctx sdk.Context, vote *Vote) error {
 	store := ctx.KVStore(k.storeKey)
 	voteKey := types.GetVoteKey(vote.ProposalId, vote.Voter)
 
-	// Use JSON encoding for temporary types (will use proto after generation)
-	voteBz, err := json.Marshal(vote)
+	// Use proto encoding
+	voteBz, err := k.cdc.Marshal(vote)
 	if err != nil {
 		return fmt.Errorf("failed to marshal vote: %w", err)
 	}
@@ -249,7 +194,7 @@ func (k Keeper) GetVote(ctx sdk.Context, proposalID uint64, voter string) (*Vote
 	}
 
 	var vote Vote
-	if err := json.Unmarshal(bz, &vote); err != nil {
+	if err := k.cdc.Unmarshal(bz, &vote); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal vote: %w", err)
 	}
 
@@ -267,7 +212,7 @@ func (k Keeper) GetVotes(ctx sdk.Context, proposalID uint64) ([]*Vote, error) {
 
 	for ; iterator.Valid(); iterator.Next() {
 		var vote Vote
-		if err := json.Unmarshal(iterator.Value(), &vote); err != nil {
+		if err := k.cdc.Unmarshal(iterator.Value(), &vote); err != nil {
 			continue // Skip invalid votes
 		}
 		if vote.ProposalId == proposalID {
@@ -347,11 +292,11 @@ func (k Keeper) TallyVotes(ctx sdk.Context, proposalID uint64) error {
 		}
 
 		switch vote.Option {
-		case VOTE_OPTION_YES:
+		case governancev1.VoteOption_VOTE_OPTION_YES:
 			yesVotes += votingPower
-		case VOTE_OPTION_NO:
+		case governancev1.VoteOption_VOTE_OPTION_NO:
 			noVotes += votingPower
-		case VOTE_OPTION_ABSTAIN:
+		case governancev1.VoteOption_VOTE_OPTION_ABSTAIN:
 			abstainVotes += votingPower
 		}
 	}
@@ -367,12 +312,12 @@ func (k Keeper) TallyVotes(ctx sdk.Context, proposalID uint64) error {
 	// Check if proposal passed
 	params := k.GetParams(ctx)
 	if k.isProposalPassed(ctx, proposal, params) {
-		proposal.Status = PROPOSAL_STATUS_PASSED
+		proposal.Status = governancev1.ProposalStatus_PROPOSAL_STATUS_PASSED
 		// Set execution time (after timelock)
 		executionTime := ctx.BlockTime().Add(params.TimelockPeriod)
 		proposal.ExecutionTime = timestamppb.New(executionTime)
 	} else {
-		proposal.Status = PROPOSAL_STATUS_REJECTED
+		proposal.Status = governancev1.ProposalStatus_PROPOSAL_STATUS_REJECTED
 	}
 
 	return k.SetProposal(ctx, proposal)
@@ -413,7 +358,7 @@ func (k Keeper) CanExecuteProposal(ctx sdk.Context, proposalID uint64) (bool, er
 		return false, err
 	}
 
-	if proposal.Status != PROPOSAL_STATUS_PASSED {
+	if proposal.Status != governancev1.ProposalStatus_PROPOSAL_STATUS_PASSED {
 		return false, types.ErrProposalNotPassed
 	}
 

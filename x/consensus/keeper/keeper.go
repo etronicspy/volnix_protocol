@@ -228,6 +228,21 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 			}
 
 			k.SetBlockCreator(ctx, blockCreator)
+			
+			// Emit event for block creator selection
+			weight := "0"
+			if weightStr, err := k.GetValidatorWeight(ctx, blockCreator.Validator); err == nil {
+				weight = weightStr
+			}
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					types.EventTypeBlockCreatorSelected,
+					sdk.NewAttribute(types.AttributeKeyBlockCreator, blockCreator.Validator),
+					sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", height)),
+					sdk.NewAttribute(types.AttributeKeyPower, weight),
+				),
+			)
+			
 			return blockCreator, nil
 		}
 	}
@@ -244,6 +259,22 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 	}
 
 	k.SetBlockCreator(ctx, blockCreator)
+	
+	// Emit event for block creator selection
+	// Get validator weight if available
+	weight := "0"
+	if weightStr, err := k.GetValidatorWeight(ctx, blockCreator.Validator); err == nil {
+		weight = weightStr
+	}
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeBlockCreatorSelected,
+			sdk.NewAttribute(types.AttributeKeyBlockCreator, blockCreator.Validator),
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", height)),
+			sdk.NewAttribute(types.AttributeKeyPower, weight),
+		),
+	)
+	
 	return blockCreator, nil
 }
 
@@ -985,7 +1016,22 @@ func (k Keeper) CommitBid(ctx sdk.Context, validator, commitHash string, height 
 
 	auction.Commits = append(auction.Commits, encryptedBid)
 
-	return k.SetBlindAuction(ctx, auction)
+	if err := k.SetBlindAuction(ctx, auction); err != nil {
+		return err
+	}
+
+	// Emit event for bid commit
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeBidCommitted,
+			sdk.NewAttribute(types.AttributeKeyValidator, validator),
+			sdk.NewAttribute(types.AttributeKeyCommitHash, commitHash),
+			sdk.NewAttribute(types.AttributeKeyAuctionHeight, fmt.Sprintf("%d", height)),
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+		),
+	)
+
+	return nil
 }
 
 // ValidateAuctionBid validates a bid to prevent manipulation
@@ -1142,6 +1188,18 @@ func (k Keeper) RevealBid(ctx sdk.Context, validator, nonce, bidAmount string, h
 	// Record bid in history for manipulation detection
 	k.RecordBidHistory(ctx, validator, bidAmount)
 
+	// Emit event for bid reveal
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeBidRevealed,
+			sdk.NewAttribute(types.AttributeKeyValidator, validator),
+			sdk.NewAttribute(types.AttributeKeyBidAmount, bidAmount),
+			sdk.NewAttribute(types.AttributeKeyNonce, nonce),
+			sdk.NewAttribute(types.AttributeKeyAuctionHeight, fmt.Sprintf("%d", height)),
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+		),
+	)
+
 	// Check ANT balance if anteil keeper is available
 	// According to whitepaper: validators must have sufficient ANT to bid
 	if k.anteilKeeper != nil {
@@ -1245,6 +1303,18 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 									ctx.Logger().Error("failed to burn ANT from winner", "error", err, "winner", winnerValidator, "amount", winningBid)
 								} else {
 									ctx.Logger().Info("ANT burned from auction winner", "winner", winnerValidator, "amount", winningBid, "new_balance", newBalance)
+									
+									// Emit burn event for tracking
+									ctx.EventManager().EmitEvent(
+										sdk.NewEvent(
+											types.EventTypeBurnExecuted,
+											sdk.NewAttribute(types.AttributeKeyValidator, winnerValidator),
+											sdk.NewAttribute(types.AttributeKeyBurnAmount, winningBid),
+											sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", height)),
+											sdk.NewAttribute(types.AttributeKeyNewBalance, fmt.Sprintf("%d", newBalance)),
+											sdk.NewAttribute(types.AttributeKeyAuctionWinner, "true"),
+										),
+									)
 								}
 							}
 						}
@@ -1300,6 +1370,19 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 							ctx.Logger().Error("failed to burn ANT from winner (fallback)", "error", err, "winner", winnerValidator, "amount", winningBid)
 						} else {
 							ctx.Logger().Info("ANT burned from auction winner (fallback)", "winner", winnerValidator, "amount", winningBid, "new_balance", newBalance)
+							
+							// Emit burn event for tracking
+							ctx.EventManager().EmitEvent(
+								sdk.NewEvent(
+									types.EventTypeBurnExecuted,
+									sdk.NewAttribute(types.AttributeKeyValidator, winnerValidator),
+									sdk.NewAttribute(types.AttributeKeyBurnAmount, winningBid),
+									sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", height)),
+									sdk.NewAttribute(types.AttributeKeyNewBalance, fmt.Sprintf("%d", newBalance)),
+									sdk.NewAttribute(types.AttributeKeyAuctionWinner, "true"),
+									sdk.NewAttribute("fallback", "true"),
+								),
+							)
 						}
 					}
 				}
@@ -1701,6 +1784,19 @@ func (k Keeper) DistributeBaseRewards(ctx sdk.Context, height uint64) error {
 				"validator", reward.Validator,
 				"amount", reward.FinalRewardAmount,
 				"height", height)
+			
+			// Emit reward distribution event
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					types.EventTypeRewardDistributed,
+					sdk.NewAttribute(types.AttributeKeyValidator, reward.Validator),
+					sdk.NewAttribute(types.AttributeKeyRewardAmount, fmt.Sprintf("%d", reward.FinalRewardAmount)),
+					sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", height)),
+					sdk.NewAttribute(types.AttributeKeyRewardShare, fmt.Sprintf("%.6f", reward.RewardShare)),
+					sdk.NewAttribute(types.AttributeKeyMOACompliance, fmt.Sprintf("%.2f", reward.MOACompliance)),
+					sdk.NewAttribute(types.AttributeKeyPenaltyMultiplier, fmt.Sprintf("%.2f", reward.PenaltyMultiplier)),
+				),
+			)
 		}
 	} else {
 		ctx.Logger().Info("bank keeper not set, rewards calculated but not sent", "height", height)

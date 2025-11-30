@@ -24,6 +24,13 @@ alwaysApply: true
 - Structure: `infrastructure/docker/`, `infrastructure/monitoring/`, `infrastructure/grafana/`
 - Referenced in `Dockerfile` and `docker-compose.yml`
 
+## Backend Directory
+- All backend services and API servers go to `backend/`: REST API servers, gRPC gateways, microservices, background workers
+- Structure: `backend/api/`, `backend/services/`, `backend/workers/`, `backend/utils/`
+- Backend services are separate from blockchain node (`cmd/volnixd/`) and application code (`app/`)
+- Examples: REST API wrapper, webhook services, indexing services, external API integrations
+- Each service should have its own subdirectory with `README.md` and configuration files
+
 ## Non-Source Files (MUST be in .gitignore)
 - Check `.gitignore` BEFORE creating non-source files
 - If pattern exists → safe to create, if not → add to `.gitignore` first
@@ -39,6 +46,7 @@ alwaysApply: true
 ## Project Structure
 - Root: essential project files only
 - Source code: `app/`, `cmd/`, `x/`, `proto/volnix/`, `tests/`
+- Backend services: `backend/` (committed, separate services from blockchain node)
 - Config/scripts: `config/`, `scripts/`, `docs/`, `.cursor/`
 - Infrastructure: `infrastructure/` (committed, required for deployment)
 - Test artifacts: `testnet/` (ignored)

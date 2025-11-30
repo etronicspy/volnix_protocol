@@ -17,6 +17,7 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	"github.com/volnix-protocol/volnix-protocol/x/governance/types"
+	governancev1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1"
 )
 
 type ParameterApplierTestSuite struct {
@@ -49,7 +50,7 @@ func TestParameterApplierTestSuite(t *testing.T) {
 
 func (suite *ParameterApplierTestSuite) TestValidateParameterChange() {
 	// Test valid parameter change
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "voting_period",
 		OldValue:  "24h",
@@ -59,7 +60,7 @@ func (suite *ParameterApplierTestSuite) TestValidateParameterChange() {
 	require.NoError(suite.T(), err)
 
 	// Test constitutional parameter (should fail)
-	change = ParameterChange{
+	change = &governancev1.ParameterChange{
 		Module:    "consensus",
 		Parameter: "total_supply", // Not governable
 		OldValue:  "1000000",
@@ -71,7 +72,7 @@ func (suite *ParameterApplierTestSuite) TestValidateParameterChange() {
 }
 
 func (suite *ParameterApplierTestSuite) TestValidateParameterChange_EmptyModule() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "",
 		Parameter: "voting_period",
 		NewValue:  "48h",
@@ -86,7 +87,7 @@ func (suite *ParameterApplierTestSuite) TestValidateParameterChange_EmptyModule(
 }
 
 func (suite *ParameterApplierTestSuite) TestValidateParameterChange_EmptyParameter() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "",
 		NewValue:  "48h",
@@ -101,7 +102,7 @@ func (suite *ParameterApplierTestSuite) TestValidateParameterChange_EmptyParamet
 }
 
 func (suite *ParameterApplierTestSuite) TestValidateParameterChange_EmptyValue() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "voting_period",
 		NewValue:  "",
@@ -112,7 +113,7 @@ func (suite *ParameterApplierTestSuite) TestValidateParameterChange_EmptyValue()
 }
 
 func (suite *ParameterApplierTestSuite) TestValidateParameterChange_InvalidDuration() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "voting_period",
 		NewValue:  "invalid_duration",
@@ -124,7 +125,7 @@ func (suite *ParameterApplierTestSuite) TestValidateParameterChange_InvalidDurat
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Governance() {
 	// Test applying governance parameter change
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "voting_period",
 		OldValue:  "24h",
@@ -141,7 +142,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Governance() {
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Constitutional() {
 	// Test trying to change constitutional parameter
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "consensus",
 		Parameter: "total_supply",
 		OldValue:  "1000000",
@@ -153,7 +154,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Constitutional(
 }
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_UnknownModule() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "unknown_module",
 		Parameter: "some_param",
 		NewValue:  "value",
@@ -168,7 +169,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_UnknownModule()
 }
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Quorum() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "quorum",
 		OldValue:  "0.5",
@@ -182,7 +183,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Quorum() {
 }
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_InvalidQuorum() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "quorum",
 		OldValue:  "0.5",
@@ -194,7 +195,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_InvalidQuorum()
 }
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Threshold() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "threshold",
 		OldValue:  "0.5",
@@ -208,7 +209,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_Threshold() {
 }
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_TimelockPeriod() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "timelock_period",
 		OldValue:  "24h",
@@ -223,7 +224,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_TimelockPeriod(
 }
 
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_MinDeposit() {
-	change := ParameterChange{
+	change := &governancev1.ParameterChange{
 		Module:    "governance",
 		Parameter: "min_deposit",
 		OldValue:  "1000000",

@@ -266,6 +266,19 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 	// The important thing is that the source account is deleted
 }
 
+func (suite *MsgServerTestSuite) TestRegisterVerificationProvider() {
+	// Test valid provider registration
+	// This is a stub implementation, so we just test that it doesn't error
+	msg := &identv1.MsgRegisterVerificationProvider{}
+
+	resp, err := suite.msgServer.RegisterVerificationProvider(suite.ctx, msg)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.True(suite.T(), resp.Success)
+	require.NotEmpty(suite.T(), resp.AccreditationHash)
+	require.Equal(suite.T(), "accreditation-123", resp.AccreditationHash)
+}
+
 func TestMsgServerTestSuite(t *testing.T) {
 	suite.Run(t, new(MsgServerTestSuite))
 }

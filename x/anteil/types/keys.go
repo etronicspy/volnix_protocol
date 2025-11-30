@@ -29,6 +29,9 @@ var (
 
 	// BidKeyPrefix defines the prefix for bid keys
 	BidKeyPrefix = []byte{0x05}
+	
+	// LastDistributionTimeKey defines the key for storing last ANT distribution time
+	LastDistributionTimeKey = []byte{0x06}
 )
 
 // GetOrderKey returns the key for an order

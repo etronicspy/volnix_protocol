@@ -12,6 +12,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
+	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/client/cli"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/keeper"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
@@ -52,9 +53,17 @@ func (ConsensusAppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config clien
 }
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the consensus module.
+// Note: In Cosmos SDK v0.53, BaseApp automatically registers routes from proto annotations
+// (google.api.http). The routes are:
+// - GET /volnix/consensus/v1/params
+// - GET /volnix/consensus/v1/validators
+// This method is required by the interface but BaseApp handles the actual registration.
 func (ConsensusAppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	_ = clientCtx
-	_ = mux
+	// BaseApp automatically registers routes from proto annotations
+	// If manual registration is needed, it would be done here using:
+	// consensusv1.RegisterQueryHandlerClient(context.Background(), mux, consensusv1.NewQueryClient(clientCtx))
+	// However, the generated code uses grpc-gateway/v2 while Cosmos SDK uses v1,
+	// so we rely on BaseApp's automatic registration from proto annotations.
 }
 
 // GetTxCmd returns the root tx command for the consensus module.
@@ -84,9 +93,8 @@ func NewConsensusAppModule(cdc codec.Codec, keeper keeper.Keeper) ConsensusAppMo
 
 // RegisterServices registers a gRPC query service to respond to the module-specific gRPC queries.
 func (am ConsensusAppModule) RegisterServices(cfg module.Configurator) {
-	// Services temporarily disabled for integration testing
-	// consensusv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
-	// consensusv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
+	consensusv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
+	consensusv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
 }
 
 // RegisterInvariants registers the consensus module invariants.

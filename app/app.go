@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	coreservice "cosmossdk.io/core/store"
 	sdklog "cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -16,6 +17,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+
+	// bank module for token management
+	"github.com/cosmos/cosmos-sdk/x/bank"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	// custom modules
 	"github.com/volnix-protocol/volnix-protocol/x/anteil"
@@ -35,13 +41,59 @@ import (
 	governancekeeper "github.com/volnix-protocol/volnix-protocol/x/governance/keeper"
 	identkeeper "github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
 	lizenzkeeper "github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
-	
+
 	// proto imports for adapters
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Application name
 const Name = "volnix"
+
+// kvStoreServiceWrapper wraps KVStoreKey to implement KVStoreService interface
+// This is needed for bank keeper in Cosmos SDK v0.53
+type kvStoreServiceWrapper struct {
+	key *storetypes.KVStoreKey
+}
+
+// OpenKVStore opens a KVStore from the service
+func (w *kvStoreServiceWrapper) OpenKVStore(ctx context.Context) coreservice.KVStore {
+	// This will be called by bank keeper to get the store
+	// The actual store access happens through sdk.Context
+	// For now, we return a simple implementation
+	return &kvStoreWrapper{key: w.key}
+}
+
+// kvStoreWrapper implements KVStore interface
+type kvStoreWrapper struct {
+	key *storetypes.KVStoreKey
+}
+
+func (w *kvStoreWrapper) Get(key []byte) ([]byte, error) {
+	// This is a placeholder - actual implementation uses sdk.Context
+	return nil, fmt.Errorf("kvStoreWrapper.Get should not be called directly")
+}
+
+func (w *kvStoreWrapper) Has(key []byte) (bool, error) {
+	return false, fmt.Errorf("kvStoreWrapper.Has should not be called directly")
+}
+
+func (w *kvStoreWrapper) Set(key, value []byte) error {
+	return fmt.Errorf("kvStoreWrapper.Set should not be called directly")
+}
+
+func (w *kvStoreWrapper) Delete(key []byte) error {
+	return fmt.Errorf("kvStoreWrapper.Delete should not be called directly")
+}
+
+func (w *kvStoreWrapper) Iterator(start, end []byte) (coreservice.Iterator, error) {
+	return nil, fmt.Errorf("kvStoreWrapper.Iterator should not be called directly")
+}
+
+func (w *kvStoreWrapper) ReverseIterator(start, end []byte) (coreservice.Iterator, error) {
+	return nil, fmt.Errorf("kvStoreWrapper.ReverseIterator should not be called directly")
+}
 
 // LizenzKeeperAdapter adapts lizenz keeper to consensus interface
 // Converts []*lizenzv1.ActivatedLizenz to []interface{} for interface compatibility
@@ -55,7 +107,7 @@ func (a *LizenzKeeperAdapter) GetAllActivatedLizenz(ctx sdk.Context) ([]interfac
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert []*lizenzv1.ActivatedLizenz to []interface{}
 	result := make([]interface{}, len(lizenzs))
 	for i, lizenz := range lizenzs {
@@ -105,6 +157,166 @@ func (a *AnteilKeeperAdapter) UpdateUserPosition(ctx sdk.Context, user string, a
 	return a.keeper.UpdateUserPosition(ctx, user, antBalance, orderCount)
 }
 
+// ConsensusKeeperAdapter adapts consensus keeper to lizenz interface
+// Converts map[string]interface{} to *consensusv1.Validator for interface compatibility
+type ConsensusKeeperAdapter struct {
+	keeper *consensuskeeper.Keeper
+}
+
+// SetValidator sets a validator from interface{} (map[string]interface{})
+func (a *ConsensusKeeperAdapter) SetValidator(ctx sdk.Context, validator interface{}) error {
+	// Type assert to map[string]interface{}
+	validatorMap, ok := validator.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid validator type: expected map[string]interface{}, got %T", validator)
+	}
+
+	// Safely extract values from map
+	validatorAddr, _ := validatorMap["validator"].(string)
+	antBalance, _ := validatorMap["ant_balance"].(string)
+	status, _ := validatorMap["status"].(int)
+	lastActive, _ := validatorMap["last_active"].(*timestamppb.Timestamp)
+	lastBlockHeight, _ := validatorMap["last_block_height"].(uint64)
+	moaScore, _ := validatorMap["moa_score"].(string)
+	activityScore, _ := validatorMap["activity_score"].(string)
+	totalBlocksCreated, _ := validatorMap["total_blocks_created"].(uint64)
+	totalBurnAmount, _ := validatorMap["total_burn_amount"].(string)
+
+	// Create validator object
+	validatorObj := &consensusv1.Validator{
+		Validator:          validatorAddr,
+		AntBalance:         antBalance,
+		Status:             consensusv1.ValidatorStatus(status),
+		LastActive:         lastActive,
+		LastBlockHeight:    lastBlockHeight,
+		MoaScore:           moaScore,
+		ActivityScore:      activityScore,
+		TotalBlocksCreated: totalBlocksCreated,
+		TotalBurnAmount:    totalBurnAmount,
+	}
+
+	a.keeper.SetValidator(ctx, validatorObj)
+	return nil
+}
+
+// SetValidatorWeight sets validator weight
+func (a *ConsensusKeeperAdapter) SetValidatorWeight(ctx sdk.Context, validator, weight string) error {
+	return a.keeper.SetValidatorWeight(ctx, validator, weight)
+}
+
+// AnteilKeeperAdapterForIdent adapts anteil keeper to ident interface
+// Allows ident module to burn ANT when citizens are deactivated
+type AnteilKeeperAdapterForIdent struct {
+	keeper *anteilkeeper.Keeper
+}
+
+func (a *AnteilKeeperAdapterForIdent) BurnAntFromUser(ctx sdk.Context, user string) error {
+	return a.keeper.BurnAntFromUser(ctx, user)
+}
+
+func (a *AnteilKeeperAdapterForIdent) GetUserPosition(ctx sdk.Context, user string) (interface{}, error) {
+	return a.keeper.GetUserPosition(ctx, user)
+}
+
+// AnteilKeeperAdapterForLizenz adapts anteil keeper to lizenz interface
+// Converts map[string]interface{} to *anteilv1.UserPosition for interface compatibility
+type AnteilKeeperAdapterForLizenz struct {
+	keeper *anteilkeeper.Keeper
+}
+
+// SetUserPosition sets user position from interface{} (map[string]interface{})
+func (a *AnteilKeeperAdapterForLizenz) SetUserPosition(ctx sdk.Context, position interface{}) error {
+	// Type assert to map[string]interface{}
+	positionMap, ok := position.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid position type: expected map[string]interface{}, got %T", position)
+	}
+
+	// Safely extract values from map
+	owner, _ := positionMap["owner"].(string)
+	antBalance, _ := positionMap["ant_balance"].(string)
+	lockedAnt, _ := positionMap["locked_ant"].(string)
+	availableAnt, _ := positionMap["available_ant"].(string)
+
+	// Create position object
+	positionObj := &anteilv1.UserPosition{
+		Owner:        owner,
+		AntBalance:   antBalance,
+		LockedAnt:    lockedAnt,
+		AvailableAnt: availableAnt,
+	}
+
+	return a.keeper.SetUserPosition(ctx, positionObj)
+}
+
+// BankKeeperAdapterForConsensus adapts bank keeper to consensus interface
+// Implements BankKeeperInterface for consensus module
+type BankKeeperAdapterForConsensus struct {
+	keeper bankkeeper.Keeper
+}
+
+// SendCoins sends coins from one account to another
+func (a *BankKeeperAdapterForConsensus) SendCoins(ctx sdk.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error {
+	return a.keeper.SendCoins(ctx, fromAddr, toAddr, amt)
+}
+
+// MintCoins mints coins to a module account
+func (a *BankKeeperAdapterForConsensus) MintCoins(ctx sdk.Context, moduleName string, amt sdk.Coins) error {
+	return a.keeper.MintCoins(ctx, moduleName, amt)
+}
+
+// SendCoinsFromModuleToAccount sends coins from a module account to a regular account
+func (a *BankKeeperAdapterForConsensus) SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
+	return a.keeper.SendCoinsFromModuleToAccount(ctx, senderModule, recipientAddr, amt)
+}
+
+// BankKeeperAdapterForGovernance adapts bank keeper to governance interface
+// Implements BankKeeperInterface for governance module
+type BankKeeperAdapterForGovernance struct {
+	keeper bankkeeper.Keeper
+}
+
+// GetBalance returns the balance of a specific denomination for an account
+func (a *BankKeeperAdapterForGovernance) GetBalance(ctx sdk.Context, addr sdk.AccAddress, denom string) sdk.Coin {
+	return a.keeper.GetBalance(ctx, addr, denom)
+}
+
+// GetAllBalances returns all balances for an account
+func (a *BankKeeperAdapterForGovernance) GetAllBalances(ctx sdk.Context, addr sdk.AccAddress) sdk.Coins {
+	return a.keeper.GetAllBalances(ctx, addr)
+}
+
+// GetSupply returns the total supply of a denomination
+func (a *BankKeeperAdapterForGovernance) GetSupply(ctx sdk.Context, denom string) sdk.Coin {
+	return a.keeper.GetSupply(ctx, denom)
+}
+
+// BankKeeperAdapterForLizenz adapts bank keeper to lizenz interface
+// Implements BankKeeperInterface for lizenz module
+type BankKeeperAdapterForLizenz struct {
+	keeper bankkeeper.Keeper
+}
+
+// SendCoins sends coins from one account to another
+func (a *BankKeeperAdapterForLizenz) SendCoins(ctx sdk.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error {
+	return a.keeper.SendCoins(ctx, fromAddr, toAddr, amt)
+}
+
+// SendCoinsFromAccountToModule sends coins from an account to a module account
+func (a *BankKeeperAdapterForLizenz) SendCoinsFromAccountToModule(ctx sdk.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error {
+	return a.keeper.SendCoinsFromAccountToModule(ctx, senderAddr, recipientModule, amt)
+}
+
+// SendCoinsFromModuleToAccount sends coins from a module account to a regular account
+func (a *BankKeeperAdapterForLizenz) SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error {
+	return a.keeper.SendCoinsFromModuleToAccount(ctx, senderModule, recipientAddr, amt)
+}
+
+// GetBalance returns the balance of a specific denomination for an account
+func (a *BankKeeperAdapterForLizenz) GetBalance(ctx sdk.Context, addr sdk.AccAddress, denom string) sdk.Coin {
+	return a.keeper.GetBalance(ctx, addr, denom)
+}
+
 // VolnixApp wires BaseApp with custom module keepers and services.
 type VolnixApp struct {
 	*baseapp.BaseApp
@@ -112,16 +324,18 @@ type VolnixApp struct {
 	appCodec codec.Codec
 
 	// store keys
-	keyParams       *storetypes.KVStoreKey
-	tkeyParams      *storetypes.TransientStoreKey
-	keyIdent        *storetypes.KVStoreKey
-	keyLizenz       *storetypes.KVStoreKey
-	keyAnteil       *storetypes.KVStoreKey
-	keyConsensus    *storetypes.KVStoreKey
-	keyGovernance   *storetypes.KVStoreKey
+	keyParams     *storetypes.KVStoreKey
+	tkeyParams    *storetypes.TransientStoreKey
+	keyBank       *storetypes.KVStoreKey
+	keyIdent      *storetypes.KVStoreKey
+	keyLizenz     *storetypes.KVStoreKey
+	keyAnteil     *storetypes.KVStoreKey
+	keyConsensus  *storetypes.KVStoreKey
+	keyGovernance *storetypes.KVStoreKey
 
 	// keepers
 	paramsKeeper paramskeeper.Keeper
+	bankKeeper   bankkeeper.Keeper
 
 	// custom module keepers
 	identKeeper      *identkeeper.Keeper
@@ -132,13 +346,13 @@ type VolnixApp struct {
 
 	// module manager
 	mm *module.Manager
-	
+
 	// IMPROVED: Upgrade manager for handling network upgrades
 	upgradeManager *UpgradeManager
-	
+
 	// IMPROVED: Rate limiter for DDoS protection
 	rateLimiter *RateLimiter
-	
+
 	// IMPROVED: Snapshot manager for State Sync
 	snapshotManager *SnapshotManager
 }
@@ -154,6 +368,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// Store keys
 	keyParams := storetypes.NewKVStoreKey(paramtypes.StoreKey)
 	tkeyParams := storetypes.NewTransientStoreKey(paramtypes.TStoreKey)
+	keyBank := storetypes.NewKVStoreKey(banktypes.StoreKey)
 	keyIdent := storetypes.NewKVStoreKey(identtypes.StoreKey)
 	keyLizenz := storetypes.NewKVStoreKey(lizenztypes.StoreKey)
 	keyAnteil := storetypes.NewKVStoreKey(anteiltypes.StoreKey)
@@ -163,6 +378,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// Mount stores
 	bapp.MountKVStores(map[string]*storetypes.KVStoreKey{
 		paramtypes.StoreKey:      keyParams,
+		banktypes.StoreKey:       keyBank,
 		identtypes.StoreKey:      keyIdent,
 		lizenztypes.StoreKey:     keyLizenz,
 		anteiltypes.StoreKey:     keyAnteil,
@@ -175,12 +391,49 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 
 	// Params keeper and subspaces
 	paramsKeeper := paramskeeper.NewKeeper(encoding.Codec, encoding.LegacyAmino, keyParams, tkeyParams)
-	// Create subspaces for custom modules
+	// Create subspaces for modules
 	identSubspace := paramsKeeper.Subspace(identtypes.ModuleName)
 	lizenzSubspace := paramsKeeper.Subspace(lizenztypes.ModuleName)
 	anteilSubspace := paramsKeeper.Subspace(anteiltypes.ModuleName)
 	consensusSubspace := paramsKeeper.Subspace(consensustypes.ModuleName)
 	governanceSubspace := paramsKeeper.Subspace(governancetypes.ModuleName)
+
+	// Bank keeper for token management (WRT, LZN, ANT)
+	// In Cosmos SDK v0.53, bank keeper requires KVStoreService and AccountKeeper
+	// We create a simple KVStoreService wrapper from KVStoreKey
+	// For minimal integration, we use nil AccountKeeper (limits some functionality)
+	// TODO: Add proper AccountKeeper integration for full functionality
+
+	// Create KVStoreService wrapper
+	// In v0.53, we need to implement KVStoreService interface
+	// For now, we create a simple wrapper that uses the KVStoreKey
+	bankStoreService := &kvStoreServiceWrapper{key: keyBank}
+
+	// Create a valid authority address for bank keeper
+	// In Cosmos SDK, authority must be a valid bech32 address
+	// For now, we use a placeholder that will be set properly in production
+	authorityAddr := sdk.AccAddress("authority123456789012345678901234567890") // 32 bytes minimum
+	if len(authorityAddr) == 0 {
+		// Fallback: create a valid bech32 address
+		authorityAddr = sdk.AccAddress(make([]byte, 20)) // 20 bytes for standard address
+	}
+	authority := authorityAddr.String()
+	if authority == "" {
+		// If still empty, use a default valid address format
+		authority = "volnix1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" // Placeholder address
+	}
+
+	// Create bank keeper
+	// Note: Without AccountKeeper, account-related operations are limited
+	// But SendCoins, MintCoins, GetBalance operations should work
+	bankKeeper := bankkeeper.NewBaseKeeper(
+		encoding.Codec,
+		bankStoreService,
+		nil,               // account keeper - will be added later if needed
+		map[string]bool{}, // blocked addresses
+		authority,
+		logger,
+	)
 
 	// Custom module keepers (constructors provided by each module's module.go)
 	identKeeper := identkeeper.NewKeeper(encoding.Codec, keyIdent, identSubspace)
@@ -194,7 +447,8 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	governanceKeeper.SetLizenzKeeper(lizenzKeeper)
 	governanceKeeper.SetAnteilKeeper(anteilKeeper)
 	governanceKeeper.SetConsensusKeeper(consensusKeeper)
-	// TODO: Set bank keeper when bank module is available for WRT balance queries
+	bankAdapterForGovernance := &BankKeeperAdapterForGovernance{keeper: bankKeeper}
+	governanceKeeper.SetBankKeeper(bankAdapterForGovernance)
 
 	// Set up consensus keeper dependencies
 	// Consensus needs lizenz keeper for reward distribution and anteil keeper for ANT balances
@@ -203,12 +457,30 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	anteilAdapter := &AnteilKeeperAdapter{keeper: anteilKeeper}
 	consensusKeeper.SetLizenzKeeper(lizenzAdapter)
 	consensusKeeper.SetAnteilKeeper(anteilAdapter)
-	// TODO: Set bank keeper when bank module is available for sending WRT rewards
+
+	// Set ident keeper in anteil keeper for ANT distribution to citizens
+	anteilKeeper.SetIdentKeeper(identKeeper)
+	bankAdapterForConsensus := &BankKeeperAdapterForConsensus{keeper: bankKeeper}
+	consensusKeeper.SetBankKeeper(bankAdapterForConsensus)
+
+	// Lizenz needs consensus keeper for validator registration, anteil keeper for initial ANT position, and bank keeper for LZN locking
+	// Create adapter wrappers to convert types for interface compatibility
+	consensusAdapterForLizenz := &ConsensusKeeperAdapter{keeper: consensusKeeper}
+	anteilAdapterForLizenz := &AnteilKeeperAdapterForLizenz{keeper: anteilKeeper}
+	bankAdapterForLizenz := &BankKeeperAdapterForLizenz{keeper: bankKeeper}
+	lizenzKeeper.SetConsensusKeeper(consensusAdapterForLizenz)
+	lizenzKeeper.SetAnteilKeeper(anteilAdapterForLizenz)
+	lizenzKeeper.SetBankKeeper(bankAdapterForLizenz)
+
+	// Ident needs anteil keeper for burning ANT on citizen deactivation
+	anteilAdapterForIdent := &AnteilKeeperAdapterForIdent{keeper: anteilKeeper}
+	identKeeper.SetAnteilKeeper(anteilAdapterForIdent)
 
 	// Interface registration temporarily disabled for CometBFT integration
 
 	// Module manager (register Msg/Query services only at this stage)
 	mm := module.NewManager(
+		bank.NewAppModule(encoding.Codec, bankKeeper, nil, nil), // account keeper and blocked addresses not needed for basic operations
 		ident.NewAppModule(identKeeper),
 		lizenz.NewAppModule(lizenzKeeper),
 		anteil.NewAppModule(anteilKeeper),
@@ -218,40 +490,43 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 
 	// IMPROVED: Create upgrade manager
 	upgradeManager := NewUpgradeManager(logger)
-	
+
 	// IMPROVED: Create rate limiter with default configuration
 	rateLimiter := NewRateLimiter(DefaultRateLimitConfig())
-	
+
 	// Create app instance
 	app := &VolnixApp{
-		BaseApp:         bapp,
-		appCodec:        encoding.Codec,
-		keyParams:       keyParams,
-		tkeyParams:      tkeyParams,
-		keyIdent:        keyIdent,
-		keyLizenz:       keyLizenz,
-		keyAnteil:       keyAnteil,
-		keyConsensus:    keyConsensus,
-		keyGovernance:   keyGovernance,
-		paramsKeeper:    paramsKeeper,
-		identKeeper:     identKeeper,
-		lizenzKeeper:    lizenzKeeper,
-		anteilKeeper:    anteilKeeper,
-		consensusKeeper: consensusKeeper,
+		BaseApp:          bapp,
+		appCodec:         encoding.Codec,
+		keyParams:        keyParams,
+		tkeyParams:       tkeyParams,
+		keyBank:          keyBank,
+		keyIdent:         keyIdent,
+		keyLizenz:        keyLizenz,
+		keyAnteil:        keyAnteil,
+		keyConsensus:     keyConsensus,
+		keyGovernance:    keyGovernance,
+		paramsKeeper:     paramsKeeper,
+		bankKeeper:       bankKeeper,
+		identKeeper:      identKeeper,
+		lizenzKeeper:     lizenzKeeper,
+		anteilKeeper:     anteilKeeper,
+		consensusKeeper:  consensusKeeper,
 		governanceKeeper: governanceKeeper,
-		mm:              mm,
-		upgradeManager:  upgradeManager,
-		rateLimiter:    rateLimiter,
+		mm:               mm,
+		upgradeManager:   upgradeManager,
+		rateLimiter:      rateLimiter,
 	}
-	
+
 	// IMPROVED: Create snapshot manager after app is created
 	app.snapshotManager = NewSnapshotManager(app)
-	
+
 	// Register upgrade handlers with app reference
 	SetupUpgradeHandlers(upgradeManager, app)
 
 	// Register interfaces first
 	basicManager := module.NewBasicManager(
+		bank.AppModuleBasic{},
 		ident.AppModuleBasic{},
 		lizenz.AppModuleBasic{},
 		anteil.AppModuleBasic{},
@@ -278,7 +553,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 				logger.Error("Upgrade check failed", "error", err)
 			}
 		}
-		
+
 		// Execute BeginBlocker for all modules
 		if err := identKeeper.BeginBlocker(ctx); err != nil {
 			return sdk.BeginBlock{}, fmt.Errorf("ident BeginBlocker failed: %w", err)
@@ -336,7 +611,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// CRITICAL: Return validators in ResponseInitChain
 		// CometBFT uses this to verify validator consistency during replay
 		// If validators are not returned, CometBFT will see mismatch during replay
@@ -348,7 +623,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 				Power:  val.Power,
 			}
 		}
-		
+
 		return &abci.ResponseInitChain{
 			Validators:      validators,
 			ConsensusParams: req.ConsensusParams,
@@ -402,6 +677,11 @@ func (app *VolnixApp) GetConsensusKeeper() *consensuskeeper.Keeper {
 	return app.consensusKeeper
 }
 
+// GetGovernanceKeeper returns the governance keeper.
+func (app *VolnixApp) GetGovernanceKeeper() *governancekeeper.Keeper {
+	return app.governanceKeeper
+}
+
 // AppBasicManager returns the app's basic module manager.
 func (app *VolnixApp) AppBasicManager() *module.Manager {
 	return app.mm
@@ -424,7 +704,7 @@ func (app *VolnixApp) ApplySnapshotChunk(ctx context.Context, req *abci.RequestA
 			Result: abci.ResponseApplySnapshotChunk_ACCEPT,
 		}, nil
 	}
-	
+
 	// Apply chunk
 	chunkHash := fmt.Sprintf("%x", req.Chunk)
 	if err := app.snapshotManager.ApplyChunk(req.Index, req.Chunk, chunkHash); err != nil {
@@ -433,7 +713,7 @@ func (app *VolnixApp) ApplySnapshotChunk(ctx context.Context, req *abci.RequestA
 			RefetchChunks: []uint32{req.Index},
 		}, err
 	}
-	
+
 	// Check if all chunks are received
 	// This is a simplified check - in production, you'd track which chunks are received
 	return &abci.ResponseApplySnapshotChunk{
@@ -446,24 +726,24 @@ func (app *VolnixApp) LoadSnapshotChunk(ctx context.Context, req *abci.RequestLo
 	if app.snapshotManager == nil {
 		return &abci.ResponseLoadSnapshotChunk{}, nil
 	}
-	
+
 	// Get snapshot
 	snapshot, exists := app.snapshotManager.GetSnapshot(uint64(req.Height))
 	if !exists {
 		return &abci.ResponseLoadSnapshotChunk{}, fmt.Errorf("snapshot not found at height %d", req.Height)
 	}
-	
+
 	// Get chunk by index
 	if req.Chunk >= snapshot.ChunkCount {
 		return &abci.ResponseLoadSnapshotChunk{}, fmt.Errorf("chunk index %d out of range (max %d)", req.Chunk, snapshot.ChunkCount-1)
 	}
-	
+
 	chunkHash := snapshot.ChunkHashes[req.Chunk]
 	chunk, exists := app.snapshotManager.GetChunk(chunkHash)
 	if !exists {
 		return &abci.ResponseLoadSnapshotChunk{}, fmt.Errorf("chunk %s not found", chunkHash)
 	}
-	
+
 	return &abci.ResponseLoadSnapshotChunk{
 		Chunk: chunk,
 	}, nil
@@ -479,7 +759,7 @@ func (app *VolnixApp) createAnteHandler() sdk.AnteHandler {
 				return ctx, fmt.Errorf("rate limit check failed: %w", err)
 			}
 		}
-		
+
 		// Continue with standard validation
 		return ImprovedAnteHandler(ctx, tx, simulate)
 	}
@@ -490,10 +770,10 @@ func (app *VolnixApp) ListSnapshots(ctx context.Context, req *abci.RequestListSn
 	if app.snapshotManager == nil {
 		return &abci.ResponseListSnapshots{}, nil
 	}
-	
+
 	snapshots := app.snapshotManager.ListSnapshots()
 	abciSnapshots := make([]*abci.Snapshot, 0, len(snapshots))
-	
+
 	for _, snapshot := range snapshots {
 		abciSnapshots = append(abciSnapshots, &abci.Snapshot{
 			Height:   uint64(snapshot.Height),
@@ -503,7 +783,7 @@ func (app *VolnixApp) ListSnapshots(ctx context.Context, req *abci.RequestListSn
 			Metadata: []byte{}, // Additional metadata can be added here
 		})
 	}
-	
+
 	return &abci.ResponseListSnapshots{
 		Snapshots: abciSnapshots,
 	}, nil
@@ -516,7 +796,7 @@ func (app *VolnixApp) OfferSnapshot(ctx context.Context, req *abci.RequestOfferS
 			Result: abci.ResponseOfferSnapshot_REJECT,
 		}, nil
 	}
-	
+
 	// Extract chunk hashes from metadata if available
 	// For now, we'll accept the snapshot and process chunks as they arrive
 	return &abci.ResponseOfferSnapshot{

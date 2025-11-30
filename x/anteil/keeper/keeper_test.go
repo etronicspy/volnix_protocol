@@ -19,6 +19,7 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
@@ -1129,4 +1130,640 @@ func (suite *KeeperTestSuite) TestCreateAuction_Alias() {
 	retrieved, err := suite.keeper.GetAuction(suite.ctx, "auction1")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), auction.AuctionId, retrieved.AuctionId)
+}
+
+// Mock IdentKeeperInterface for testing
+type MockIdentKeeper struct {
+	accounts []*identv1.VerifiedAccount
+	err      error
+}
+
+func (m *MockIdentKeeper) GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.VerifiedAccount, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.accounts, nil
+}
+
+// Test DistributeAntToCitizens
+func (suite *KeeperTestSuite) TestDistributeAntToCitizens() {
+	// Create mock ident keeper with citizens
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:      "cosmos1citizen1",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IsActive:     true,
+				IdentityHash: "hash1",
+			},
+			{
+				Address:      "cosmos1citizen2",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IsActive:     true,
+				IdentityHash: "hash2",
+			},
+		},
+	}
+
+	// Set mock ident keeper
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+
+	// Set custom params for testing
+	params := suite.keeper.GetParams(suite.ctx)
+	params.CitizenAntRewardRate = "5000000" // 5 ANT in micro units
+	params.CitizenAntAccumulationLimit = "100000000" // 100 ANT limit
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Distribute ANT
+	err := suite.keeper.DistributeAntToCitizens(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify ANT was distributed to both citizens
+	position1, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "5000000", position1.AntBalance)
+
+	position2, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen2")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "5000000", position2.AntBalance)
+
+	// Check events
+	events := suite.ctx.EventManager().Events()
+	require.GreaterOrEqual(suite.T(), len(events), 2, "Should have at least 2 events")
+
+	// Find ant_distributed events
+	antDistributedCount := 0
+	for _, event := range events {
+		if event.Type == "anteil.ant_distributed" {
+			antDistributedCount++
+		}
+	}
+	require.Equal(suite.T(), 2, antDistributedCount, "Should have 2 ant_distributed events")
+}
+
+func (suite *KeeperTestSuite) TestDistributeAntToCitizens_RespectsLimit() {
+	// Create mock ident keeper with one citizen
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:      "cosmos1citizen1",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IsActive:     true,
+				IdentityHash: "hash1",
+			},
+		},
+	}
+
+	// Set mock ident keeper
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+
+	// Set custom params: reward rate 50 ANT, limit 100 ANT
+	params := suite.keeper.GetParams(suite.ctx)
+	params.CitizenAntRewardRate = "50000000" // 50 ANT
+	params.CitizenAntAccumulationLimit = "100000000" // 100 ANT limit
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Create position with balance close to limit (90 ANT)
+	position := types.NewUserPosition("cosmos1citizen1", "90000000")
+	err := suite.keeper.SetUserPosition(suite.ctx, position)
+	require.NoError(suite.T(), err)
+
+	// Distribute ANT - should cap at limit (100 ANT)
+	err = suite.keeper.DistributeAntToCitizens(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify balance is capped at limit
+	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "100000000", position.AntBalance, "Balance should be capped at limit")
+
+	// Try to distribute again - should skip (already at limit)
+	err = suite.keeper.DistributeAntToCitizens(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify balance is still at limit
+	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "100000000", position.AntBalance, "Balance should remain at limit")
+}
+
+func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
+	// Create mock ident keeper with mixed roles
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:      "cosmos1citizen",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IsActive:     true,
+				IdentityHash: "hash1",
+			},
+			{
+				Address:      "cosmos1validator",
+				Role:         identv1.Role_ROLE_VALIDATOR,
+				IsActive:     true,
+				IdentityHash: "hash2",
+			},
+			{
+				Address:      "cosmos1guest",
+				Role:         identv1.Role_ROLE_GUEST,
+				IsActive:     true,
+				IdentityHash: "hash3",
+			},
+			{
+				Address:      "cosmos1inactive",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IsActive:     false, // Inactive citizen
+				IdentityHash: "hash4",
+			},
+		},
+	}
+
+	// Set mock ident keeper
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+
+	// Set custom params
+	params := suite.keeper.GetParams(suite.ctx)
+	params.CitizenAntRewardRate = "10000000" // 10 ANT
+	params.CitizenAntAccumulationLimit = "1000000000" // 1000 ANT limit
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Distribute ANT
+	err := suite.keeper.DistributeAntToCitizens(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify only active citizen received ANT
+	position, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "10000000", position.AntBalance, "Active citizen should receive ANT")
+
+	// Verify validator did not receive ANT
+	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1validator")
+	require.Error(suite.T(), err, "Validator should not have position")
+
+	// Verify guest did not receive ANT
+	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1guest")
+	require.Error(suite.T(), err, "Guest should not have position")
+
+	// Verify inactive citizen did not receive ANT
+	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1inactive")
+	require.Error(suite.T(), err, "Inactive citizen should not have position")
+
+	// Check events - should have only 1 ant_distributed event
+	events := suite.ctx.EventManager().Events()
+	antDistributedCount := 0
+	for _, event := range events {
+		if event.Type == "anteil.ant_distributed" {
+			antDistributedCount++
+			// Verify it's for the citizen
+			for _, attr := range event.Attributes {
+				if string(attr.Key) == "citizen" {
+					require.Equal(suite.T(), "cosmos1citizen", string(attr.Value))
+				}
+			}
+		}
+	}
+	require.Equal(suite.T(), 1, antDistributedCount, "Should have exactly 1 ant_distributed event")
+}
+
+// Test BurnAntFromUser
+func (suite *KeeperTestSuite) TestBurnAntFromUser() {
+	// Create user position with ANT balance
+	position := types.NewUserPosition("cosmos1citizen1", "50000000") // 50 ANT
+	err := suite.keeper.SetUserPosition(suite.ctx, position)
+	require.NoError(suite.T(), err)
+
+	// Verify position exists with balance
+	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "50000000", position.AntBalance)
+
+	// Burn ANT
+	err = suite.keeper.BurnAntFromUser(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+
+	// Verify balance is now zero
+	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "0", position.AntBalance)
+	require.Equal(suite.T(), "0", position.AvailableAnt)
+	require.Equal(suite.T(), "0", position.LockedAnt)
+}
+
+func (suite *KeeperTestSuite) TestBurnAntFromUser_NoPosition() {
+	// Try to burn from non-existent position
+	err := suite.keeper.BurnAntFromUser(suite.ctx, "cosmos1nonexistent")
+	require.NoError(suite.T(), err) // Should not error, just return nil
+}
+
+func (suite *KeeperTestSuite) TestBurnAntFromUser_ZeroBalance() {
+	// Create position with zero balance
+	position := types.NewUserPosition("cosmos1citizen1", "0")
+	err := suite.keeper.SetUserPosition(suite.ctx, position)
+	require.NoError(suite.T(), err)
+
+	// Try to burn from zero balance
+	err = suite.keeper.BurnAntFromUser(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err) // Should not error
+
+	// Verify balance is still zero
+	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "0", position.AntBalance)
+}
+
+// TestGetLastDistributionTime tests getting the last distribution time
+func (suite *KeeperTestSuite) TestGetLastDistributionTime() {
+	// Initially, should return zero time
+	lastTime, err := suite.keeper.GetLastDistributionTime(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.True(suite.T(), lastTime.IsZero(), "Initial distribution time should be zero")
+
+	// Set a distribution time
+	testTime := time.Now()
+	err = suite.keeper.SetLastDistributionTime(suite.ctx, testTime)
+	require.NoError(suite.T(), err)
+
+	// Retrieve it
+	retrievedTime, err := suite.keeper.GetLastDistributionTime(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.False(suite.T(), retrievedTime.IsZero(), "Retrieved time should not be zero")
+	require.WithinDuration(suite.T(), testTime, retrievedTime, time.Second, "Retrieved time should match set time")
+}
+
+// TestSetLastDistributionTime tests setting the last distribution time
+func (suite *KeeperTestSuite) TestSetLastDistributionTime() {
+	// Set a distribution time
+	testTime := time.Now()
+	err := suite.keeper.SetLastDistributionTime(suite.ctx, testTime)
+	require.NoError(suite.T(), err)
+
+	// Verify it was set
+	retrievedTime, err := suite.keeper.GetLastDistributionTime(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.WithinDuration(suite.T(), testTime, retrievedTime, time.Second, "Retrieved time should match set time")
+
+	// Update to a different time
+	newTime := testTime.Add(24 * time.Hour)
+	err = suite.keeper.SetLastDistributionTime(suite.ctx, newTime)
+	require.NoError(suite.T(), err)
+
+	// Verify it was updated
+	updatedTime, err := suite.keeper.GetLastDistributionTime(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.WithinDuration(suite.T(), newTime, updatedTime, time.Second, "Updated time should match new time")
+}
+
+// TestBeginBlocker_WithAntDistribution tests BeginBlocker with ANT distribution to citizens
+func (suite *KeeperTestSuite) TestBeginBlocker_WithAntDistribution() {
+	// Set up mock ident keeper with citizens
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:     "cosmos1citizen1",
+				Role:        identv1.Role_ROLE_CITIZEN,
+				IsActive:    true,
+				IdentityHash: "hash1",
+			},
+			{
+				Address:     "cosmos1citizen2",
+				Role:        identv1.Role_ROLE_CITIZEN,
+				IsActive:    true,
+				IdentityHash: "hash2",
+			},
+		},
+	}
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+
+	// Set distribution period to a short duration for testing
+	params := suite.keeper.GetParams(suite.ctx)
+	params.CitizenAntDistributionPeriod = time.Hour // 1 hour
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Set block time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Set last distribution time to past (more than distribution period ago)
+	pastTime := currentTime.Add(-2 * time.Hour)
+	err := suite.keeper.SetLastDistributionTime(suite.ctx, pastTime)
+	require.NoError(suite.T(), err)
+
+	// Run BeginBlocker - should trigger ANT distribution
+	err = suite.keeper.BeginBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify last distribution time was updated
+	lastTime, err := suite.keeper.GetLastDistributionTime(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.WithinDuration(suite.T(), currentTime, lastTime, time.Second, "Last distribution time should be updated to current time")
+
+	// Verify citizens received ANT
+	position1, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	require.NoError(suite.T(), err)
+	require.NotEqual(suite.T(), "0", position1.AntBalance, "Citizen 1 should have received ANT")
+
+	position2, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen2")
+	require.NoError(suite.T(), err)
+	require.NotEqual(suite.T(), "0", position2.AntBalance, "Citizen 2 should have received ANT")
+}
+
+// TestBeginBlocker_WithoutAntDistribution tests BeginBlocker when distribution period hasn't passed
+func (suite *KeeperTestSuite) TestBeginBlocker_WithoutAntDistribution() {
+	// Set up mock ident keeper
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:     "cosmos1citizen1",
+				Role:        identv1.Role_ROLE_CITIZEN,
+				IsActive:    true,
+				IdentityHash: "hash1",
+			},
+		},
+	}
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+
+	// Set distribution period to a long duration
+	params := suite.keeper.GetParams(suite.ctx)
+	params.CitizenAntDistributionPeriod = 24 * time.Hour // 24 hours
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Set block time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Set last distribution time to recent (less than distribution period ago)
+	recentTime := currentTime.Add(-1 * time.Hour) // 1 hour ago
+	err := suite.keeper.SetLastDistributionTime(suite.ctx, recentTime)
+	require.NoError(suite.T(), err)
+
+	// Run BeginBlocker - should NOT trigger ANT distribution
+	err = suite.keeper.BeginBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify last distribution time was NOT updated
+	lastTime, err := suite.keeper.GetLastDistributionTime(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.WithinDuration(suite.T(), recentTime, lastTime, time.Second, "Last distribution time should not be updated")
+}
+
+// TestEndBlocker_WithOrders tests EndBlocker with orders to process
+func (suite *KeeperTestSuite) TestEndBlocker_WithOrders() {
+	// Create some orders
+	order1 := &anteilv1.Order{
+		OrderId:      "order1",
+		Owner:        "cosmos1test",
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+		AntAmount:    "1000000",
+		Price:        "1.5",
+		Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+		CreatedAt:    timestamppb.Now(),
+		IdentityHash: "hash1",
+	}
+	err := suite.keeper.SetOrder(suite.ctx, order1)
+	require.NoError(suite.T(), err)
+
+	order2 := &anteilv1.Order{
+		OrderId:      "order2",
+		Owner:        "cosmos1test2",
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
+		AntAmount:    "1000000",
+		Price:        "1.5",
+		Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+		CreatedAt:    timestamppb.Now(),
+		IdentityHash: "hash2",
+	}
+	err = suite.keeper.SetOrder(suite.ctx, order2)
+	require.NoError(suite.T(), err)
+
+	// Run EndBlocker - should process orders
+	err = suite.keeper.EndBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// EndBlocker should complete without errors
+	// (actual order matching logic is tested separately)
+}
+
+// TestEndBlocker_WithAuctions tests EndBlocker with auctions to process
+func (suite *KeeperTestSuite) TestEndBlocker_WithAuctions() {
+	// Create an auction
+	auction := &anteilv1.Auction{
+		AuctionId:    "auction1",
+		BlockHeight:  1000,
+		ReservePrice: "1000000",
+		AntAmount:    "1000000",
+		StartTime:    timestamppb.Now(),
+		EndTime:      timestamppb.New(time.Now().Add(1 * time.Hour)),
+		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
+		WinningBid:   "",
+	}
+	err := suite.keeper.SetAuction(suite.ctx, auction)
+	require.NoError(suite.T(), err)
+
+	// Run EndBlocker - should process auctions
+	err = suite.keeper.EndBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// EndBlocker should complete without errors
+	// (actual auction processing logic is tested separately)
+}
+
+// TestGetOrder_UnmarshalError tests GetOrder with invalid data in store
+func (suite *KeeperTestSuite) TestGetOrder_UnmarshalError() {
+	store := suite.ctx.KVStore(suite.storeKey)
+	orderKey := types.GetOrderKey("order1")
+	// Store invalid data
+	store.Set(orderKey, []byte("invalid data"))
+
+	// Should return error when unmarshaling fails
+	_, err := suite.keeper.GetOrder(suite.ctx, "order1")
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "failed to unmarshal")
+}
+
+// TestUpdateOrder_UnmarshalError tests UpdateOrder with invalid data
+func (suite *KeeperTestSuite) TestUpdateOrder_UnmarshalError() {
+	// First create a valid order
+	order := &anteilv1.Order{
+		OrderId:      "order1",
+		Owner:        "cosmos1test",
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
+		AntAmount:    "1000000",
+		Price:        "1.5",
+		Status:       anteilv1.OrderStatus_ORDER_STATUS_OPEN,
+		CreatedAt:    timestamppb.Now(),
+		IdentityHash: "hash1",
+	}
+	err := suite.keeper.SetOrder(suite.ctx, order)
+	require.NoError(suite.T(), err)
+
+	// Update with valid order
+	order.Price = "2.0"
+	err = suite.keeper.UpdateOrder(suite.ctx, order)
+	require.NoError(suite.T(), err)
+
+	// Verify update
+	updated, err := suite.keeper.GetOrder(suite.ctx, "order1")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "2.0", updated.Price)
+}
+
+// TestSetTrade_InvalidData tests SetTrade with various edge cases
+func (suite *KeeperTestSuite) TestSetTrade_InvalidData() {
+	// Test with duplicate trade ID
+	trade1 := &anteilv1.Trade{
+		TradeId:     "trade1",
+		BuyOrderId:  "order1",
+		SellOrderId: "order2",
+		AntAmount:   "1000000",
+		Price:       "1.5",
+		ExecutedAt:  timestamppb.Now(),
+		Buyer:       "cosmos1buyer",
+		Seller:      "cosmos1seller",
+	}
+	err := suite.keeper.SetTrade(suite.ctx, trade1)
+	require.NoError(suite.T(), err)
+
+	// Try to set the same trade again - should fail
+	err = suite.keeper.SetTrade(suite.ctx, trade1)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrTradeAlreadyExists, err)
+}
+
+// TestGetTrade_UnmarshalError tests GetTrade with invalid data in store
+func (suite *KeeperTestSuite) TestGetTrade_UnmarshalError() {
+	store := suite.ctx.KVStore(suite.storeKey)
+	tradeKey := types.GetTradeKey("trade1")
+	// Store invalid data
+	store.Set(tradeKey, []byte("invalid data"))
+
+	// Should return error when unmarshaling fails
+	_, err := suite.keeper.GetTrade(suite.ctx, "trade1")
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "failed to unmarshal")
+}
+
+// TestBeginBlocker_FirstDistribution tests BeginBlocker when it's the first distribution
+func (suite *KeeperTestSuite) TestBeginBlocker_FirstDistribution() {
+	// Set up mock ident keeper with citizens
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:     "cosmos1citizen1",
+				Role:        identv1.Role_ROLE_CITIZEN,
+				IsActive:    true,
+				IdentityHash: "hash1",
+			},
+		},
+	}
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+
+	// Set block time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Don't set last distribution time (should be zero, triggering first distribution)
+
+	// Run BeginBlocker - should trigger ANT distribution (first time)
+	err := suite.keeper.BeginBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify last distribution time was set
+	lastTime, err := suite.keeper.GetLastDistributionTime(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.False(suite.T(), lastTime.IsZero(), "Last distribution time should be set after first distribution")
+}
+
+// TestBeginBlocker_DistributionError tests BeginBlocker when distribution fails
+func (suite *KeeperTestSuite) TestBeginBlocker_DistributionError() {
+	// Set up mock ident keeper with no accounts (distribution will have no effect)
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{},
+	}
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+
+	// Set distribution period to a short duration
+	params := suite.keeper.GetParams(suite.ctx)
+	params.CitizenAntDistributionPeriod = time.Hour
+	suite.keeper.SetParams(suite.ctx, params)
+
+	// Set block time
+	currentTime := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+
+	// Set last distribution time to past
+	pastTime := currentTime.Add(-2 * time.Hour)
+	err := suite.keeper.SetLastDistributionTime(suite.ctx, pastTime)
+	require.NoError(suite.T(), err)
+
+	// Run BeginBlocker - should handle error gracefully
+	err = suite.keeper.BeginBlocker(suite.ctx)
+	// BeginBlocker should not fail even if distribution fails
+	require.NoError(suite.T(), err)
+}
+
+// TestGetAuction_UnmarshalError tests GetAuction with invalid data in store
+func (suite *KeeperTestSuite) TestGetAuction_UnmarshalError() {
+	store := suite.ctx.KVStore(suite.storeKey)
+	auctionKey := types.GetAuctionKey("auction1")
+	// Store invalid data
+	store.Set(auctionKey, []byte("invalid data"))
+
+	// Should return error when unmarshaling fails
+	_, err := suite.keeper.GetAuction(suite.ctx, "auction1")
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "failed to unmarshal")
+}
+
+// TestGetBid_UnmarshalError tests GetBid with invalid data in store
+func (suite *KeeperTestSuite) TestGetBid_UnmarshalError() {
+	// First create an auction
+	auction := &anteilv1.Auction{
+		AuctionId:    "auction1",
+		BlockHeight:  1000,
+		ReservePrice: "1000000",
+		AntAmount:    "1000000",
+		StartTime:    timestamppb.Now(),
+		EndTime:      timestamppb.New(time.Now().Add(1 * time.Hour)),
+		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
+		WinningBid:   "",
+	}
+	err := suite.keeper.SetAuction(suite.ctx, auction)
+	require.NoError(suite.T(), err)
+
+	store := suite.ctx.KVStore(suite.storeKey)
+	bidKey := types.GetBidKey("auction1", "bid1")
+	// Store invalid data
+	store.Set(bidKey, []byte("invalid data"))
+
+	// Should return error when unmarshaling fails
+	_, err = suite.keeper.GetBid(suite.ctx, "auction1", "bid1")
+	require.Error(suite.T(), err)
+	// Error message may vary, but should indicate unmarshaling failure
+	require.NotNil(suite.T(), err)
+}
+
+// TestSetTrade_Duplicate tests SetTrade with duplicate trade ID
+func (suite *KeeperTestSuite) TestSetTrade_Duplicate() {
+	trade := &anteilv1.Trade{
+		TradeId:     "trade1",
+		BuyOrderId:  "order1",
+		SellOrderId: "order2",
+		AntAmount:   "1000000",
+		Price:       "1.5",
+		ExecutedAt:  timestamppb.Now(),
+		Buyer:       "cosmos1buyer",
+		Seller:      "cosmos1seller",
+	}
+
+	// First time should succeed
+	err := suite.keeper.SetTrade(suite.ctx, trade)
+	require.NoError(suite.T(), err)
+
+	// Second time should fail
+	err = suite.keeper.SetTrade(suite.ctx, trade)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrTradeAlreadyExists, err)
 }

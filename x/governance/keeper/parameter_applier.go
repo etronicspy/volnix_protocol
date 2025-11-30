@@ -10,7 +10,7 @@ import (
 	"github.com/volnix-protocol/volnix-protocol/x/governance/types"
 )
 
-// ParameterChange is defined in keeper.go
+// ParameterChange is aliased from governancev1.ParameterChange in keeper.go
 // This file uses it for applying changes
 
 // ModuleKeeperInterface is deprecated - use specific keeper interfaces instead
@@ -22,7 +22,7 @@ type ModuleKeeperInterface interface {
 
 // ApplyParameterChange applies a parameter change to the appropriate module
 // According to whitepaper: only governable parameters can be changed
-func (k Keeper) ApplyParameterChange(ctx sdk.Context, change ParameterChange) error {
+func (k Keeper) ApplyParameterChange(ctx sdk.Context, change *ParameterChange) error {
 	// Validate that parameter is governable
 	if !types.IsGovernable(change.Module, change.Parameter) {
 		return types.ErrConstitutionalParameter
@@ -44,7 +44,7 @@ func (k Keeper) ApplyParameterChange(ctx sdk.Context, change ParameterChange) er
 }
 
 // applyLizenzParameterChange applies a parameter change to lizenz module
-func (k Keeper) applyLizenzParameterChange(ctx sdk.Context, change ParameterChange) error {
+func (k Keeper) applyLizenzParameterChange(ctx sdk.Context, change *ParameterChange) error {
 	if k.lizenzKeeper == nil {
 		return fmt.Errorf("lizenz keeper not set")
 	}
@@ -89,7 +89,7 @@ func (k Keeper) applyLizenzParameterChange(ctx sdk.Context, change ParameterChan
 }
 
 // applyAnteilParameterChange applies a parameter change to anteil module
-func (k Keeper) applyAnteilParameterChange(ctx sdk.Context, change ParameterChange) error {
+func (k Keeper) applyAnteilParameterChange(ctx sdk.Context, change *ParameterChange) error {
 	if k.anteilKeeper == nil {
 		return fmt.Errorf("anteil keeper not set")
 	}
@@ -127,7 +127,7 @@ func (k Keeper) applyAnteilParameterChange(ctx sdk.Context, change ParameterChan
 }
 
 // applyConsensusParameterChange applies a parameter change to consensus module
-func (k Keeper) applyConsensusParameterChange(ctx sdk.Context, change ParameterChange) error {
+func (k Keeper) applyConsensusParameterChange(ctx sdk.Context, change *ParameterChange) error {
 	if k.consensusKeeper == nil {
 		return fmt.Errorf("consensus keeper not set")
 	}
@@ -175,7 +175,7 @@ func (k Keeper) applyConsensusParameterChange(ctx sdk.Context, change ParameterC
 }
 
 // applyGovernanceParameterChange applies a parameter change to governance module (meta-governance)
-func (k Keeper) applyGovernanceParameterChange(ctx sdk.Context, change ParameterChange) error {
+func (k Keeper) applyGovernanceParameterChange(ctx sdk.Context, change *ParameterChange) error {
 	ctx.Logger().Info("applying governance parameter change",
 		"parameter", change.Parameter,
 		"old_value", change.OldValue,
@@ -247,7 +247,7 @@ func (k Keeper) applyGovernanceParameterChange(ctx sdk.Context, change Parameter
 }
 
 // ValidateParameterChange validates a parameter change before applying it
-func (k Keeper) ValidateParameterChange(ctx sdk.Context, change ParameterChange) error {
+func (k Keeper) ValidateParameterChange(ctx sdk.Context, change *ParameterChange) error {
 	// Check if parameter is governable
 	if !types.IsGovernable(change.Module, change.Parameter) {
 		return types.ErrConstitutionalParameter

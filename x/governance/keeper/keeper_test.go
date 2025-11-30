@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/volnix-protocol/volnix-protocol/x/governance/types"
+	governancev1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1"
 )
 
 type KeeperTestSuite struct {
@@ -62,12 +63,12 @@ func (suite *KeeperTestSuite) SetupTest() {
 
 // Test SetProposal and GetProposal
 func (suite *KeeperTestSuite) TestSetGetProposal() {
-	proposal := &Proposal{
+	proposal := &governancev1.Proposal{
 		ProposalId:   1,
 		Proposer:     "cosmos1test",
 		Title:        "Test Proposal",
 		Description:  "This is a test proposal",
-		Status:       PROPOSAL_STATUS_SUBMITTED,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_SUBMITTED,
 		SubmitTime:   timestamppb.Now(),
 		YesVotes:     "0",
 		NoVotes:      "0",
@@ -95,12 +96,12 @@ func (suite *KeeperTestSuite) TestGetProposal_NotFound() {
 // Test SetVote and GetVote
 func (suite *KeeperTestSuite) TestSetGetVote() {
 	// First create a proposal
-	proposal := &Proposal{
+	proposal := &governancev1.Proposal{
 		ProposalId:   1,
 		Proposer:     "cosmos1test",
 		Title:        "Test Proposal",
 		Description:  "This is a test proposal",
-		Status:       PROPOSAL_STATUS_VOTING,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_VOTING,
 		SubmitTime:   timestamppb.Now(),
 		YesVotes:     "0",
 		NoVotes:      "0",
@@ -109,10 +110,10 @@ func (suite *KeeperTestSuite) TestSetGetVote() {
 	}
 	suite.keeper.SetProposal(suite.ctx, proposal)
 
-	vote := &Vote{
+	vote := &governancev1.Vote{
 		ProposalId:  1,
 		Voter:       "cosmos1voter",
-		Option:      VOTE_OPTION_YES,
+		Option:      governancev1.VoteOption_VOTE_OPTION_YES,
 		VotingPower: "1000000",
 		VoteTime:    timestamppb.Now(),
 	}
@@ -137,12 +138,12 @@ func (suite *KeeperTestSuite) TestGetVote_NotFound() {
 // Test GetVotes
 func (suite *KeeperTestSuite) TestGetVotes() {
 	// Create proposal
-	proposal := &Proposal{
+	proposal := &governancev1.Proposal{
 		ProposalId:   1,
 		Proposer:     "cosmos1test",
 		Title:        "Test Proposal",
 		Description:  "This is a test proposal",
-		Status:       PROPOSAL_STATUS_VOTING,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_VOTING,
 		SubmitTime:   timestamppb.Now(),
 		YesVotes:     "0",
 		NoVotes:      "0",
@@ -152,17 +153,17 @@ func (suite *KeeperTestSuite) TestGetVotes() {
 	suite.keeper.SetProposal(suite.ctx, proposal)
 
 	// Create multiple votes
-	vote1 := &Vote{
+	vote1 := &governancev1.Vote{
 		ProposalId:  1,
 		Voter:       "cosmos1voter1",
-		Option:      VOTE_OPTION_YES,
+		Option:      governancev1.VoteOption_VOTE_OPTION_YES,
 		VotingPower: "1000000",
 		VoteTime:    timestamppb.Now(),
 	}
 	vote2 := &Vote{
 		ProposalId:  1,
 		Voter:       "cosmos1voter2",
-		Option:      VOTE_OPTION_NO,
+		Option:      governancev1.VoteOption_VOTE_OPTION_NO,
 		VotingPower: "500000",
 		VoteTime:    timestamppb.Now(),
 	}
@@ -222,12 +223,12 @@ func (suite *KeeperTestSuite) TestCalculateVotingPower_InvalidAddress() {
 // Test TallyVotes
 func (suite *KeeperTestSuite) TestTallyVotes() {
 	// Create proposal
-	proposal := &Proposal{
+	proposal := &governancev1.Proposal{
 		ProposalId:   1,
 		Proposer:     "cosmos1test",
 		Title:        "Test Proposal",
 		Description:  "This is a test proposal",
-		Status:       PROPOSAL_STATUS_VOTING,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_VOTING,
 		SubmitTime:   timestamppb.Now(),
 		YesVotes:     "0",
 		NoVotes:      "0",
@@ -237,24 +238,24 @@ func (suite *KeeperTestSuite) TestTallyVotes() {
 	suite.keeper.SetProposal(suite.ctx, proposal)
 
 	// Create votes
-	vote1 := &Vote{
+	vote1 := &governancev1.Vote{
 		ProposalId:  1,
 		Voter:       "cosmos1voter1",
-		Option:      VOTE_OPTION_YES,
+		Option:      governancev1.VoteOption_VOTE_OPTION_YES,
 		VotingPower: "3000000",
 		VoteTime:    timestamppb.Now(),
 	}
 	vote2 := &Vote{
 		ProposalId:  1,
 		Voter:       "cosmos1voter2",
-		Option:      VOTE_OPTION_NO,
+		Option:      governancev1.VoteOption_VOTE_OPTION_NO,
 		VotingPower: "1000000",
 		VoteTime:    timestamppb.Now(),
 	}
 	vote3 := &Vote{
 		ProposalId:  1,
 		Voter:       "cosmos1voter3",
-		Option:      VOTE_OPTION_ABSTAIN,
+		Option:      governancev1.VoteOption_VOTE_OPTION_ABSTAIN,
 		VotingPower: "500000",
 		VoteTime:    timestamppb.Now(),
 	}
@@ -287,7 +288,7 @@ func (suite *KeeperTestSuite) TestTallyVotes() {
 	require.Equal(suite.T(), "500000", retrieved.AbstainVotes)
 	require.Equal(suite.T(), "4500000", retrieved.TotalVotes)
 	// Proposal should pass (yes > no and quorum/threshold met)
-	require.Equal(suite.T(), int32(PROPOSAL_STATUS_PASSED), retrieved.Status)
+	require.Equal(suite.T(), governancev1.ProposalStatus_PROPOSAL_STATUS_PASSED, retrieved.Status)
 }
 
 // Test isProposalPassed
@@ -354,7 +355,7 @@ func (suite *KeeperTestSuite) TestCanExecuteProposal() {
 		Proposer:     "cosmos1test",
 		Title:        "Test Proposal",
 		Description:  "This is a test proposal",
-		Status:       PROPOSAL_STATUS_PASSED,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_PASSED,
 		SubmitTime:   timestamppb.Now(),
 		ExecutionTime: executionTime,
 	}
@@ -366,9 +367,9 @@ func (suite *KeeperTestSuite) TestCanExecuteProposal() {
 }
 
 func (suite *KeeperTestSuite) TestCanExecuteProposal_NotPassed() {
-	proposal := &Proposal{
+	proposal := &governancev1.Proposal{
 		ProposalId:  1,
-		Status:      PROPOSAL_STATUS_SUBMITTED,
+		Status:      governancev1.ProposalStatus_PROPOSAL_STATUS_SUBMITTED,
 		SubmitTime:  timestamppb.Now(),
 	}
 	suite.keeper.SetProposal(suite.ctx, proposal)
@@ -384,7 +385,7 @@ func (suite *KeeperTestSuite) TestCanExecuteProposal_TimelockNotExpired() {
 	executionTime := timestamppb.New(suite.ctx.BlockTime().Add(1 * time.Hour))
 	proposal := &Proposal{
 		ProposalId:   1,
-		Status:       PROPOSAL_STATUS_PASSED,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_PASSED,
 		SubmitTime:   timestamppb.Now(),
 		ExecutionTime: executionTime,
 	}
@@ -399,22 +400,22 @@ func (suite *KeeperTestSuite) TestCanExecuteProposal_TimelockNotExpired() {
 // Test GetAllProposals
 func (suite *KeeperTestSuite) TestGetAllProposals() {
 	// Create multiple proposals
-	proposal1 := &Proposal{
+	proposal1 := &governancev1.Proposal{
 		ProposalId:   1,
 		Proposer:     "cosmos1test1",
 		Title:        "Proposal 1",
-		Status:       PROPOSAL_STATUS_SUBMITTED,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_SUBMITTED,
 		SubmitTime:   timestamppb.Now(),
 		YesVotes:     "0",
 		NoVotes:      "0",
 		AbstainVotes: "0",
 		TotalVotes:   "0",
 	}
-	proposal2 := &Proposal{
+	proposal2 := &governancev1.Proposal{
 		ProposalId:   2,
 		Proposer:     "cosmos1test2",
 		Title:        "Proposal 2",
-		Status:       PROPOSAL_STATUS_VOTING,
+		Status:       governancev1.ProposalStatus_PROPOSAL_STATUS_VOTING,
 		SubmitTime:   timestamppb.Now(),
 		YesVotes:     "0",
 		NoVotes:      "0",

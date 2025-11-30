@@ -2,6 +2,8 @@ package keeper
 
 import (
 	"fmt"
+	"strconv"
+	"time"
 
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -9,15 +11,23 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
+
+// IdentKeeperInterface defines the interface for interacting with ident module
+// This allows anteil module to get verified citizens for ANT distribution
+type IdentKeeperInterface interface {
+	GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.VerifiedAccount, error)
+}
 
 type (
 	Keeper struct {
 		cdc        codec.BinaryCodec
 		storeKey   storetypes.StoreKey
 		paramstore paramtypes.Subspace
+		identKeeper IdentKeeperInterface // Optional: for getting verified citizens
 	}
 )
 
@@ -48,6 +58,11 @@ func (k Keeper) GetParams(ctx sdk.Context) anteiltypes.Params {
 // SetParams sets the parameters for the anteil module
 func (k Keeper) SetParams(ctx sdk.Context, params anteiltypes.Params) {
 	k.paramstore.SetParamSet(ctx, &params)
+}
+
+// SetIdentKeeper sets the ident keeper interface for getting verified citizens
+func (k *Keeper) SetIdentKeeper(identKeeper IdentKeeperInterface) {
+	k.identKeeper = identKeeper
 }
 
 // Order Management Methods
@@ -479,11 +494,35 @@ func (k Keeper) ProcessAuctions(ctx sdk.Context) error {
 	return nil
 }
 
-// BeginBlocker processes auctions and trades
+// BeginBlocker processes auctions and trades, and distributes ANT to citizens
 func (k Keeper) BeginBlocker(ctx sdk.Context) error {
 	// Process active auctions
 	if err := k.ProcessAuctions(ctx); err != nil {
 		return err
+	}
+
+	// Check if it's time to distribute ANT to citizens
+	params := k.GetParams(ctx)
+	lastDistributionTime, err := k.GetLastDistributionTime(ctx)
+	if err != nil {
+		ctx.Logger().Error("Failed to get last distribution time", "error", err)
+		// Continue anyway - will distribute on next block
+	} else {
+		currentTime := ctx.BlockTime()
+		timeSinceLastDistribution := currentTime.Sub(lastDistributionTime)
+
+		// Distribute if enough time has passed (or if first distribution)
+		if lastDistributionTime.IsZero() || timeSinceLastDistribution >= params.CitizenAntDistributionPeriod {
+			if err := k.DistributeAntToCitizens(ctx); err != nil {
+				ctx.Logger().Error("Failed to distribute ANT to citizens", "error", err)
+				// Don't fail the block if distribution fails
+			} else {
+				// Update last distribution time
+				if err := k.SetLastDistributionTime(ctx, currentTime); err != nil {
+					ctx.Logger().Error("Failed to set last distribution time", "error", err)
+				}
+			}
+		}
 	}
 
 	return nil
@@ -624,6 +663,45 @@ func (k Keeper) SetUserPosition(ctx sdk.Context, position *anteilv1.UserPosition
 	return nil
 }
 
+// BurnAntFromUser burns all ANT tokens from a user's position
+// According to whitepaper: "его права на ANT сгорают" when citizen is deactivated
+func (k Keeper) BurnAntFromUser(ctx sdk.Context, user string) error {
+	// Get user position
+	position, err := k.GetUserPosition(ctx, user)
+	if err != nil {
+		// If position doesn't exist, nothing to burn
+		ctx.Logger().Info("No ANT position found for user, nothing to burn", "user", user)
+		return nil
+	}
+
+	// Get current balance
+	currentBalance, err := strconv.ParseUint(position.AntBalance, 10, 64)
+	if err != nil {
+		currentBalance = 0
+	}
+
+	// If balance is already zero, nothing to burn
+	if currentBalance == 0 {
+		ctx.Logger().Info("User has zero ANT balance, nothing to burn", "user", user)
+		return nil
+	}
+
+	// Set balance to zero (burn all ANT)
+	position.AntBalance = "0"
+	position.AvailableAnt = "0"
+	position.LockedAnt = "0"
+	position.LastActivity = timestamppb.Now()
+
+	// Update position
+	if err := k.SetUserPosition(ctx, position); err != nil {
+		return fmt.Errorf("failed to update position after burning ANT: %w", err)
+	}
+
+	ctx.Logger().Info("ANT burned from user", "user", user, "amount", currentBalance)
+
+	return nil
+}
+
 // UpdateUserPosition updates user's position
 func (k Keeper) UpdateUserPosition(ctx sdk.Context, user string, antBalance string, orderCount uint32) error {
 	position := &anteilv1.UserPosition{
@@ -662,6 +740,125 @@ func (k Keeper) GetOrdersByOwner(ctx sdk.Context, owner string) ([]*anteilv1.Ord
 	}
 
 	return orders, nil
+}
+
+// DistributeAntToCitizens distributes ANT tokens to verified citizens
+// According to whitepaper: Citizens automatically receive ANT (10 ANT per day by default)
+func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
+	// Check if ident keeper is available
+	if k.identKeeper == nil {
+		ctx.Logger().Info("Ident keeper not set, skipping ANT distribution")
+		return nil
+	}
+
+	// Get all verified accounts
+	allAccounts, err := k.identKeeper.GetAllVerifiedAccounts(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get verified accounts: %w", err)
+	}
+
+	// Get parameters
+	params := k.GetParams(ctx)
+	rewardRate, err := strconv.ParseUint(params.CitizenAntRewardRate, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid citizen ANT reward rate: %w", err)
+	}
+
+	accumulationLimit, err := strconv.ParseUint(params.CitizenAntAccumulationLimit, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid citizen ANT accumulation limit: %w", err)
+	}
+
+	// Filter citizens and distribute ANT
+	distributedCount := 0
+	for _, account := range allAccounts {
+		// Only process active citizens
+		if account.Role != identv1.Role_ROLE_CITIZEN || !account.IsActive {
+			continue
+		}
+
+		// Get or create user position
+		position, err := k.GetUserPosition(ctx, account.Address)
+		if err != nil {
+			// Create new position if not found
+			position = anteiltypes.NewUserPosition(account.Address, "0")
+		}
+
+		// Check accumulation limit
+		currentBalance, err := strconv.ParseUint(position.AntBalance, 10, 64)
+		if err != nil {
+			currentBalance = 0
+		}
+
+		// Skip if already at limit
+		if currentBalance >= accumulationLimit {
+			ctx.Logger().Debug("Citizen at accumulation limit", "citizen", account.Address, "balance", currentBalance, "limit", accumulationLimit)
+			continue
+		}
+
+		// Calculate new balance (respect limit)
+		newBalance := currentBalance + rewardRate
+		if newBalance > accumulationLimit {
+			newBalance = accumulationLimit
+		}
+
+		// Update position
+		position.AntBalance = fmt.Sprintf("%d", newBalance)
+		position.AvailableAnt = position.AntBalance // Available = total (not locked)
+		position.LastActivity = timestamppb.Now()
+
+		if err := k.SetUserPosition(ctx, position); err != nil {
+			ctx.Logger().Error("Failed to update citizen position", "citizen", account.Address, "error", err)
+			continue // Continue with other citizens
+		}
+
+		distributedCount++
+
+		// Emit event for ANT distribution
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"anteil.ant_distributed",
+				sdk.NewAttribute("citizen", account.Address),
+				sdk.NewAttribute("amount", fmt.Sprintf("%d", rewardRate)),
+				sdk.NewAttribute("new_balance", fmt.Sprintf("%d", newBalance)),
+				sdk.NewAttribute("limit", fmt.Sprintf("%d", accumulationLimit)),
+			),
+		)
+
+		ctx.Logger().Info("ANT distributed to citizen", "citizen", account.Address, "amount", rewardRate, "new_balance", newBalance)
+	}
+
+	ctx.Logger().Info("ANT distribution completed", "citizens_distributed", distributedCount, "total_citizens", len(allAccounts))
+	return nil
+}
+
+// GetLastDistributionTime returns the last time ANT was distributed to citizens
+func (k Keeper) GetLastDistributionTime(ctx sdk.Context) (time.Time, error) {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(anteiltypes.LastDistributionTimeKey)
+	if bz == nil {
+		// Return zero time if not set (first distribution)
+		return time.Time{}, nil
+	}
+
+	var lastTime time.Time
+	if err := lastTime.UnmarshalBinary(bz); err != nil {
+		return time.Time{}, fmt.Errorf("failed to unmarshal last distribution time: %w", err)
+	}
+
+	return lastTime, nil
+}
+
+// SetLastDistributionTime sets the last time ANT was distributed to citizens
+func (k Keeper) SetLastDistributionTime(ctx sdk.Context, t time.Time) error {
+	store := ctx.KVStore(k.storeKey)
+	bz, err := t.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal distribution time: %w", err)
+	}
+
+	store.Set(anteiltypes.LastDistributionTimeKey, bz)
+	return nil
 }
 
 // EndBlocker processes end-of-block operations

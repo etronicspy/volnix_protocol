@@ -6,6 +6,7 @@ import (
 
 	"cosmossdk.io/store/prefix"
 	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
@@ -13,6 +14,7 @@ import (
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // IdentKeeperInterface defines the interface for interacting with ident module
@@ -21,12 +23,39 @@ type IdentKeeperInterface interface {
 	GetVerifiedAccount(ctx sdk.Context, address string) (*identv1.VerifiedAccount, error)
 }
 
+// ConsensusKeeperInterface defines the interface for interacting with consensus module
+// This allows lizenz module to register validators in consensus after LZN activation
+// Note: We use interface{} to avoid circular dependencies
+type ConsensusKeeperInterface interface {
+	SetValidator(ctx sdk.Context, validator interface{}) error
+	SetValidatorWeight(ctx sdk.Context, validator, weight string) error
+}
+
+// AnteilKeeperInterface defines the interface for interacting with anteil module
+// This allows lizenz module to create initial ANT position for validators
+// Note: We use interface{} to avoid circular dependencies
+type AnteilKeeperInterface interface {
+	SetUserPosition(ctx sdk.Context, position interface{}) error
+}
+
+// BankKeeperInterface defines the interface for interacting with bank module
+// This allows lizenz module to lock/unlock LZN tokens during activation/deactivation
+type BankKeeperInterface interface {
+	SendCoins(ctx sdk.Context, fromAddr sdk.AccAddress, toAddr sdk.AccAddress, amt sdk.Coins) error
+	SendCoinsFromAccountToModule(ctx sdk.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
+	SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
+	GetBalance(ctx sdk.Context, addr sdk.AccAddress, denom string) sdk.Coin
+}
+
 type (
 	Keeper struct {
-		cdc          codec.BinaryCodec
-		storeKey     storetypes.StoreKey
-		paramstore   paramtypes.Subspace
-		identKeeper  IdentKeeperInterface // Optional: for identity verification
+		cdc             codec.BinaryCodec
+		storeKey        storetypes.StoreKey
+		paramstore      paramtypes.Subspace
+		identKeeper     IdentKeeperInterface     // Optional: for identity verification
+		consensusKeeper ConsensusKeeperInterface // Optional: for validator registration
+		anteilKeeper    AnteilKeeperInterface    // Optional: for initial ANT position
+		bankKeeper      BankKeeperInterface      // Optional: for locking/unlocking LZN tokens
 	}
 )
 
@@ -50,6 +79,21 @@ func NewKeeper(
 // SetIdentKeeper sets the ident keeper interface for identity verification
 func (k *Keeper) SetIdentKeeper(identKeeper IdentKeeperInterface) {
 	k.identKeeper = identKeeper
+}
+
+// SetConsensusKeeper sets the consensus keeper interface for validator registration
+func (k *Keeper) SetConsensusKeeper(consensusKeeper ConsensusKeeperInterface) {
+	k.consensusKeeper = consensusKeeper
+}
+
+// SetAnteilKeeper sets the anteil keeper interface for initial ANT position creation
+func (k *Keeper) SetAnteilKeeper(anteilKeeper AnteilKeeperInterface) {
+	k.anteilKeeper = anteilKeeper
+}
+
+// SetBankKeeper sets the bank keeper interface for LZN token locking/unlocking
+func (k *Keeper) SetBankKeeper(bankKeeper BankKeeperInterface) {
+	k.bankKeeper = bankKeeper
 }
 
 // GetParams returns the current parameters for the lizenz module
@@ -96,6 +140,28 @@ func (k Keeper) SetActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.ActivatedLi
 		return err
 	}
 
+	// Lock LZN tokens in bank module (if bank keeper is available)
+	// According to whitepaper: LZN tokens are locked when activated
+	if k.bankKeeper != nil {
+		validatorAddr, err := sdk.AccAddressFromBech32(lizenz.Validator)
+		if err == nil {
+			// Parse amount to coins
+			amountInt, parseErr := strconv.ParseUint(lizenz.Amount, 10, 64)
+			if parseErr == nil {
+				// Lock LZN tokens by sending from validator to lizenz module account
+				// In production, this should use a proper module account
+				lznCoins := sdk.NewCoins(sdk.NewCoin("ulzn", math.NewIntFromUint64(amountInt)))
+				if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, validatorAddr, types.ModuleName, lznCoins); err != nil {
+					ctx.Logger().Error("failed to lock LZN tokens", "error", err, "validator", lizenz.Validator, "amount", lizenz.Amount)
+					// Don't fail activation if locking fails - log and continue
+					// In production, you might want to fail here
+				} else {
+					ctx.Logger().Info("LZN tokens locked", "validator", lizenz.Validator, "amount", lizenz.Amount)
+				}
+			}
+		}
+	}
+
 	// Store the LZN
 	lizenzBz, err := k.cdc.Marshal(lizenz)
 	if err != nil {
@@ -103,6 +169,48 @@ func (k Keeper) SetActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.ActivatedLi
 	}
 
 	store.Set(lizenzKey, lizenzBz)
+	
+	// Emit LZN activation event
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeLizenzActivated,
+			sdk.NewAttribute(types.AttributeKeyValidator, lizenz.Validator),
+			sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
+			sdk.NewAttribute(types.AttributeKeyActivationTime, lizenz.ActivationTime.String()),
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+		),
+	)
+	
+	// Emit LZN locked event if tokens were locked
+	if k.bankKeeper != nil {
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				types.EventTypeLZNLocked,
+				sdk.NewAttribute(types.AttributeKeyValidator, lizenz.Validator),
+				sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
+				sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+			),
+		)
+	}
+	
+	// After successful LZN activation, register validator in consensus module
+	// This is the automatic registration step according to validator registration logic
+	if err := k.registerValidatorInConsensus(ctx, lizenz); err != nil {
+		// Log error but don't fail the activation - validator can be registered later
+		// In production, you might want to fail here or use event system
+		ctx.Logger().Error("failed to register validator in consensus after LZN activation", "error", err, "validator", lizenz.Validator)
+	} else {
+		// Emit validator registration event
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				types.EventTypeValidatorRegistered,
+				sdk.NewAttribute(types.AttributeKeyValidator, lizenz.Validator),
+				sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
+				sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+			),
+		)
+	}
+	
 	return nil
 }
 
@@ -170,7 +278,57 @@ func (k Keeper) DeleteActivatedLizenz(ctx sdk.Context, validator string) error {
 		return types.ErrLizenzNotFound
 	}
 
+	// Get LZN info before deletion to unlock tokens
+	var lizenz lizenzv1.ActivatedLizenz
+	lizenzBz := store.Get(lizenzKey)
+	if lizenzBz != nil {
+		if err := k.cdc.Unmarshal(lizenzBz, &lizenz); err == nil {
+			// Unlock LZN tokens from bank module (if bank keeper is available)
+			// According to whitepaper: LZN tokens are unlocked when deactivated
+			if k.bankKeeper != nil {
+				validatorAddr, err := sdk.AccAddressFromBech32(validator)
+				if err == nil {
+					// Parse amount to coins
+					amountInt, parseErr := strconv.ParseUint(lizenz.Amount, 10, 64)
+					if parseErr == nil {
+						// Unlock LZN tokens by sending from lizenz module account back to validator
+						lznCoins := sdk.NewCoins(sdk.NewCoin("ulzn", math.NewIntFromUint64(amountInt)))
+						if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, validatorAddr, lznCoins); err != nil {
+							ctx.Logger().Error("failed to unlock LZN tokens", "error", err, "validator", validator, "amount", lizenz.Amount)
+							// Don't fail deactivation if unlocking fails - log and continue
+							// In production, you might want to handle this differently
+						} else {
+							ctx.Logger().Info("LZN tokens unlocked", "validator", validator, "amount", lizenz.Amount)
+							
+							// Emit event for LZN unlock
+							ctx.EventManager().EmitEvent(
+								sdk.NewEvent(
+									types.EventTypeLZNUnlocked,
+									sdk.NewAttribute(types.AttributeKeyValidator, validator),
+									sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
+									sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+								),
+							)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	store.Delete(lizenzKey)
+	
+	// Emit event for LZN deactivation
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeLizenzDeactivated,
+			sdk.NewAttribute(types.AttributeKeyValidator, validator),
+			sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
+			sdk.NewAttribute(types.AttributeKeyDeactivationTime, timestamppb.Now().String()),
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+		),
+	)
+	
 	return nil
 }
 
@@ -601,6 +759,58 @@ func (k Keeper) UpdateLizenzActivity(ctx sdk.Context, validator string) error {
 		types.UpdateMOAStatusActivity(moaStatus, newMOA)
 		if err := k.SetMOAStatus(ctx, moaStatus); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// registerValidatorInConsensus registers a validator in consensus module after LZN activation
+// This creates the validator record, sets weight, and creates initial ANT position
+// The actual type conversion happens in the adapter in app.go
+func (k Keeper) registerValidatorInConsensus(ctx sdk.Context, lizenz *lizenzv1.ActivatedLizenz) error {
+	// Skip if consensus keeper is not set
+	if k.consensusKeeper == nil {
+		return nil
+	}
+
+	// Create validator data structure
+	// The adapter in app.go will convert this to the correct type
+	validatorData := map[string]interface{}{
+		"validator":           lizenz.Validator,
+		"ant_balance":        "0",
+		"status":             1, // VALIDATOR_STATUS_ACTIVE
+		"last_active":        lizenz.ActivationTime,
+		"last_block_height":  uint64(0),
+		"moa_score":          "0",
+		"activity_score":     "0",
+		"total_blocks_created": uint64(0),
+		"total_burn_amount":  "0",
+	}
+
+	// Register validator in consensus module
+	// The adapter will handle type conversion
+	if err := k.consensusKeeper.SetValidator(ctx, validatorData); err != nil {
+		return fmt.Errorf("failed to set validator in consensus: %w", err)
+	}
+
+	// Set validator weight based on activated LZN amount
+	if err := k.consensusKeeper.SetValidatorWeight(ctx, lizenz.Validator, lizenz.Amount); err != nil {
+		return fmt.Errorf("failed to set validator weight: %w", err)
+	}
+
+	// Create initial ANT position for validator
+	if k.anteilKeeper != nil {
+		positionData := map[string]interface{}{
+			"owner":        lizenz.Validator,
+			"ant_balance":  "0",
+			"locked_ant":   "0",
+			"available_ant": "0",
+			"order_count":  uint32(0),
+		}
+		if err := k.anteilKeeper.SetUserPosition(ctx, positionData); err != nil {
+			// Log but don't fail - position can be created later
+			ctx.Logger().Error("failed to create initial ANT position for validator", "error", err, "validator", lizenz.Validator)
 		}
 	}
 

@@ -12,6 +12,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
+	governancev1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/governance/client/cli"
 	"github.com/volnix-protocol/volnix-protocol/x/governance/keeper"
 	"github.com/volnix-protocol/volnix-protocol/x/governance/types"
@@ -34,7 +35,7 @@ func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 
 // RegisterInterfaces registers the governance module's interface types
 func (AppModuleBasic) RegisterInterfaces(reg codectypes.InterfaceRegistry) {
-	// TODO: Register interfaces after proto generation
+	// Interface registration is handled automatically by Cosmos SDK
 	// governancev1.RegisterInterfaces(reg)
 }
 
@@ -59,7 +60,9 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncod
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the governance module
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	// TODO: Register routes after proto generation
+	// BaseApp automatically registers routes from proto annotations
+	// If manual registration is needed, it would be done here using:
+	// governancev1.RegisterQueryHandlerClient(context.Background(), mux, governancev1.NewQueryClient(clientCtx))
 }
 
 // GetTxCmd returns the root tx command for the governance module
@@ -90,9 +93,8 @@ func NewAppModule(keeper *keeper.Keeper) AppModule {
 
 // RegisterServices registers a gRPC query service to respond to the module-specific gRPC queries
 func (am AppModule) RegisterServices(cfg module.Configurator) {
-	// TODO: Register services after proto generation
-	// governancev1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
-	// governancev1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
+	governancev1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
+	governancev1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
 }
 
 // RegisterInvariants registers the governance module invariants

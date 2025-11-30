@@ -221,6 +221,246 @@ func (suite *MsgServerTestSuite) TestCalculateBlockTime() {
 	require.Equal(suite.T(), types.ErrInvalidAntAmount, err)
 }
 
+func (suite *MsgServerTestSuite) TestSelectBlockCreator() {
+	// Add a validator first
+	validator := &consensusv1.Validator{
+		Validator:     "cosmos1validator",
+		AntBalance:    "1000000",
+		ActivityScore: "500000",
+	}
+	suite.keeper.SetValidator(suite.ctx, validator)
+
+	// Test selecting block creator
+	msg := &consensusv1.MsgSelectBlockCreator{}
+
+	resp, err := suite.msgServer.SelectBlockCreator(suite.ctx, msg)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.NotEmpty(suite.T(), resp.SelectedValidator)
+	require.Equal(suite.T(), "cosmos1validator", resp.SelectedValidator)
+
+	// Verify block creator was set (use next height which is current + 1)
+	nextHeight := uint64(suite.ctx.BlockHeight() + 1)
+	blockCreator, err := suite.keeper.GetBlockCreator(suite.ctx, nextHeight)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), blockCreator)
+	require.Equal(suite.T(), "cosmos1validator", blockCreator.Validator)
+}
+
+func (suite *MsgServerTestSuite) TestCommitBid() {
+	validator := "cosmos1validator"
+	nonce := "test_nonce_12345"
+	bidAmount := "1000000"
+	height := uint64(1000)
+
+	// Create commit hash
+	commitHash := HashCommit(nonce, bidAmount)
+	require.NotEmpty(suite.T(), commitHash)
+	require.Len(suite.T(), commitHash, 64) // SHA256 produces 64 hex chars
+
+	// Test valid commit bid
+	msg := &consensusv1.MsgCommitBid{
+		Validator:   validator,
+		CommitHash:  commitHash,
+		BlockHeight: height,
+	}
+
+	resp, err := suite.msgServer.CommitBid(suite.ctx, msg)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.True(suite.T(), resp.Success)
+
+	// Verify auction was created and commit was added
+	auction, err := suite.keeper.GetBlindAuction(suite.ctx, height)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), auction)
+	require.Len(suite.T(), auction.Commits, 1)
+	require.Equal(suite.T(), validator, auction.Commits[0].Validator)
+	require.Equal(suite.T(), commitHash, auction.Commits[0].CommitHash)
+
+	// Test with nil request
+	_, err = suite.msgServer.CommitBid(suite.ctx, nil)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "cannot be nil")
+
+	// Test with empty validator
+	emptyValidatorMsg := &consensusv1.MsgCommitBid{
+		Validator:   "",
+		CommitHash:  commitHash,
+		BlockHeight: height,
+	}
+	_, err = suite.msgServer.CommitBid(suite.ctx, emptyValidatorMsg)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrEmptyValidatorAddress, err)
+
+	// Test with empty commit hash
+	emptyHashMsg := &consensusv1.MsgCommitBid{
+		Validator:   validator,
+		CommitHash:  "",
+		BlockHeight: height,
+	}
+	_, err = suite.msgServer.CommitBid(suite.ctx, emptyHashMsg)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrInvalidCommitHash, err)
+
+	// Test with invalid commit hash length
+	shortHashMsg := &consensusv1.MsgCommitBid{
+		Validator:   validator,
+		CommitHash:  "short",
+		BlockHeight: height,
+	}
+	_, err = suite.msgServer.CommitBid(suite.ctx, shortHashMsg)
+	require.Error(suite.T(), err)
+
+	// Test duplicate commit (same validator)
+	_, err = suite.msgServer.CommitBid(suite.ctx, msg)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "already committed")
+
+	// Test with zero height (should use current block height)
+	zeroHeightMsg := &consensusv1.MsgCommitBid{
+		Validator:   "cosmos1validator2",
+		CommitHash:  HashCommit("nonce2", "2000000"),
+		BlockHeight: 0, // Will use current block height
+	}
+	resp, err = suite.msgServer.CommitBid(suite.ctx, zeroHeightMsg)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.True(suite.T(), resp.Success)
+}
+
+func (suite *MsgServerTestSuite) TestRevealBid() {
+	validator := "cosmos1validator"
+	nonce := "test_nonce_12345"
+	bidAmount := "1000000"
+	height := uint64(1000)
+
+	// First, commit a bid
+	commitHash := HashCommit(nonce, bidAmount)
+	commitMsg := &consensusv1.MsgCommitBid{
+		Validator:   validator,
+		CommitHash:  commitHash,
+		BlockHeight: height,
+	}
+	_, err := suite.msgServer.CommitBid(suite.ctx, commitMsg)
+	require.NoError(suite.T(), err)
+
+	// Transition auction to reveal phase
+	err = suite.keeper.TransitionAuctionPhase(suite.ctx, height)
+	require.NoError(suite.T(), err)
+
+	// Test valid reveal bid
+	msg := &consensusv1.MsgRevealBid{
+		Validator:   validator,
+		Nonce:       nonce,
+		BidAmount:   bidAmount,
+		BlockHeight: height,
+	}
+
+	resp, err := suite.msgServer.RevealBid(suite.ctx, msg)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.True(suite.T(), resp.Success)
+
+	// Verify reveal was added
+	auction, err := suite.keeper.GetBlindAuction(suite.ctx, height)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), auction)
+	require.Len(suite.T(), auction.Reveals, 1)
+	require.Equal(suite.T(), validator, auction.Reveals[0].Validator)
+	require.Equal(suite.T(), bidAmount, auction.Reveals[0].BidAmount)
+	require.Equal(suite.T(), nonce, auction.Reveals[0].Nonce)
+
+	// Test with nil request
+	_, err = suite.msgServer.RevealBid(suite.ctx, nil)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "cannot be nil")
+
+	// Test with empty validator
+	emptyValidatorMsg := &consensusv1.MsgRevealBid{
+		Validator:   "",
+		Nonce:       nonce,
+		BidAmount:   bidAmount,
+		BlockHeight: height,
+	}
+	_, err = suite.msgServer.RevealBid(suite.ctx, emptyValidatorMsg)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrEmptyValidatorAddress, err)
+
+	// Test with empty nonce
+	emptyNonceMsg := &consensusv1.MsgRevealBid{
+		Validator:   validator,
+		Nonce:       "",
+		BidAmount:   bidAmount,
+		BlockHeight: height,
+	}
+	_, err = suite.msgServer.RevealBid(suite.ctx, emptyNonceMsg)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "nonce cannot be empty")
+
+	// Test with empty bid amount
+	emptyBidMsg := &consensusv1.MsgRevealBid{
+		Validator:   validator,
+		Nonce:       nonce,
+		BidAmount:   "",
+		BlockHeight: height,
+	}
+	_, err = suite.msgServer.RevealBid(suite.ctx, emptyBidMsg)
+	require.Error(suite.T(), err)
+	require.Equal(suite.T(), types.ErrInvalidBidAmount, err)
+
+	// Test with wrong nonce (commit hash mismatch)
+	// Create a new auction for this test
+	height2 := uint64(2000)
+	commitHashWrong := HashCommit("nonce2", "2000000")
+	commitMsgWrong := &consensusv1.MsgCommitBid{
+		Validator:   "cosmos1validator2",
+		CommitHash:  commitHashWrong,
+		BlockHeight: height2,
+	}
+	_, err2 := suite.msgServer.CommitBid(suite.ctx, commitMsgWrong)
+	require.NoError(suite.T(), err2)
+
+	err2 = suite.keeper.TransitionAuctionPhase(suite.ctx, height2)
+	require.NoError(suite.T(), err2)
+
+	wrongNonceMsg := &consensusv1.MsgRevealBid{
+		Validator:   "cosmos1validator2",
+		Nonce:       "wrong_nonce",
+		BidAmount:   "2000000",
+		BlockHeight: height2,
+	}
+	_, err2 = suite.msgServer.RevealBid(suite.ctx, wrongNonceMsg)
+	require.Error(suite.T(), err2)
+	require.Equal(suite.T(), types.ErrCommitHashMismatch, err2)
+
+	// Test with zero height (should use current block height)
+	// Create new auction for current height
+	currentHeight := uint64(suite.ctx.BlockHeight())
+	commitHash3 := HashCommit("nonce3", "3000000")
+	commitMsg3 := &consensusv1.MsgCommitBid{
+		Validator:   "cosmos1validator3",
+		CommitHash:  commitHash3,
+		BlockHeight: currentHeight,
+	}
+	_, err3 := suite.msgServer.CommitBid(suite.ctx, commitMsg3)
+	require.NoError(suite.T(), err3)
+
+	err3 = suite.keeper.TransitionAuctionPhase(suite.ctx, currentHeight)
+	require.NoError(suite.T(), err3)
+
+	zeroHeightMsg := &consensusv1.MsgRevealBid{
+		Validator:   "cosmos1validator3",
+		Nonce:       "nonce3",
+		BidAmount:   "3000000",
+		BlockHeight: 0, // Will use current block height
+	}
+	resp2, err3 := suite.msgServer.RevealBid(suite.ctx, zeroHeightMsg)
+	require.NoError(suite.T(), err3)
+	require.NotNil(suite.T(), resp2)
+	require.True(suite.T(), resp2.Success)
+}
+
 func TestMsgServerTestSuite(t *testing.T) {
 	suite.Run(t, new(MsgServerTestSuite))
 }

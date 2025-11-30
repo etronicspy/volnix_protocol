@@ -15,11 +15,19 @@ import (
 	"github.com/volnix-protocol/volnix-protocol/x/ident/types"
 )
 
+// AnteilKeeperInterface defines the interface for interacting with anteil module
+// This allows ident module to burn ANT when citizens are deactivated
+type AnteilKeeperInterface interface {
+	BurnAntFromUser(ctx sdk.Context, user string) error
+	GetUserPosition(ctx sdk.Context, user string) (interface{}, error)
+}
+
 type (
 	Keeper struct {
 		cdc        codec.BinaryCodec
 		storeKey   storetypes.StoreKey
 		paramstore paramtypes.Subspace
+		anteilKeeper AnteilKeeperInterface // Optional: for burning ANT on citizen deactivation
 	}
 )
 
@@ -50,6 +58,53 @@ func (k Keeper) GetParams(ctx sdk.Context) types.Params {
 // SetParams sets the parameters for the ident module
 func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
 	k.paramstore.SetParamSet(ctx, &params)
+}
+
+// SetAnteilKeeper sets the anteil keeper interface for burning ANT on deactivation
+func (k *Keeper) SetAnteilKeeper(anteilKeeper AnteilKeeperInterface) {
+	k.anteilKeeper = anteilKeeper
+}
+
+// ReleaseIdentityHash releases the identity hash mapping for a deactivated account
+// According to whitepaper: "ZKP-идентификатор освобождается для возможной повторной верификации"
+func (k Keeper) ReleaseIdentityHash(ctx sdk.Context, address string) error {
+	// Get account to retrieve identity hash
+	account, err := k.GetVerifiedAccount(ctx, address)
+	if err != nil {
+		// If account doesn't exist, nothing to release
+		ctx.Logger().Info("Account not found, nothing to release", "address", address)
+		return nil
+	}
+
+	identityHash := account.IdentityHash
+	if identityHash == "" {
+		// No identity hash to release
+		ctx.Logger().Info("No identity hash to release", "address", address)
+		return nil
+	}
+
+	// Remove identity hash mapping from store
+	store := ctx.KVStore(k.storeKey)
+	identityHashKey := types.GetIdentityHashKey(identityHash)
+	
+	if store.Has(identityHashKey) {
+		store.Delete(identityHashKey)
+		ctx.Logger().Info("Identity hash released", "address", address, "identity_hash", identityHash)
+		
+		// Emit event for identity hash release
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"ident.identity_hash_released",
+				sdk.NewAttribute("address", address),
+				sdk.NewAttribute("identity_hash", identityHash),
+				sdk.NewAttribute("reason", "deactivation"),
+			),
+		)
+	} else {
+		ctx.Logger().Info("Identity hash key not found in store", "address", address, "identity_hash", identityHash)
+	}
+
+	return nil
 }
 
 // SetVerifiedAccount stores a verified account in the store
@@ -151,6 +206,39 @@ func (k Keeper) checkAccountActivity(ctx sdk.Context) error {
 		}
 
 		if currentTime.Sub(lastActivity) > activityPeriod {
+			// For citizens: burn ANT before deactivation
+			if account.Role == identv1.Role_ROLE_CITIZEN && k.anteilKeeper != nil {
+				if err := k.anteilKeeper.BurnAntFromUser(ctx, account.Address); err != nil {
+					// Log error but continue with deactivation
+					ctx.Logger().Error("Failed to burn ANT on citizen deactivation", "citizen", account.Address, "error", err)
+					
+					// Emit event for failed burn (for monitoring)
+					ctx.EventManager().EmitEvent(
+						sdk.NewEvent(
+							"ident.ant_burn_failed",
+							sdk.NewAttribute("citizen", account.Address),
+							sdk.NewAttribute("error", err.Error()),
+						),
+					)
+				} else {
+					// Emit event for successful burn
+					ctx.EventManager().EmitEvent(
+						sdk.NewEvent(
+							"ident.ant_burned_on_deactivation",
+							sdk.NewAttribute("citizen", account.Address),
+							sdk.NewAttribute("reason", "inactivity"),
+						),
+					)
+				}
+			}
+
+			// Release identity hash for possible re-verification
+			// According to whitepaper: "ZKP-идентификатор освобождается для возможной повторной верификации"
+			if err := k.ReleaseIdentityHash(ctx, account.Address); err != nil {
+				// Log error but continue with deactivation
+				ctx.Logger().Error("Failed to release identity hash on deactivation", "address", account.Address, "error", err)
+			}
+
 			// Downgrade role to guest
 			account.Role = identv1.Role_ROLE_GUEST
 

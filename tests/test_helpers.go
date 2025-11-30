@@ -20,6 +20,8 @@ import (
 	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 	consensuskeeper "github.com/volnix-protocol/volnix-protocol/x/consensus/keeper"
 	consensustypes "github.com/volnix-protocol/volnix-protocol/x/consensus/types"
+	governancekeeper "github.com/volnix-protocol/volnix-protocol/x/governance/keeper"
+	governancetypes "github.com/volnix-protocol/volnix-protocol/x/governance/types"
 	identkeeper "github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
 	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	lizenzkeeper "github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
@@ -35,14 +37,17 @@ type TestContext struct {
 	LizenzKeeper    *lizenzkeeper.Keeper
 	AnteilKeeper    *anteilkeeper.Keeper
 	ConsensusKeeper *consensuskeeper.Keeper
+	GovernanceKeeper *governancekeeper.Keeper
 	IdentStoreKey     storetypes.StoreKey
 	LizenzStoreKey    storetypes.StoreKey
 	AnteilStoreKey    storetypes.StoreKey
 	ConsensusStoreKey storetypes.StoreKey
+	GovernanceStoreKey storetypes.StoreKey
 	IdentParamStore     paramtypes.Subspace
 	LizenzParamStore    paramtypes.Subspace
 	AnteilParamStore    paramtypes.Subspace
 	ConsensusParamStore paramtypes.Subspace
+	GovernanceParamStore paramtypes.Subspace
 }
 
 // NewTestContext создает новый тестовый контекст со всеми необходимыми компонентами
@@ -58,6 +63,7 @@ func NewTestContext(t require.TestingT) *TestContext {
 	lizenzStoreKey := storetypes.NewKVStoreKey("test_lizenz")
 	anteilStoreKey := storetypes.NewKVStoreKey("test_anteil")
 	consensusStoreKey := storetypes.NewKVStoreKey("test_consensus")
+	governanceStoreKey := storetypes.NewKVStoreKey("test_governance")
 	tKey := storetypes.NewTransientStoreKey("test_transient_store")
 
 	// Create test context with all store keys
@@ -69,6 +75,7 @@ func NewTestContext(t require.TestingT) *TestContext {
 	cms.MountStoreWithDB(lizenzStoreKey, storetypes.StoreTypeIAVL, db)
 	cms.MountStoreWithDB(anteilStoreKey, storetypes.StoreTypeIAVL, db)
 	cms.MountStoreWithDB(consensusStoreKey, storetypes.StoreTypeIAVL, db)
+	cms.MountStoreWithDB(governanceStoreKey, storetypes.StoreTypeIAVL, db)
 	cms.MountStoreWithDB(tKey, storetypes.StoreTypeTransient, db)
 	
 	// Load latest version - обязательно перед созданием контекста
@@ -83,18 +90,21 @@ func NewTestContext(t require.TestingT) *TestContext {
 	lizenzParamStore := paramsKeeper.Subspace(lizenztypes.ModuleName)
 	anteilParamStore := paramsKeeper.Subspace(anteiltypes.ModuleName)
 	consensusParamStore := paramsKeeper.Subspace(consensustypes.ModuleName)
+	governanceParamStore := paramsKeeper.Subspace(governancetypes.ModuleName)
 
 	// Set key tables
 	identParamStore = identParamStore.WithKeyTable(identtypes.ParamKeyTable())
 	lizenzParamStore = lizenzParamStore.WithKeyTable(lizenztypes.ParamKeyTable())
 	anteilParamStore = anteilParamStore.WithKeyTable(anteiltypes.ParamKeyTable())
 	consensusParamStore = consensusParamStore.WithKeyTable(consensustypes.ParamKeyTable())
+	governanceParamStore = governanceParamStore.WithKeyTable(governancetypes.ParamKeyTable())
 
 	// Create keepers
 	identKeeper := identkeeper.NewKeeper(cdc, identStoreKey, identParamStore)
 	lizenzKeeper := lizenzkeeper.NewKeeper(cdc, lizenzStoreKey, lizenzParamStore)
 	anteilKeeper := anteilkeeper.NewKeeper(cdc, anteilStoreKey, anteilParamStore)
 	consensusKeeper := consensuskeeper.NewKeeper(cdc, consensusStoreKey, consensusParamStore)
+	governanceKeeper := governancekeeper.NewKeeper(cdc, governanceStoreKey, governanceParamStore)
 
 	// Set default params with increased limits for testing
 	// Увеличиваем лимиты для исправления "Account limit exceeded"
@@ -105,6 +115,7 @@ func NewTestContext(t require.TestingT) *TestContext {
 	lizenzKeeper.SetParams(ctx, lizenztypes.DefaultParams())
 	anteilKeeper.SetParams(ctx, anteiltypes.DefaultParams())
 	consensusKeeper.SetParams(ctx, *consensustypes.DefaultParams())
+	governanceKeeper.SetParams(ctx, governancetypes.DefaultParams())
 
 	return &TestContext{
 		Cdc:                cdc,
@@ -114,14 +125,17 @@ func NewTestContext(t require.TestingT) *TestContext {
 		LizenzKeeper:       lizenzKeeper,
 		AnteilKeeper:       anteilKeeper,
 		ConsensusKeeper:    consensusKeeper,
+		GovernanceKeeper:   governanceKeeper,
 		IdentStoreKey:      identStoreKey,
 		LizenzStoreKey:     lizenzStoreKey,
 		AnteilStoreKey:     anteilStoreKey,
 		ConsensusStoreKey:  consensusStoreKey,
+		GovernanceStoreKey: governanceStoreKey,
 		IdentParamStore:    identParamStore,
 		LizenzParamStore:   lizenzParamStore,
 		AnteilParamStore:   anteilParamStore,
 		ConsensusParamStore: consensusParamStore,
+		GovernanceParamStore: governanceParamStore,
 	}
 }
 

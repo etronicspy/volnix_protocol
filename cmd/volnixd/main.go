@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"cosmossdk.io/log"
 	cosmosdb "github.com/cosmos/cosmos-db"
@@ -73,40 +74,67 @@ func main() {
 			Use:   "init [moniker]",
 			Short: "Initialize node configuration",
 			Args:  cobra.ExactArgs(1),
-			Run: func(cmd *cobra.Command, args []string) {
+			RunE: func(cmd *cobra.Command, args []string) error {
 				moniker := args[0]
+				homeDir := os.Getenv("HOME")
+				if homeDir == "" {
+					homeDir = os.Getenv("USERPROFILE") // Windows
+				}
+				homeDir = filepath.Join(homeDir, ".volnix")
+
 				fmt.Printf("🔧 Initializing Volnix Protocol node: %s\n", moniker)
+				fmt.Printf("📁 Home directory: %s\n", homeDir)
+
+				logger := log.NewLogger(os.Stdout)
+				server, err := NewFullVolnixServer(homeDir, logger)
+				if err != nil {
+					return fmt.Errorf("failed to create server: %w", err)
+				}
+
+				// Initialize files (creates genesis.json and config.toml)
+				if err := server.initializeFiles(); err != nil {
+					return fmt.Errorf("failed to initialize files: %w", err)
+				}
+
 				fmt.Println("✅ Node configuration initialized!")
-				fmt.Println("📁 Config directory: .volnix/")
+				fmt.Println("📁 Config directory: " + filepath.Join(homeDir, "config"))
 				fmt.Println("🔑 Validator key generated")
 				fmt.Println("🌐 Genesis file created")
 				fmt.Println("")
 				fmt.Println("Next steps:")
 				fmt.Println("  1. volnixd start - Start the blockchain")
 				fmt.Println("  2. volnixd status - Check node status")
+
+				return nil
 			},
 		},
 		&cobra.Command{
 			Use:   "start",
 			Short: "Start the blockchain node",
-			Run: func(cmd *cobra.Command, args []string) {
-				fmt.Println("🚀 Starting Volnix Protocol blockchain...")
-				fmt.Println("⚡ Integrated modules loading...")
-				fmt.Println("  - ident module: ✅ Ready")
-				fmt.Println("  - lizenz module: ✅ Ready")
-				fmt.Println("  - anteil module: ✅ Ready")
-				fmt.Println("  - consensus module: ✅ Ready")
-				fmt.Println("")
-				fmt.Println("🌐 Network endpoints:")
-				fmt.Println("  - RPC: http://localhost:26657")
-				fmt.Println("  - P2P: tcp://localhost:26656")
-				fmt.Println("")
-				fmt.Println("🔥 Volnix Protocol blockchain is running!")
-				fmt.Println("Press Ctrl+C to stop...")
+			RunE: func(cmd *cobra.Command, args []string) error {
+				homeDir := os.Getenv("HOME")
+				if homeDir == "" {
+					homeDir = os.Getenv("USERPROFILE") // Windows
+				}
+				homeDir = filepath.Join(homeDir, ".volnix")
 
-				// In a real implementation, this would start the actual blockchain
-				// For now, we just simulate it
-				select {}
+				// Check if node is initialized
+				configDir := filepath.Join(homeDir, "config")
+				if _, err := os.Stat(configDir); os.IsNotExist(err) {
+					return fmt.Errorf("❌ Node not initialized. Run 'volnixd init <moniker>' first")
+				}
+
+				logger := log.NewLogger(os.Stdout)
+				server, err := NewFullVolnixServer(homeDir, logger)
+				if err != nil {
+					return fmt.Errorf("failed to create server: %w", err)
+				}
+
+				fmt.Println("⚡ Starting CometBFT consensus...")
+				fmt.Println("✨ Full Volnix Protocol node running! Press Ctrl+C to stop...")
+
+				ctx := cmd.Context()
+				return server.Start(ctx)
 			},
 		},
 		&cobra.Command{

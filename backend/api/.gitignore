@@ -1,0 +1,19 @@
+# Binaries
+volnix-rest-api
+volnix-rest-api.exe
+
+# Go build artifacts
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+

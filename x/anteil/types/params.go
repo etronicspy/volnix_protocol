@@ -44,6 +44,11 @@ var (
 	KeyLiquidityPoolFee      = []byte("LiquidityPoolFee")
 	KeyMaxSlippage           = []byte("MaxSlippage")
 	KeyMinLiquidityThreshold = []byte("MinLiquidityThreshold")
+	
+	// Citizen ANT distribution parameter keys
+	KeyCitizenAntRewardRate      = []byte("CitizenAntRewardRate")
+	KeyCitizenAntAccumulationLimit = []byte("CitizenAntAccumulationLimit")
+	KeyCitizenAntDistributionPeriod = []byte("CitizenAntDistributionPeriod")
 )
 
 // ParamKeyTable returns the parameter key table
@@ -70,6 +75,11 @@ type Params struct {
 	LiquidityPoolFee      string `json:"liquidity_pool_fee"`
 	MaxSlippage           string `json:"max_slippage"`
 	MinLiquidityThreshold uint64 `json:"min_liquidity_threshold"`
+	
+	// Citizen ANT distribution parameters
+	CitizenAntRewardRate       string        `json:"citizen_ant_reward_rate"`        // Base rate (e.g., "10" ANT per day)
+	CitizenAntAccumulationLimit string        `json:"citizen_ant_accumulation_limit"` // Max accumulation (e.g., "1000" ANT)
+	CitizenAntDistributionPeriod time.Duration `json:"citizen_ant_distribution_period"` // Distribution period (e.g., 24 hours)
 }
 
 // ParamSetPairs returns the parameter set pairs
@@ -92,6 +102,11 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 		paramtypes.NewParamSetPair(KeyLiquidityPoolFee, &p.LiquidityPoolFee, validateString),
 		paramtypes.NewParamSetPair(KeyMaxSlippage, &p.MaxSlippage, validateString),
 		paramtypes.NewParamSetPair(KeyMinLiquidityThreshold, &p.MinLiquidityThreshold, validateUint64),
+		
+		// Citizen ANT distribution parameter pairs
+		paramtypes.NewParamSetPair(KeyCitizenAntRewardRate, &p.CitizenAntRewardRate, validateString),
+		paramtypes.NewParamSetPair(KeyCitizenAntAccumulationLimit, &p.CitizenAntAccumulationLimit, validateString),
+		paramtypes.NewParamSetPair(KeyCitizenAntDistributionPeriod, &p.CitizenAntDistributionPeriod, validateDuration),
 	}
 }
 
@@ -115,6 +130,11 @@ func DefaultParams() Params {
 		LiquidityPoolFee:      "0.003", // 0.3%
 		MaxSlippage:           "0.05",  // 5%
 		MinLiquidityThreshold: 1000000, // 1 ANT in micro units
+		
+		// Citizen ANT distribution parameters (default: 10 ANT per day, 1000 ANT limit, 24h period)
+		CitizenAntRewardRate:       "10000000",        // 10 ANT in micro units (10 * 1,000,000)
+		CitizenAntAccumulationLimit: "1000000000",     // 1000 ANT in micro units (1000 * 1,000,000)
+		CitizenAntDistributionPeriod: 24 * time.Hour, // 24 hours
 	}
 }
 
@@ -163,6 +183,17 @@ func (p *Params) Validate() error {
 	}
 	if p.MinLiquidityThreshold == 0 {
 		return fmt.Errorf("MinLiquidityThreshold must be greater than 0")
+	}
+	
+	// Validate citizen ANT distribution parameters
+	if p.CitizenAntRewardRate == "" {
+		return fmt.Errorf("CitizenAntRewardRate cannot be empty")
+	}
+	if p.CitizenAntAccumulationLimit == "" {
+		return fmt.Errorf("CitizenAntAccumulationLimit cannot be empty")
+	}
+	if p.CitizenAntDistributionPeriod <= 0 {
+		return fmt.Errorf("CitizenAntDistributionPeriod must be greater than 0")
 	}
 	return nil
 }

@@ -35,6 +35,9 @@ var (
 	// ErrInsufficientDeposit indicates that the deposit is insufficient
 	ErrInsufficientDeposit = errors.Register(ModuleName, 10, "insufficient deposit")
 
+	// ErrInvalidDeposit indicates that the deposit is invalid
+	ErrInvalidDeposit = errors.Register(ModuleName, 17, "invalid deposit")
+
 	// ErrProposalNotInVotingPeriod indicates that the proposal is not in voting period
 	ErrProposalNotInVotingPeriod = errors.Register(ModuleName, 11, "proposal is not in voting period")
 
