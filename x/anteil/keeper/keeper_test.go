@@ -1002,6 +1002,106 @@ func (suite *KeeperTestSuite) TestPlaceBid_AuctionNotFound() {
 	require.Equal(suite.T(), types.ErrAuctionNotFound, err)
 }
 
+// TestPlaceBid_OnlyValidators tests that only validators can place bids
+func (suite *KeeperTestSuite) TestPlaceBid_OnlyValidators() {
+	// Create mock ident keeper with citizen and validator
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:      "cosmos1citizen",
+				Role:         identv1.Role_ROLE_CITIZEN,
+				IsActive:     true,
+				IdentityHash: "hash1",
+			},
+			{
+				Address:      "cosmos1validator",
+				Role:         identv1.Role_ROLE_VALIDATOR,
+				IsActive:     true,
+				IdentityHash: "hash2",
+			},
+		},
+	}
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+	
+	// Create auction
+	auction := types.NewAuction(uint64(1000), "1000000", "1.0")
+	err := suite.keeper.CreateAuction(suite.ctx, auction)
+	require.NoError(suite.T(), err)
+	
+	// Test 1: Citizen should NOT be able to place bid
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1citizen", "2.0")
+	require.Error(suite.T(), err, "Citizens should not be able to place bids")
+	require.Contains(suite.T(), err.Error(), "only active validators can participate in auctions")
+	
+	// Test 2: Validator SHOULD be able to place bid
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "2.0")
+	require.NoError(suite.T(), err, "Validators should be able to place bids")
+	
+	// Test 3: Guest should NOT be able to place bid
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1guest", "2.0")
+	require.Error(suite.T(), err, "Guests should not be able to place bids")
+}
+
+// TestPlaceBid_ReservePrice tests reserve price validation
+func (suite *KeeperTestSuite) TestPlaceBid_ReservePrice() {
+	// Create mock ident keeper with validator
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:      "cosmos1validator",
+				Role:         identv1.Role_ROLE_VALIDATOR,
+				IsActive:     true,
+				IdentityHash: "hash1",
+			},
+		},
+	}
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+	
+	// Create auction with reserve price "10.0"
+	auction := types.NewAuction(uint64(1000), "1000000", "10.0")
+	err := suite.keeper.CreateAuction(suite.ctx, auction)
+	require.NoError(suite.T(), err)
+	
+	// Test 1: Bid below reserve price should be rejected
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "5.0")
+	require.Error(suite.T(), err, "Bids below reserve price should be rejected")
+	require.Contains(suite.T(), err.Error(), "below reserve price")
+	
+	// Test 2: Bid equal to reserve price should succeed
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "10.0")
+	require.NoError(suite.T(), err, "Bids equal to reserve price should succeed")
+	
+	// Test 3: Bid above reserve price should succeed
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "15.0")
+	require.NoError(suite.T(), err, "Bids above reserve price should succeed")
+}
+
+// TestPlaceBid_InvalidAmount tests PlaceBid with invalid amount format
+func (suite *KeeperTestSuite) TestPlaceBid_InvalidAmount() {
+	// Create mock ident keeper with validator
+	mockIdentKeeper := &MockIdentKeeper{
+		accounts: []*identv1.VerifiedAccount{
+			{
+				Address:      "cosmos1validator",
+				Role:         identv1.Role_ROLE_VALIDATOR,
+				IsActive:     true,
+				IdentityHash: "hash1",
+			},
+		},
+	}
+	suite.keeper.SetIdentKeeper(mockIdentKeeper)
+	
+	// Create auction
+	auction := types.NewAuction(uint64(1000), "1000000", "10.0")
+	err := suite.keeper.CreateAuction(suite.ctx, auction)
+	require.NoError(suite.T(), err)
+	
+	// Test with invalid amount format
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "invalid")
+	require.Error(suite.T(), err, "Invalid amount format should be rejected")
+	require.Contains(suite.T(), err.Error(), "invalid bid amount")
+}
+
 func (suite *KeeperTestSuite) TestSettleAuction_NotFound() {
 	err := suite.keeper.SettleAuction(suite.ctx, "nonexistent")
 	require.Error(suite.T(), err)
@@ -1291,14 +1391,15 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 	err := suite.keeper.DistributeAntToCitizens(suite.ctx)
 	require.NoError(suite.T(), err)
 
-	// Verify only active citizen received ANT
+	// Verify active citizen received ANT
 	position, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "10000000", position.AntBalance, "Active citizen should receive ANT")
 
-	// Verify validator did not receive ANT
-	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1validator")
-	require.Error(suite.T(), err, "Validator should not have position")
+	// UPDATED: Verify validator ALSO received ANT (validators have all citizen rights)
+	validatorPosition, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1validator")
+	require.NoError(suite.T(), err, "Validator should have position - validators have all citizen rights")
+	require.Equal(suite.T(), "10000000", validatorPosition.AntBalance, "Active validator should receive ANT")
 
 	// Verify guest did not receive ANT
 	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1guest")
@@ -1308,21 +1409,24 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1inactive")
 	require.Error(suite.T(), err, "Inactive citizen should not have position")
 
-	// Check events - should have only 1 ant_distributed event
+	// Check events - should have 2 ant_distributed events (citizen + validator)
 	events := suite.ctx.EventManager().Events()
 	antDistributedCount := 0
+	recipientAddresses := []string{}
 	for _, event := range events {
 		if event.Type == "anteil.ant_distributed" {
 			antDistributedCount++
-			// Verify it's for the citizen
+			// Collect recipient addresses
 			for _, attr := range event.Attributes {
 				if string(attr.Key) == "citizen" {
-					require.Equal(suite.T(), "cosmos1citizen", string(attr.Value))
+					recipientAddresses = append(recipientAddresses, string(attr.Value))
 				}
 			}
 		}
 	}
-	require.Equal(suite.T(), 1, antDistributedCount, "Should have exactly 1 ant_distributed event")
+	require.Equal(suite.T(), 2, antDistributedCount, "Should have exactly 2 ANT distribution events (citizen + validator)")
+	require.Contains(suite.T(), recipientAddresses, "cosmos1citizen", "Citizen should receive ANT")
+	require.Contains(suite.T(), recipientAddresses, "cosmos1validator", "Validator should receive ANT")
 }
 
 // Test BurnAntFromUser

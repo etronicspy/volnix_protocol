@@ -212,11 +212,98 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 	resp, err := suite.msgServer.ChangeRole(suite.ctx, changeMsg)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), resp)
+	require.True(suite.T(), resp.Success)
+	require.NotEmpty(suite.T(), resp.ChangeHash)
 
 	// Verify role was changed
 	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, account.Role)
+}
+
+// TestChangeRole_EmptyZkpProof tests ChangeRole with empty ZKP proof
+func (suite *MsgServerTestSuite) TestChangeRole_EmptyZkpProof() {
+	// Create account first
+	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
+	createZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234"
+	createMsg := &identv1.MsgVerifyIdentity{
+		Address:              "cosmos1test",
+		ZkpProof:             createZkpProof,
+		VerificationProvider: "provider123",
+		VerificationCost:     &createCoin,
+		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+	}
+	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)
+	require.NoError(suite.T(), err)
+
+	// Try to change role without ZKP proof
+	changeMsg := &identv1.MsgChangeRole{
+		Address:  "cosmos1test",
+		NewRole:  identv1.Role_ROLE_VALIDATOR,
+		ZkpProof: "", // Empty proof!
+	}
+
+	_, err = suite.msgServer.ChangeRole(suite.ctx, changeMsg)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "ZKP proof")
+}
+
+// TestChangeRole_InvalidRole tests ChangeRole with invalid role
+func (suite *MsgServerTestSuite) TestChangeRole_InvalidRole() {
+	// Create account first
+	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
+	createZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234"
+	createMsg := &identv1.MsgVerifyIdentity{
+		Address:              "cosmos1test",
+		ZkpProof:             createZkpProof,
+		VerificationProvider: "provider123",
+		VerificationCost:     &createCoin,
+		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+	}
+	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)
+	require.NoError(suite.T(), err)
+
+	// Try to change to invalid role
+	changeMsg := &identv1.MsgChangeRole{
+		Address:  "cosmos1test",
+		NewRole:  identv1.Role_ROLE_UNSPECIFIED, // Invalid!
+		ZkpProof: "zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234",
+	}
+
+	_, err = suite.msgServer.ChangeRole(suite.ctx, changeMsg)
+	require.Error(suite.T(), err)
+}
+
+// TestChangeRole_AccountNotFound tests ChangeRole for non-existent account
+func (suite *MsgServerTestSuite) TestChangeRole_AccountNotFound() {
+	changeMsg := &identv1.MsgChangeRole{
+		Address:  "cosmos1nonexistent",
+		NewRole:  identv1.Role_ROLE_VALIDATOR,
+		ZkpProof: "zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234",
+	}
+
+	_, err := suite.msgServer.ChangeRole(suite.ctx, changeMsg)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "account not found")
+}
+
+// TestChangeRole_NilRequest tests ChangeRole with nil request
+func (suite *MsgServerTestSuite) TestChangeRole_NilRequest() {
+	_, err := suite.msgServer.ChangeRole(suite.ctx, nil)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "cannot be nil")
+}
+
+// TestChangeRole_EmptyAddress tests ChangeRole with empty address
+func (suite *MsgServerTestSuite) TestChangeRole_EmptyAddress() {
+	changeMsg := &identv1.MsgChangeRole{
+		Address:  "",
+		NewRole:  identv1.Role_ROLE_VALIDATOR,
+		ZkpProof: "zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234",
+	}
+
+	_, err := suite.msgServer.ChangeRole(suite.ctx, changeMsg)
+	require.Error(suite.T(), err)
 }
 
 func (suite *MsgServerTestSuite) TestMigrateRole() {

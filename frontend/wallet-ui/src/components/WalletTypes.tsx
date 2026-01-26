@@ -185,19 +185,11 @@ const WalletTypes: React.FC<WalletTypesProps> = ({ currentType, onUpgrade }) => 
                   style={{ 
                     width: '100%', 
                     marginTop: '16px',
-                    background: walletType.color,
-                    opacity: walletType.type === 'citizen' || walletType.type === 'validator' ? 0.6 : 1
+                    background: walletType.color
                   }}
-                  disabled={walletType.type === 'citizen' || walletType.type === 'validator'}
+                  onClick={() => onUpgrade && onUpgrade(walletType.type)}
                 >
-                  {walletType.type === 'citizen' || walletType.type === 'validator' ? (
-                    <>
-                      <Lock size={16} />
-                      Requires Verification
-                    </>
-                  ) : (
-                    `Upgrade to ${walletType.name}`
-                  )}
+                  Switch to {walletType.name}
                 </button>
               )}
             </div>
@@ -205,18 +197,36 @@ const WalletTypes: React.FC<WalletTypesProps> = ({ currentType, onUpgrade }) => 
         </div>
       </div>
 
-      {/* Upgrade Information */}
-      <div className="card" style={{ background: '#fef3c7' }}>
-        <h4 style={{ color: '#92400e', marginBottom: '12px' }}>🚀 Want to Upgrade?</h4>
-        <p style={{ color: '#78350f', marginBottom: '16px' }}>
-          Upgrade your wallet type to unlock more features and participate more actively in the Volnix ecosystem.
+      {/* Role Switching */}
+      <div className="card" style={{ background: '#dbeafe', border: '2px solid #3b82f6' }}>
+        <h4 style={{ color: '#1e40af', marginBottom: '12px' }}>🔄 Role Switching (Testing Mode)</h4>
+        <p style={{ color: '#1e3a8a', marginBottom: '16px' }}>
+          Switch between roles to test the three-token protocol. In production, role changes require ZKP verification.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-          <button className="button" style={{ background: '#10b981' }}>
-            Start Verification Process
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+          <button 
+            className="button" 
+            style={{ background: currentType === 'guest' ? '#6b7280' : '#9ca3af' }}
+            onClick={() => onUpgrade && onUpgrade('guest')}
+            disabled={currentType === 'guest'}
+          >
+            Switch to Guest
           </button>
-          <button className="button" style={{ background: '#6b7280' }}>
-            Learn More
+          <button 
+            className="button" 
+            style={{ background: currentType === 'citizen' ? '#10b981' : '#34d399' }}
+            onClick={() => onUpgrade && onUpgrade('citizen')}
+            disabled={currentType === 'citizen'}
+          >
+            Switch to Citizen
+          </button>
+          <button 
+            className="button" 
+            style={{ background: currentType === 'validator' ? '#f59e0b' : '#fbbf24' }}
+            onClick={() => onUpgrade && onUpgrade('validator')}
+            disabled={currentType === 'validator'}
+          >
+            Switch to Validator
           </button>
         </div>
       </div>

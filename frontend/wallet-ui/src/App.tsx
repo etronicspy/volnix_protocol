@@ -105,6 +105,12 @@ function App() {
         throw new Error('Invalid balance data received');
       }
 
+      // Загружаем роль аккаунта с блокчейна
+      const accountRole = await blockchainService.getAccountRole(address);
+      const walletType: WalletType = accountRole || 'guest';
+      
+      console.log('Loaded role from blockchain:', walletType);
+
       // Загружаем транзакции
       const blockchainTxs = await blockchainService.getTransactions(address);
       
@@ -134,6 +140,8 @@ function App() {
           lzn: balances.lzn || '0',
           ant: balances.ant || '0'
         },
+        walletType: walletType,
+        isVerified: walletType !== 'guest',
         transactions
       }));
     } catch (err: any) {
@@ -209,15 +217,35 @@ function App() {
     localStorage.removeItem(CURRENT_WALLET_MNEMONIC_KEY);
   };
 
-  const upgradeWalletType = (newType: WalletType) => {
-    setWalletState(prev => ({
-      ...prev,
-      walletType: newType,
-      balance: {
-        ...prev.balance,
-        ant: newType === 'citizen' || newType === 'validator' ? '10' : '0'
-      }
-    }));
+  const upgradeWalletType = async (newType: WalletType) => {
+    if (!walletState.address) {
+      setError('Wallet not connected');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      // Отправляем реальную транзакцию изменения роли на блокчейн
+      const txHash = await blockchainService.changeRole(walletState.address, newType);
+      
+      console.log('✅ Role change transaction sent to blockchain:', txHash);
+      
+      // Ждем немного для включения транзакции в блок
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Перезагружаем данные с блокчейна для синхронизации
+      await loadWalletData(walletState.address);
+      
+      setError('');
+      console.log('✅ Role change completed and data reloaded from blockchain');
+    } catch (err: any) {
+      setError(err.message || 'Failed to change wallet type');
+      console.error('Error changing wallet type:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const sendTokens = async (to: string, amount: string, token: string) => {
@@ -397,7 +425,7 @@ function App() {
           </nav>
 
           <div className="grid">
-            {activeTab === 'wallet' && <Balance balance={walletState.balance} />}
+            {activeTab === 'wallet' && <Balance balance={walletState.balance} walletType={walletState.walletType} />}
             {activeTab === 'send' && <SendTokens onSend={sendTokens} balance={walletState.balance} />}
             {activeTab === 'history' && <TransactionHistory transactions={walletState.transactions} />}
             {activeTab === 'types' && <WalletTypes currentType={walletState.walletType} onUpgrade={upgradeWalletType} />}

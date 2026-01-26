@@ -14,6 +14,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
+	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 )
 
 var (
@@ -26,20 +29,30 @@ func main() {
 
 	// Try to connect to gRPC server (non-blocking)
 	var consensusClient consensusv1.QueryClient
+	var identClient identv1.QueryClient
+	var lizenzClient lizenzv1.QueryClient
+	var anteilClient anteilv1.QueryClient
+	
 	conn, err := grpc.NewClient(*grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("⚠️  Warning: Failed to connect to gRPC server at %s: %v", *grpcAddr, err)
 		log.Printf("⚠️  REST API will start, but gRPC endpoints will return errors")
 		log.Printf("⚠️  Make sure gRPC server is running on %s", *grpcAddr)
 		consensusClient = nil
+		identClient = nil
+		lizenzClient = nil
+		anteilClient = nil
 	} else {
 		defer conn.Close()
 		consensusClient = consensusv1.NewQueryClient(conn)
+		identClient = identv1.NewQueryClient(conn)
+		lizenzClient = lizenzv1.NewQueryClient(conn)
+		anteilClient = anteilv1.NewQueryClient(conn)
 		log.Printf("✅ Connected to gRPC server at %s", *grpcAddr)
 	}
 
-	// Create HTTP server
-	server := NewServer(consensusClient)
+	// Create HTTP server with all clients
+	server := NewServer(consensusClient, identClient, lizenzClient, anteilClient)
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()

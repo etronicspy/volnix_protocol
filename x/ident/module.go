@@ -28,8 +28,7 @@ func (AppModuleBasic) Name() string { return identtypes.ModuleName }
 func (AppModuleBasic) RegisterLegacyAminoCodec(_ *codec.LegacyAmino) {}
 
 func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
-	// Interface registration temporarily disabled for integration testing
-	// identv1.RegisterInterfaces(registry)
+	identtypes.RegisterInterfaces(registry)
 }
 
 func (AppModuleBasic) DefaultGenesis(_ codec.JSONCodec) json.RawMessage {
@@ -62,9 +61,8 @@ func NewAppModule(k *keeper.Keeper) AppModule {
 }
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
-	// Services temporarily disabled for integration testing
-	// identv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
-	// identv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
+	identv1.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServer(am.keeper))
+	identv1.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServer(am.keeper))
 }
 
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {

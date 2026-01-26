@@ -1,12 +1,13 @@
 import React from 'react';
 import { Coins, TrendingUp, Shield } from 'lucide-react';
-import { Balance as BalanceType } from '../types/wallet';
+import { Balance as BalanceType, WalletType } from '../types/wallet';
 
 interface BalanceProps {
   balance: BalanceType;
+  walletType?: WalletType;
 }
 
-const Balance: React.FC<BalanceProps> = ({ balance }) => {
+const Balance: React.FC<BalanceProps> = ({ balance, walletType = 'guest' }) => {
   const tokens = [
     {
       symbol: 'WRT',
@@ -54,7 +55,9 @@ const Balance: React.FC<BalanceProps> = ({ balance }) => {
         </h3>
         
         {tokens.map((token) => {
-          const isLocked = token.symbol === 'ANT' && parseFloat(token.amount) === 0;
+          // ANT доступен только для citizen и validator (validator включает права citizen)
+          const isAntLocked = token.symbol === 'ANT' && (walletType === 'guest' || parseFloat(token.amount) === 0);
+          const isLocked = isAntLocked;
           return (
             <div key={token.symbol} className="transaction-item" style={isLocked ? { opacity: 0.6 } : {}}>
               <div className="flex">
@@ -70,7 +73,9 @@ const Balance: React.FC<BalanceProps> = ({ balance }) => {
                     {token.name}
                   </div>
                   <div style={{ color: isLocked ? '#ef4444' : '#9ca3af', fontSize: '12px', marginTop: '4px' }}>
-                    {isLocked ? 'Requires Citizen status to access' : token.description}
+                    {isLocked && token.symbol === 'ANT' 
+                      ? (walletType === 'guest' ? 'Requires Citizen or Validator status to access' : 'No ANT balance')
+                      : token.description}
                   </div>
                 </div>
               </div>
@@ -95,11 +100,11 @@ const Balance: React.FC<BalanceProps> = ({ balance }) => {
           </button>
           <button 
             className="button" 
-            style={{ background: '#6b7280', opacity: 0.6 }}
-            disabled
-            title="Requires Citizen status"
+            style={{ background: '#6b7280', opacity: (walletType === 'citizen' || walletType === 'validator') ? 1 : 0.6 }}
+            disabled={walletType === 'guest'}
+            title={walletType === 'guest' ? 'Requires Citizen or Validator status' : 'Claim ANT tokens'}
           >
-            🔒 Claim ANT
+            {walletType === 'guest' ? '🔒 Claim ANT' : 'Claim ANT'}
           </button>
           <button className="button" style={{ background: '#8b5cf6' }}>
             Swap Tokens

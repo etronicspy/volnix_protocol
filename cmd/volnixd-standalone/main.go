@@ -1113,19 +1113,28 @@ func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, 
 	config.Moniker = "volnix-standalone"
 
 	// CRITICAL: Read persistent_peers from config.toml if it exists
+	// Use improved parsing that handles comments and whitespace
 	configFile := filepath.Join(homeDir, "config", "config.toml")
 	if _, err := os.Stat(configFile); err == nil {
 		logger.Info("Reading persistent_peers from config file", "file", configFile)
 
-		// Читаем файл и извлекаем persistent_peers
+		// Read and parse config file manually with better error handling
 		configContent, err := os.ReadFile(configFile)
 		if err == nil {
-			// Простой парсинг: ищем строку persistent_peers = "..."
 			lines := strings.Split(string(configContent), "\n")
 			for _, line := range lines {
+				// Remove comments and trim
 				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "#") {
+					continue // Skip comments
+				}
+				// Remove inline comments
+				if commentIdx := strings.Index(line, "#"); commentIdx != -1 {
+					line = strings.TrimSpace(line[:commentIdx])
+				}
+				// Check for persistent_peers
 				if strings.HasPrefix(line, "persistent_peers") {
-					// Извлекаем значение между кавычками
+					// Extract value between quotes
 					if start := strings.Index(line, "\""); start != -1 {
 						if end := strings.LastIndex(line, "\""); end > start {
 							persistentPeers := line[start+1 : end]
@@ -1138,6 +1147,8 @@ func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, 
 					break
 				}
 			}
+		} else {
+			logger.Warn("Failed to read config file", "error", err)
 		}
 	}
 
@@ -1294,6 +1305,42 @@ func (s *StandaloneServer) Start(ctx context.Context) error {
 	// Initialize files (this creates genesis.json with validators)
 	if err := s.initializeFiles(); err != nil {
 		return fmt.Errorf("failed to initialize files: %w", err)
+	}
+
+	// CRITICAL: Re-read persistent_peers from config.toml AFTER initializeFiles
+	// This ensures we get any persistent_peers that were set by entrypoint.sh or other scripts
+	configFile := filepath.Join(s.config.RootDir, "config", "config.toml")
+	if _, err := os.Stat(configFile); err == nil {
+		// Read and parse config file with improved parsing
+		configContent, err := os.ReadFile(configFile)
+		if err == nil {
+			lines := strings.Split(string(configContent), "\n")
+			for _, line := range lines {
+				// Remove comments and trim
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "#") {
+					continue // Skip comments
+				}
+				// Remove inline comments
+				if commentIdx := strings.Index(line, "#"); commentIdx != -1 {
+					line = strings.TrimSpace(line[:commentIdx])
+				}
+				// Check for persistent_peers
+				if strings.HasPrefix(line, "persistent_peers") {
+					// Extract value between quotes
+					if start := strings.Index(line, "\""); start != -1 {
+						if end := strings.LastIndex(line, "\""); end > start {
+							persistentPeers := line[start+1 : end]
+							if persistentPeers != "" {
+								s.config.P2P.PersistentPeers = persistentPeers
+								s.logger.Info("Re-loaded persistent_peers from config.toml", "peers", persistentPeers)
+							}
+						}
+					}
+					break
+				}
+			}
+		}
 	}
 
 	// CRITICAL: Read chain-id and validators from genesis.json AFTER it's created

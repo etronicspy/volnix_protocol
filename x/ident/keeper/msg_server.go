@@ -138,8 +138,26 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 		return nil, types.ErrInvalidRole
 	}
 
+	// SECURITY: Require ZKP proof for role changes to prevent unauthorized escalation
+	// According to whitepaper: Role changes require identity verification
+	if req.ZkpProof == "" {
+		return nil, fmt.Errorf("ZKP proof is required for role changes")
+	}
+	
+	// Get current account to verify it exists
+	account, err := s.k.GetVerifiedAccount(sdkCtx, req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("account not found: %w", err)
+	}
+	
+	// SECURITY: Validate ZKP proof for the role change
+	// This prevents unauthorized role escalation attacks
+	if err := s.k.ValidateRoleChangeProof(sdkCtx, req.Address, account.IdentityHash, req.ZkpProof, req.NewRole); err != nil {
+		return nil, fmt.Errorf("invalid ZKP proof for role change: %w", err)
+	}
+
 	// Change account role
-	err := s.k.ChangeAccountRole(sdkCtx, req.Address, req.NewRole)
+	err = s.k.ChangeAccountRole(sdkCtx, req.Address, req.NewRole)
 	if err != nil {
 		return nil, err
 	}

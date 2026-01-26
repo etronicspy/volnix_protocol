@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"io"
-	"bytes"
 
+	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -16,13 +19,20 @@ import (
 // Server represents the REST API server
 type Server struct {
 	consensusClient consensusv1.QueryClient
+	identClient     identv1.QueryClient
+	lizenzClient    lizenzv1.QueryClient
+	anteilClient    anteilv1.QueryClient
 	rpcEndpoint     string
 }
 
 // NewServer creates a new REST API server
-func NewServer(consensusClient consensusv1.QueryClient) *Server {
+func NewServer(consensusClient consensusv1.QueryClient, identClient identv1.QueryClient,
+	lizenzClient lizenzv1.QueryClient, anteilClient anteilv1.QueryClient) *Server {
 	return &Server{
 		consensusClient: consensusClient,
+		identClient:     identClient,
+		lizenzClient:    lizenzClient,
+		anteilClient:    anteilClient,
 		rpcEndpoint:     "http://localhost:26657",
 	}
 }
@@ -36,6 +46,20 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 	// Consensus module endpoints
 	mux.HandleFunc("/volnix/consensus/v1/params", s.consensusParamsHandler)
 	mux.HandleFunc("/volnix/consensus/v1/validators", s.consensusValidatorsHandler)
+
+	// Identity module endpoints
+	mux.HandleFunc("/volnix/ident/v1/params", s.identParamsHandler)
+	mux.HandleFunc("/volnix/ident/v1/verified_account/", s.identVerifiedAccountHandler)
+	mux.HandleFunc("/volnix/ident/v1/verified_accounts", s.identVerifiedAccountsHandler)
+
+	// Lizenz module endpoints
+	mux.HandleFunc("/volnix/lizenz/v1/params", s.lizenzParamsHandler)
+	mux.HandleFunc("/volnix/lizenz/v1/lizenz/", s.lizenzLizenzHandler)
+
+	// Anteil module endpoints
+	mux.HandleFunc("/volnix/anteil/v1/params", s.anteilParamsHandler)
+	mux.HandleFunc("/volnix/anteil/v1/orders", s.anteilOrdersHandler)
+	mux.HandleFunc("/volnix/anteil/v1/auctions", s.anteilAuctionsHandler)
 }
 
 // setCORSHeaders sets CORS headers for cross-origin requests
@@ -61,7 +85,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	s.setCORSHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"status": "healthy",
+		"status":  "healthy",
 		"service": "volnix-rest-api",
 	})
 }
@@ -85,8 +109,8 @@ func (s *Server) rootHandler(w http.ResponseWriter, r *http.Request) {
 		"service": "Volnix REST API",
 		"version": "1.0.0",
 		"endpoints": map[string]string{
-			"health": "/health",
-			"consensus_params": "/volnix/consensus/v1/params",
+			"health":               "/health",
+			"consensus_params":     "/volnix/consensus/v1/params",
 			"consensus_validators": "/volnix/consensus/v1/validators",
 		},
 	})
@@ -106,18 +130,18 @@ func (s *Server) consensusParamsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.setCORSHeaders(w)
-	
+
 	// If gRPC is not available, return default params instead of error
 	if s.consensusClient == nil {
 		log.Printf("gRPC client not available, returning default params")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"params": map[string]interface{}{
-				"base_block_time":           "5s",
-				"high_activity_threshold":   "1000",
-				"low_activity_threshold":     "100",
-				"min_burn_amount":           "10",
-				"max_burn_amount":           "1000",
+				"base_block_time":         "5s",
+				"high_activity_threshold": "1000",
+				"low_activity_threshold":  "100",
+				"min_burn_amount":         "10",
+				"max_burn_amount":         "1000",
 			},
 		})
 		return
@@ -131,11 +155,11 @@ func (s *Server) consensusParamsHandler(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"params": map[string]interface{}{
-				"base_block_time":           "5s",
-				"high_activity_threshold":   "1000",
-				"low_activity_threshold":     "100",
-				"min_burn_amount":           "10",
-				"max_burn_amount":           "1000",
+				"base_block_time":         "5s",
+				"high_activity_threshold": "1000",
+				"low_activity_threshold":  "100",
+				"min_burn_amount":         "10",
+				"max_burn_amount":         "1000",
 			},
 		})
 		return
@@ -202,13 +226,13 @@ func (s *Server) getValidatorsFromRPC() ([]map[string]interface{}, error) {
 		votingPower, _ := val["voting_power"].(string)
 
 		formattedValidators = append(formattedValidators, map[string]interface{}{
-			"validator":          address,
-			"status":             "VALIDATOR_STATUS_ACTIVE",
-			"ant_balance":        "0",
-			"activity_score":     "0",
+			"validator":            address,
+			"status":               "VALIDATOR_STATUS_ACTIVE",
+			"ant_balance":          "0",
+			"activity_score":       "0",
 			"total_blocks_created": 0,
-			"total_burn_amount":  "0",
-			"voting_power":       votingPower,
+			"total_burn_amount":    "0",
+			"voting_power":         votingPower,
 		})
 	}
 
@@ -229,7 +253,7 @@ func (s *Server) consensusValidatorsHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	s.setCORSHeaders(w)
-	
+
 	// Try gRPC first
 	if s.consensusClient != nil {
 		ctx := r.Context()
@@ -284,3 +308,9 @@ func (s *Server) handleError(w http.ResponseWriter, err error, message string) {
 	http.Error(w, fmt.Sprintf("%s: %s", message, st.Message()), httpStatus)
 }
 
+// ============================================================================
+// Identity Module Handlers
+// ============================================================================
+
+// NOTE: Ident, Lizenz, and Anteil handlers are defined in handlers.go
+// This file only contains consensus handlers and server setup

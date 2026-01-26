@@ -1692,10 +1692,10 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRoleChange() {
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.NoError(suite.T(), err)
 
-	// Try to change to GUEST (invalid)
+	// Try to change to GUEST (should be rejected - downgrade not allowed)
 	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen", identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err)
-	require.Contains(suite.T(), err.Error(), "invalid role")
+	require.Contains(suite.T(), err.Error(), "downgrade from citizen to guest")
 }
 
 // TestChangeAccountRole_AccountNotFound tests ChangeAccountRole when account doesn't exist
@@ -2550,4 +2550,88 @@ func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_IteratorError() {
 	accounts, err := suite.keeper.GetAllVerifiedAccounts(suite.ctx)
 	require.NoError(suite.T(), err)
 	require.Len(suite.T(), accounts, 3)
+}
+
+// TestValidateRoleChangeProof tests ValidateRoleChangeProof function
+func (suite *KeeperTestSuite) TestValidateRoleChangeProof() {
+	// Test valid proof
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "hash123", "proof-hash123-abc", identv1.Role_ROLE_VALIDATOR)
+	require.NoError(suite.T(), err, "Valid proof should pass validation")
+}
+
+// TestValidateRoleChangeProof_EmptyProof tests ValidateRoleChangeProof with empty proof
+func (suite *KeeperTestSuite) TestValidateRoleChangeProof_EmptyProof() {
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "hash123", "", identv1.Role_ROLE_VALIDATOR)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "ZKP proof cannot be empty")
+}
+
+// TestValidateRoleChangeProof_EmptyIdentityHash tests ValidateRoleChangeProof with empty identity hash
+func (suite *KeeperTestSuite) TestValidateRoleChangeProof_EmptyIdentityHash() {
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "", "proof123", identv1.Role_ROLE_VALIDATOR)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "identity hash cannot be empty")
+}
+
+// TestValidateRoleChangeProof_ShortProof tests ValidateRoleChangeProof with short proof
+func (suite *KeeperTestSuite) TestValidateRoleChangeProof_ShortProof() {
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "hash123", "short", identv1.Role_ROLE_VALIDATOR)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "ZKP proof is too short")
+}
+
+// TestValidateRoleChange_Downgrade tests validateRoleChange with downgrade scenarios
+func (suite *KeeperTestSuite) TestValidateRoleChange_Downgrade() {
+	// Create test keeper context
+	// Note: validateRoleChange is a private function, tested through ChangeAccountRole
+	
+	// Test 1: VALIDATOR to GUEST downgrade (should be rejected)
+	validatorAccount := &identv1.VerifiedAccount{
+		Address:      "cosmos1validator",
+		Role:         identv1.Role_ROLE_VALIDATOR,
+		IdentityHash: "hash1",
+		IsActive:     true,
+		LastActive:   timestamppb.Now(),
+	}
+	err := suite.keeper.SetVerifiedAccount(suite.ctx, validatorAccount)
+	require.NoError(suite.T(), err)
+	
+	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1validator", identv1.Role_ROLE_GUEST)
+	require.Error(suite.T(), err, "Downgrade from validator to guest should be rejected")
+	require.Contains(suite.T(), err.Error(), "downgrade from validator to guest")
+	
+	// Test 2: CITIZEN to GUEST downgrade (should be rejected)
+	citizenAccount := &identv1.VerifiedAccount{
+		Address:      "cosmos1citizen",
+		Role:         identv1.Role_ROLE_CITIZEN,
+		IdentityHash: "hash2",
+		IsActive:     true,
+		LastActive:   timestamppb.Now(),
+	}
+	err = suite.keeper.SetVerifiedAccount(suite.ctx, citizenAccount)
+	require.NoError(suite.T(), err)
+	
+	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen", identv1.Role_ROLE_GUEST)
+	require.Error(suite.T(), err, "Downgrade from citizen to guest should be rejected")
+	require.Contains(suite.T(), err.Error(), "downgrade from citizen to guest")
+	
+	// Test 3: Valid upgrades should work (CITIZEN to VALIDATOR)
+	citizen2Account := &identv1.VerifiedAccount{
+		Address:      "cosmos1citizen2",
+		Role:         identv1.Role_ROLE_CITIZEN,
+		IdentityHash: "hash3",
+		IsActive:     true,
+		LastActive:   timestamppb.Now(),
+	}
+	err = suite.keeper.SetVerifiedAccount(suite.ctx, citizen2Account)
+	require.NoError(suite.T(), err)
+	
+	// Upgrade CITIZEN to VALIDATOR (should work)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen2", identv1.Role_ROLE_VALIDATOR)
+	require.NoError(suite.T(), err, "Upgrade from citizen to validator should succeed")
+	
+	// Verify role was changed
+	updatedCitizen2, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen2")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, updatedCitizen2.Role)
 }

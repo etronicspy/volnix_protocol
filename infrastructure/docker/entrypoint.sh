@@ -156,6 +156,14 @@ if [ -f "$CONFIG_FILE" ]; then
         sed -i "/\[p2p\]/a allow_duplicate_ip = true" "$CONFIG_FILE"
     fi
     
+    # addr_book_strict = false - важно для локального тестнета (разрешает приватные IP)
+    if grep -q "^addr_book_strict" "$CONFIG_FILE"; then
+        sed -i 's|^addr_book_strict = .*|addr_book_strict = false|' "$CONFIG_FILE"
+    else
+        sed -i "/\[p2p\]/a addr_book_strict = false" "$CONFIG_FILE"
+    fi
+    echo "✅ addr_book_strict = false (важно для локального тестнета)"
+    
     # max_num_outbound_peers = 20 - достаточно для подключения ко всем пирам
     if grep -q "^max_num_outbound_peers" "$CONFIG_FILE"; then
         sed -i 's|^max_num_outbound_peers = .*|max_num_outbound_peers = 20|' "$CONFIG_FILE"
@@ -178,6 +186,38 @@ if [ -f "$CONFIG_FILE" ]; then
                 echo "✅ unconditional_peer_ids настроен из persistent_peers"
             fi
         fi
+    fi
+    
+    # Настройка external_address
+    # В host network mode, external_address должен быть localhost с правильным портом
+    # В bridge network mode, external_address должен быть IP контейнера с правильным портом
+    if [ -n "$VOLNIX_P2P_PORT" ]; then
+        if [ "$MODE" = "decentralized" ]; then
+            # Host network mode
+            EXTERNAL_ADDR="127.0.0.1:$VOLNIX_P2P_PORT"
+        else
+            # Bridge network mode - получаем IP адрес контейнера
+            CONTAINER_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "")
+            if [ -n "$CONTAINER_IP" ] && [ "$CONTAINER_IP" != "127.0.0.1" ]; then
+                EXTERNAL_ADDR="$CONTAINER_IP:$VOLNIX_P2P_PORT"
+            else
+                # Fallback: пытаемся получить IP из Docker network
+                CONTAINER_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{print $7; exit}' || echo "")
+                if [ -n "$CONTAINER_IP" ]; then
+                    EXTERNAL_ADDR="$CONTAINER_IP:$VOLNIX_P2P_PORT"
+                else
+                    # Последний fallback: используем localhost (не идеально, но лучше чем ничего)
+                    EXTERNAL_ADDR="127.0.0.1:$VOLNIX_P2P_PORT"
+                fi
+            fi
+        fi
+        
+        if grep -q "^external_address" "$CONFIG_FILE"; then
+            sed -i "s|^external_address = .*|external_address = \"$EXTERNAL_ADDR\"|" "$CONFIG_FILE"
+        else
+            sed -i "/\[p2p\]/a external_address = \"$EXTERNAL_ADDR\"" "$CONFIG_FILE"
+        fi
+        echo "✅ external_address настроен: $EXTERNAL_ADDR"
     fi
 fi
 

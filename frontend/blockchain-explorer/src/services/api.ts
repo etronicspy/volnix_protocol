@@ -1,8 +1,8 @@
+import { NetworkStatus, Block, Transaction, Validator, ConsensusParams } from '../types';
+
 // API configuration
 const RPC_ENDPOINT = process.env.REACT_APP_RPC_ENDPOINT || 'http://localhost:26657';
 const REST_API_ENDPOINT = process.env.REACT_APP_REST_API_ENDPOINT || 'http://localhost:1317';
-
-import { NetworkStatus, Block, Transaction, Validator, ConsensusParams } from '../types';
 
 // Fetch network status from RPC
 export async function fetchNetworkStatus(): Promise<NetworkStatus | null> {

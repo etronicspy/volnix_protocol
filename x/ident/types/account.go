@@ -15,6 +15,7 @@ func NewVerifiedAccount(address string, role identv1.Role, identityHash string) 
 		Role:         role,
 		LastActive:   now,
 		IdentityHash: identityHash,
+		IsActive:     true, // New accounts are active by default
 	}
 }
 

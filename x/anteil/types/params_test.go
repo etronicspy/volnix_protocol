@@ -185,3 +185,60 @@ func TestParamKeyTable(t *testing.T) {
 	table := types.ParamKeyTable()
 	require.NotNil(t, table)
 }
+
+// TestValidateString tests validateString function
+func TestValidateString(t *testing.T) {
+	// This is a private function, but we can test it through params validation
+	params := types.DefaultParams()
+	
+	// Valid params should pass
+	err := params.Validate()
+	require.NoError(t, err)
+	
+	// Test with empty string (should fail)
+	params.MinAntAmount = ""
+	err = params.Validate()
+	require.Error(t, err)
+}
+
+// TestValidateDuration tests validateDuration function
+func TestValidateDuration(t *testing.T) {
+	params := types.DefaultParams()
+	
+	// Valid duration should pass
+	err := params.Validate()
+	require.NoError(t, err)
+	
+	// Zero duration should fail
+	params.OrderExpiry = 0
+	err = params.Validate()
+	require.Error(t, err)
+}
+
+// TestValidateBool tests validateBool function
+func TestValidateBool(t *testing.T) {
+	params := types.DefaultParams()
+	
+	// Both true and false should be valid
+	params.RequireIdentityVerification = true
+	err := params.Validate()
+	require.NoError(t, err)
+	
+	params.RequireIdentityVerification = false
+	err = params.Validate()
+	require.NoError(t, err)
+}
+
+// TestValidateUint32 tests validateUint32 function
+func TestValidateUint32(t *testing.T) {
+	params := types.DefaultParams()
+	
+	// Valid uint32 should pass
+	err := params.Validate()
+	require.NoError(t, err)
+	
+	// Zero should fail for MaxOpenOrders
+	params.MaxOpenOrders = 0
+	err = params.Validate()
+	require.Error(t, err)
+}

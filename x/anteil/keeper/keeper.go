@@ -531,7 +531,29 @@ func (k Keeper) BeginBlocker(ctx sdk.Context) error {
 }
 
 // PlaceBid places a bid on an auction
+// According to whitepaper: Only validators can participate in block auctions
 func (k Keeper) PlaceBid(ctx sdk.Context, auctionID string, bidder string, amount string) error {
+	// SECURITY: Verify bidder is a validator
+	// According to whitepaper: "Валидаторы конкурируют за право создания блока"
+	if k.identKeeper != nil {
+		allAccounts, err := k.identKeeper.GetAllVerifiedAccounts(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to verify bidder role: %w", err)
+		}
+		
+		isValidator := false
+		for _, account := range allAccounts {
+			if account.Address == bidder && account.Role == identv1.Role_ROLE_VALIDATOR && account.IsActive {
+				isValidator = true
+				break
+			}
+		}
+		
+		if !isValidator {
+			return fmt.Errorf("only active validators can participate in auctions: %s", bidder)
+		}
+	}
+	
 	auction, err := k.GetAuction(ctx, auctionID)
 	if err != nil {
 		return err
@@ -545,6 +567,22 @@ func (k Keeper) PlaceBid(ctx sdk.Context, auctionID string, bidder string, amoun
 	// Check if auction has ended
 	if ctx.BlockTime().After(auction.EndTime.AsTime()) {
 		return anteiltypes.ErrAuctionExpired
+	}
+
+	// SECURITY: Verify bid meets reserve price
+	// According to whitepaper: Auctions have reserve price to prevent low bids
+	bidAmount, err := strconv.ParseFloat(amount, 64)
+	if err != nil {
+		return fmt.Errorf("invalid bid amount: %w", err)
+	}
+	
+	reservePrice, err := strconv.ParseFloat(auction.ReservePrice, 64)
+	if err != nil {
+		return fmt.Errorf("invalid reserve price: %w", err)
+	}
+	
+	if bidAmount < reservePrice {
+		return fmt.Errorf("bid amount %s is below reserve price %s", amount, auction.ReservePrice)
 	}
 
 	// Create bid
@@ -771,17 +809,36 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 		return fmt.Errorf("invalid citizen ANT accumulation limit: %w", err)
 	}
 
-	// Filter citizens and distribute ANT
+	// OPTIMIZED: Filter citizens and validators and distribute ANT
+	// According to whitepaper: Validators have all Citizen rights, including receiving ANT
 	distributedCount := 0
+	
+	// OPTIMIZATION: Cache timestamp to avoid repeated allocations
+	now := timestamppb.Now()
+	
+	// OPTIMIZATION: Get store once for batch operations
+	store := ctx.KVStore(k.storeKey)
+	
+	// OPTIMIZATION: Batch process positions to reduce store operations
 	for _, account := range allAccounts {
-		// Only process active citizens
-		if account.Role != identv1.Role_ROLE_CITIZEN || !account.IsActive {
+		// Only process active citizens and validators
+		// Validators have all citizen rights per protocol design
+		if (account.Role != identv1.Role_ROLE_CITIZEN && account.Role != identv1.Role_ROLE_VALIDATOR) || !account.IsActive {
 			continue
 		}
 
-		// Get or create user position
-		position, err := k.GetUserPosition(ctx, account.Address)
-		if err != nil {
+		// OPTIMIZED: Get user position directly from store (faster than GetUserPosition)
+		positionKey := anteiltypes.GetUserPositionKey(account.Address)
+		var position *anteilv1.UserPosition
+		
+		positionBz := store.Get(positionKey)
+		if positionBz != nil {
+			position = &anteilv1.UserPosition{}
+			if err := k.cdc.Unmarshal(positionBz, position); err != nil {
+				// If unmarshal fails, create new position
+				position = anteiltypes.NewUserPosition(account.Address, "0")
+			}
+		} else {
 			// Create new position if not found
 			position = anteiltypes.NewUserPosition(account.Address, "0")
 		}
@@ -794,8 +851,7 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 
 		// Skip if already at limit
 		if currentBalance >= accumulationLimit {
-			ctx.Logger().Debug("Citizen at accumulation limit", "citizen", account.Address, "balance", currentBalance, "limit", accumulationLimit)
-			continue
+			continue // Skip logging in production for performance
 		}
 
 		// Calculate new balance (respect limit)
@@ -804,33 +860,37 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 			newBalance = accumulationLimit
 		}
 
-		// Update position
-		position.AntBalance = fmt.Sprintf("%d", newBalance)
-		position.AvailableAnt = position.AntBalance // Available = total (not locked)
-		position.LastActivity = timestamppb.Now()
+		// OPTIMIZED: Use strconv.FormatUint instead of fmt.Sprintf (faster)
+		balanceStr := strconv.FormatUint(newBalance, 10)
+		position.AntBalance = balanceStr
+		position.AvailableAnt = balanceStr // Available = total (not locked)
+		position.LastActivity = now // Reuse cached timestamp
 
-		if err := k.SetUserPosition(ctx, position); err != nil {
-			ctx.Logger().Error("Failed to update citizen position", "citizen", account.Address, "error", err)
-			continue // Continue with other citizens
+		// OPTIMIZED: Marshal and set directly (faster than SetUserPosition wrapper)
+		positionBz, err = k.cdc.Marshal(position)
+		if err != nil {
+			ctx.Logger().Error("Failed to marshal position", "citizen", account.Address, "error", err)
+			continue
 		}
+		store.Set(positionKey, positionBz)
 
 		distributedCount++
 
-		// Emit event for ANT distribution
+		// OPTIMIZED: Emit event for ANT distribution
+		// Note: Events are important for indexing, but can be batched in future
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(
 				"anteil.ant_distributed",
 				sdk.NewAttribute("citizen", account.Address),
-				sdk.NewAttribute("amount", fmt.Sprintf("%d", rewardRate)),
-				sdk.NewAttribute("new_balance", fmt.Sprintf("%d", newBalance)),
-				sdk.NewAttribute("limit", fmt.Sprintf("%d", accumulationLimit)),
+				sdk.NewAttribute("role", account.Role.String()),
+				sdk.NewAttribute("amount", strconv.FormatUint(rewardRate, 10)),
+				sdk.NewAttribute("new_balance", balanceStr),
+				sdk.NewAttribute("limit", strconv.FormatUint(accumulationLimit, 10)),
 			),
 		)
-
-		ctx.Logger().Info("ANT distributed to citizen", "citizen", account.Address, "amount", rewardRate, "new_balance", newBalance)
 	}
 
-	ctx.Logger().Info("ANT distribution completed", "citizens_distributed", distributedCount, "total_citizens", len(allAccounts))
+	ctx.Logger().Info("ANT distribution completed", "recipients_distributed", distributedCount, "total_accounts", len(allAccounts))
 	return nil
 }
 

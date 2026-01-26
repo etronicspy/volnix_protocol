@@ -3,6 +3,7 @@ import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import { GasPrice } from '@cosmjs/stargate';
 import { Comet38Client } from '@cosmjs/tendermint-rpc';
 import { Registry } from '@cosmjs/proto-signing';
+import { MsgChangeRoleType } from '../types/volnix-messages';
 
 // Конфигурация сети
 const RPC_ENDPOINT = process.env.REACT_APP_RPC_ENDPOINT || 'http://localhost:26657';
@@ -103,16 +104,28 @@ class BlockchainService {
         // This ensures CosmJS can properly encode MsgSend messages
         const registry = new Registry(defaultRegistryTypes);
         
+        // Register custom Volnix Protocol message types
+        // MsgChangeRole: for changing account roles
+        registry.register('/volnix.ident.v1.MsgChangeRole', MsgChangeRoleType);
+        
         // CRITICAL: Use explicit chain-id to avoid "must provide a non-empty value" error
         // when blocks haven't been created yet
-        this.signingClient = await SigningStargateClient.connectWithSigner(
-          RPC_ENDPOINT,
+        // Create Comet38Client first - it will get chain-id from /status endpoint
+        // The chain-id is available in node_info.network even if blocks aren't created
+        const cometClient = await Comet38Client.connect(RPC_ENDPOINT);
+        
+        // Create SigningStargateClient from Comet38Client
+        // Note: chainId is not a valid option in SigningStargateClientOptions
+        // The chain-id will be obtained from the Comet38Client, which gets it from /status
+        this.signingClient = await SigningStargateClient.createWithSigner(
+          cometClient,
           this.wallet,
           {
             gasPrice: GasPrice.fromString('0.025uwrt'),
             registry: registry, // CRITICAL: Register types for message encoding
           }
         );
+        
         console.log('✅ SigningStargateClient connected with chain-id:', actualChainId);
         
         // Close read client as SigningStargateClient has its own connection
@@ -696,6 +709,136 @@ class BlockchainService {
     } catch (error) {
       console.error('Error fetching latest block:', error);
       return null;
+    }
+  }
+
+  // Получение роли аккаунта через REST API
+  async getAccountRole(address: string): Promise<'guest' | 'citizen' | 'validator' | null> {
+    try {
+      // REST API endpoint для получения verified account
+      const REST_ENDPOINT = process.env.REACT_APP_REST_ENDPOINT || 'http://localhost:1317';
+      const response = await fetch(`${REST_ENDPOINT}/volnix/ident/v1/verified_account/${address}`);
+      
+      if (!response.ok) {
+        // Если аккаунт не найден, возвращаем guest
+        if (response.status === 404) {
+          return 'guest';
+        }
+        throw new Error(`Failed to get account role: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const verifiedAccount = data.verified_account;
+      
+      if (!verifiedAccount || !verifiedAccount.role) {
+        return 'guest';
+      }
+
+      // Конвертируем Role enum в WalletType
+      const role = verifiedAccount.role;
+      if (role === 'ROLE_CITIZEN' || role === 2) {
+        return 'citizen';
+      } else if (role === 'ROLE_VALIDATOR' || role === 3) {
+        return 'validator';
+      } else {
+        return 'guest';
+      }
+    } catch (error: any) {
+      console.warn(`Failed to get account role: ${error.message}. Defaulting to guest.`);
+      return 'guest';
+    }
+  }
+
+  // Отправка транзакции изменения роли на блокчейн
+  async changeRole(
+    address: string,
+    newRole: 'guest' | 'citizen' | 'validator'
+  ): Promise<string> {
+    if (!this.signingClient) {
+      throw new Error('Signing client not initialized. Please connect wallet with mnemonic.');
+    }
+
+    // Конвертируем WalletType в Role enum
+    let roleValue: number;
+    if (newRole === 'citizen') {
+      roleValue = 2; // ROLE_CITIZEN
+    } else if (newRole === 'validator') {
+      roleValue = 3; // ROLE_VALIDATOR
+    } else {
+      roleValue = 1; // ROLE_GUEST
+    }
+
+    try {
+      console.log('📤 Sending MsgChangeRole transaction to blockchain:', {
+        address,
+        newRole,
+        roleValue
+      });
+
+      // Создаем сообщение MsgChangeRole
+      const changeRoleMsg = {
+        typeUrl: '/volnix.ident.v1.MsgChangeRole',
+        value: {
+          address: address,
+          newRole: roleValue,
+          zkpProof: '', // Temporary: empty proof for testing
+          // changeFee is optional, not included
+        },
+      };
+
+      const fee = {
+        amount: [
+          {
+            denom: 'uwrt',
+            amount: '5000', // Minimal fee
+          },
+        ],
+        gas: '200000',
+      };
+
+      console.log('📋 Message structure:', {
+        typeUrl: changeRoleMsg.typeUrl,
+        value: changeRoleMsg.value,
+        fee: fee
+      });
+
+      // Отправляем транзакцию на блокчейн
+      const result = await this.signingClient.signAndBroadcast(
+        address,
+        [changeRoleMsg],
+        fee
+      );
+
+      console.log('✅ Transaction result:', {
+        code: result.code,
+        hash: result.transactionHash,
+        height: result.height,
+        rawLog: result.rawLog
+      });
+
+      if (result.code !== 0) {
+        console.error('❌ Transaction failed:', result.rawLog);
+        throw new Error(`Transaction failed: ${result.rawLog}`);
+      }
+
+      console.log('✅ Role change transaction sent successfully:', result.transactionHash);
+
+      // Wait a bit for transaction to be included
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      return result.transactionHash;
+    } catch (error: any) {
+      console.error('❌ Error sending role change transaction:', error);
+      
+      // Provide helpful error messages
+      if (error.message && error.message.includes('not registered')) {
+        throw new Error('Message type not registered. Please check Registry configuration.');
+      }
+      if (error.message && error.message.includes('ZKP proof')) {
+        throw new Error('ZKP proof validation failed. For testing, use empty proof.');
+      }
+      
+      throw new Error(`Failed to change role: ${error.message || error}`);
     }
   }
 

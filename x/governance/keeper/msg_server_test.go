@@ -219,6 +219,62 @@ func (suite *MsgServerTestSuite) TestVote() {
 }
 
 // Test ExecuteProposal
+// TestVote_ProposalNotFound tests voting on non-existent proposal
+func (suite *MsgServerTestSuite) TestVote_ProposalNotFound() {
+	voter := sdk.AccAddress("test_voter_12345678901234567890").String()
+	suite.mockBankKeeper.SetBalance(voter, 5000000)
+
+	voteReq := &governancev1.MsgVote{
+		Voter:      voter,
+		ProposalId: 999, // Non-existent
+		Option:     governancev1.VoteOption_VOTE_OPTION_YES,
+	}
+
+	_, err := suite.msgServer.Vote(suite.ctx, voteReq)
+	require.Error(suite.T(), err)
+}
+
+// TestVote_EmptyVoter tests voting with empty voter
+func (suite *MsgServerTestSuite) TestVote_EmptyVoter() {
+	voteReq := &governancev1.MsgVote{
+		Voter:      "",
+		ProposalId: 1,
+		Option:     governancev1.VoteOption_VOTE_OPTION_YES,
+	}
+
+	_, err := suite.msgServer.Vote(suite.ctx, voteReq)
+	require.Error(suite.T(), err)
+}
+
+// TestVote_InvalidVoteOption tests voting with invalid option
+func (suite *MsgServerTestSuite) TestVote_InvalidVoteOption() {
+	proposer := sdk.AccAddress("test_proposer_12345678901234567890").String()
+	voter := sdk.AccAddress("test_voter_12345678901234567890").String()
+	
+	suite.mockBankKeeper.SetBalance(proposer, 10000000)
+	suite.mockBankKeeper.SetBalance(voter, 5000000)
+
+	// Create proposal
+	submitReq := &governancev1.MsgSubmitProposal{
+		Proposer:    proposer,
+		Title:       "Test Proposal",
+		Description: "Test",
+		Deposit:     "2000000",
+	}
+	_, err := suite.msgServer.SubmitProposal(suite.ctx, submitReq)
+	require.NoError(suite.T(), err)
+
+	// Try to vote with invalid option
+	voteReq := &governancev1.MsgVote{
+		Voter:      voter,
+		ProposalId: 1,
+		Option:     governancev1.VoteOption_VOTE_OPTION_UNSPECIFIED,
+	}
+
+	_, err = suite.msgServer.Vote(suite.ctx, voteReq)
+	require.Error(suite.T(), err)
+}
+
 func (suite *MsgServerTestSuite) TestExecuteProposal() {
 	proposer := sdk.AccAddress("test_proposer_12345678901234567890").String()
 	voter1 := sdk.AccAddress("test_voter1_12345678901234567890").String()

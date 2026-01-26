@@ -33,9 +33,7 @@ func (ConsensusAppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) 
 
 // RegisterInterfaces registers the consensus module's interface types.
 func (ConsensusAppModuleBasic) RegisterInterfaces(reg codectypes.InterfaceRegistry) {
-	// Interface registration temporarily disabled for integration testing
-	// types.RegisterInterfaces(reg)
-	// consensusv1.RegisterInterfaces(reg)
+	types.RegisterInterfaces(reg)
 }
 
 // DefaultGenesis returns default genesis state as raw bytes for the consensus module.

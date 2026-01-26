@@ -200,16 +200,51 @@ func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 		"avg_price":        0,
 	}
 
-	// TODO: Get actual metrics from anteil keeper via context
-	// For now, return zero values - real implementation should query keeper
-	// Example: anteilKeeper := ms.app.GetAnteilKeeper()
-	//          orders, _ := anteilKeeper.GetAllOrders(ctx)
-	metrics["total_orders"] = 0
-	metrics["active_orders"] = 0
-	metrics["completed_orders"] = 0
-	metrics["volume_24h"] = 0
-	metrics["total_volume"] = 0
-	metrics["active_auctions"] = 0
+	// Get actual metrics from anteil keeper
+	if ms.app.anteilKeeper != nil {
+		// Note: For monitoring, we need a proper context
+		// In production, this should use the latest committed state
+		// For now, we return zero values as before until proper context management is implemented
+		// TODO: Implement proper context management for monitoring queries
+		return metrics
+		
+		/* Commented out until proper context is available
+		ctx := sdk.UnwrapSDKContext(context.Background())
+		
+		// Get all orders
+		orders, err := ms.app.AnteilKeeper.GetAllOrders(ctx)
+		if err == nil {
+			metrics["total_orders"] = len(orders)
+			
+			// Count active orders
+			activeCount := 0
+			for _, order := range orders {
+				if order.Status == 1 { // OPEN status
+					activeCount++
+				}
+			}
+			metrics["active_orders"] = activeCount
+		}
+		
+		// Get all auctions
+		auctions, err := ms.app.AnteilKeeper.GetAllAuctions(ctx)
+		if err == nil {
+			activeAuctions := 0
+			for _, auction := range auctions {
+				if auction.Status == 1 { // OPEN status
+					activeAuctions++
+				}
+			}
+			metrics["active_auctions"] = activeAuctions
+		}
+		
+		// Get all trades
+		trades, err := ms.app.AnteilKeeper.GetAllTrades(ctx)
+		if err == nil {
+			metrics["completed_orders"] = len(trades)
+		}
+		*/
+	}
 
 	return metrics
 }
@@ -217,32 +252,79 @@ func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 // getIdentityMetrics gets identity system metrics
 func (ms *MonitoringService) getIdentityMetrics() map[string]interface{} {
 	metrics := map[string]interface{}{
-		"verified_accounts":       0,
-		"pending_verifications":   0,
-		"total_accounts":          0,
-		"role_migrations":         0,
+		"verified_accounts":         0,
+		"pending_verifications":     0,
+		"total_accounts":            0,
+		"role_migrations":           0,
 		"verification_success_rate": 0.0,
+		"citizens":                  0,
+		"validators":                0,
+		"guests":                    0,
 	}
 
-	// TODO: Get actual metrics from ident keeper via context
-	// For now, return zero values - real implementation should query keeper
-	// Example: identKeeper := ms.app.GetIdentKeeper()
-	//          accounts, _ := identKeeper.GetAllVerifiedAccounts(ctx)
-	metrics["verified_accounts"] = 0
-	metrics["pending_verifications"] = 0
-	metrics["total_accounts"] = 0
-	metrics["role_migrations"] = 0
-	metrics["verification_success_rate"] = 0.0
+	// Get actual metrics from ident keeper
+	if ms.app.identKeeper != nil {
+		// Note: For monitoring, we need a proper context
+		// In production, this should use the latest committed state
+		// For now, we return zero values as before until proper context management is implemented
+		// TODO: Implement proper context management for monitoring queries
+		return metrics
+		
+		/* Commented out until proper context is available
+		ctx := sdk.UnwrapSDKContext(context.Background())
+		
+		// Get all verified accounts
+		accounts, err := ms.app.IdentKeeper.GetAllVerifiedAccounts(ctx)
+		if err == nil {
+			metrics["verified_accounts"] = len(accounts)
+			metrics["total_accounts"] = len(accounts)
+			
+			// Count by role
+			citizens := 0
+			validators := 0
+			guests := 0
+			
+			for _, account := range accounts {
+				switch account.Role {
+				case 2: // ROLE_CITIZEN
+					citizens++
+				case 3: // ROLE_VALIDATOR
+					validators++
+				case 1: // ROLE_GUEST
+					guests++
+				}
+			}
+			
+			metrics["citizens"] = citizens
+			metrics["validators"] = validators
+			metrics["guests"] = guests
+		}
+		
+		// Get role migrations
+		migrations, err := ms.app.IdentKeeper.GetAllRoleMigrations(ctx)
+		if err == nil {
+			metrics["role_migrations"] = len(migrations)
+		}
+		*/
+	}
 
 	return metrics
 }
 
 // getValidatorCount gets the current validator count
 func (ms *MonitoringService) getValidatorCount() int {
-	// TODO: Get actual validator count from consensus keeper via context
-	// For now, return zero - real implementation should query keeper
-	// Example: consensusKeeper := ms.app.GetConsensusKeeper()
-	//          validators := consensusKeeper.GetAllValidators(ctx)
-	//          return len(validators)
+	if ms.app.consensusKeeper != nil {
+		// Note: Proper context management needed for monitoring
+		// TODO: Implement proper context management
+		return 0
+		
+		/* Commented out until proper context is available
+		ctx := sdk.UnwrapSDKContext(context.Background())
+		validators, err := ms.app.ConsensusKeeper.GetAllValidators(ctx)
+		if err == nil {
+			return len(validators)
+		}
+		*/
+	}
 	return 0
 }
