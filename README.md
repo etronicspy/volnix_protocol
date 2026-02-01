@@ -94,9 +94,8 @@ docker run -d \
   volnix-validator:latest
 ```
 
-### Локальное тестирование сети (Docker Compose)
+### Тестирование сети (Docker Compose)
 ```bash
-# Для тестирования нескольких валидаторов на одной машине
 cd testnet
 docker-compose -f docker-compose.test.yml up -d
 ```
