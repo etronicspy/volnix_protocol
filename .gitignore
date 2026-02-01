@@ -1,5 +1,6 @@
 # Binaries
 build/
+backend/api/api
 *.exe
 volnixd
 volnixd.exe

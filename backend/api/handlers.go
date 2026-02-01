@@ -189,16 +189,19 @@ func (s *Server) anteilOrdersHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
 	s.setCORSHeaders(w)
-	
-	// Placeholder: Query method not yet defined in proto
-	// Return empty response for now
+	if s.anteilClient == nil {
+		http.Error(w, "Anteil service not available", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	resp, err := s.anteilClient.Orders(ctx, &anteilv1.QueryOrdersRequest{})
+	if err != nil {
+		s.handleError(w, err, "Failed to get orders")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"orders": []interface{}{},
-		"message": "Orders query endpoint - coming soon",
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) anteilAuctionsHandler(w http.ResponseWriter, r *http.Request) {
@@ -207,14 +210,17 @@ func (s *Server) anteilAuctionsHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
 	s.setCORSHeaders(w)
-	
-	// Placeholder: Query method not yet defined in proto
-	// Return empty response for now
+	if s.anteilClient == nil {
+		http.Error(w, "Anteil service not available", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := r.Context()
+	resp, err := s.anteilClient.Auctions(ctx, &anteilv1.QueryAuctionsRequest{})
+	if err != nil {
+		s.handleError(w, err, "Failed to get auctions")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"auctions": []interface{}{},
-		"message": "Auctions query endpoint - coming soon",
-	})
+	json.NewEncoder(w).Encode(resp)
 }

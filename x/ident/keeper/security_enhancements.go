@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"cosmossdk.io/store/prefix"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -59,6 +60,19 @@ func (k Keeper) VerifyProvider(ctx sdk.Context, providerID string) error {
 		}
 	}
 
+	return nil
+}
+
+// SetAccreditationRecord stores an accreditation record by hash so ValidateProviderAccreditation can resolve it.
+func (k Keeper) SetAccreditationRecord(ctx sdk.Context, accreditationHash string, valid bool) error {
+	store := ctx.KVStore(k.storeKey)
+	key := types.GetAccreditationKey(accreditationHash)
+	data := map[string]interface{}{"valid": valid}
+	bz, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal accreditation: %w", err)
+	}
+	store.Set(key, bz)
 	return nil
 }
 
@@ -126,6 +140,23 @@ func (k Keeper) SetVerificationProvider(ctx sdk.Context, provider *VerificationP
 
 	store.Set(providerKey, providerBz)
 	return nil
+}
+
+// GetAllVerificationProviders returns all stored verification providers
+func (k Keeper) GetAllVerificationProviders(ctx sdk.Context) ([]*VerificationProvider, error) {
+	store := ctx.KVStore(k.storeKey)
+	providerStore := prefix.NewStore(store, types.ProviderKeyPrefix)
+	var list []*VerificationProvider
+	iter := providerStore.Iterator(nil, nil)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var p VerificationProvider
+		if err := json.Unmarshal(iter.Value(), &p); err != nil {
+			continue
+		}
+		list = append(list, &p)
+	}
+	return list, nil
 }
 
 // CheckVerificationExpiration checks if a verification has expired

@@ -20,7 +20,7 @@ type MinimalVolnixApp struct {
 
 // NewMinimalVolnixApp creates a minimal Volnix app for CometBFT testing
 func NewMinimalVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore interface{}, encoding EncodingConfig) *MinimalVolnixApp {
-	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder)
+	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder, baseapp.SetChainID("volnix-1"))
 	bapp.SetVersion("0.1.0")
 	bapp.SetInterfaceRegistry(encoding.InterfaceRegistry)
 	bapp.SetTxEncoder(encoding.TxConfig.TxEncoder)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -101,11 +102,15 @@ func (am ConsensusAppModule) RegisterInvariants(ir sdk.InvariantRegistry) {
 }
 
 // InitGenesis performs genesis initialization for the consensus module.
-func (am ConsensusAppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, gs json.RawMessage) {
+// Returns initial validators from genesis so ModuleManager gets a non-empty validator set (HasABCIGenesis).
+func (am ConsensusAppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, gs json.RawMessage) []abci.ValidatorUpdate {
 	var genState types.GenesisState
 	cdc.MustUnmarshalJSON(gs, &genState)
 
 	am.keeper.InitGenesis(ctx, &genState)
+
+	// Return initial validators for CometBFT handshake (required by ModuleManager)
+	return types.InitialValidatorsToAbci(genState.InitialValidators)
 }
 
 // ExportGenesis returns the exported genesis state as raw bytes for the consensus module.

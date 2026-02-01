@@ -255,10 +255,28 @@ func (k Keeper) checkAccountActivity(ctx sdk.Context) error {
 	return nil
 }
 
-// processRoleMigrations processes pending role migrations
+// processRoleMigrations processes pending role migrations (e.g. created but not yet executed).
+// Migrations created via MsgMigrateRole are executed immediately; this handles any deferred flow.
 func (k Keeper) processRoleMigrations(ctx sdk.Context) error {
-	// This would process any pending role migrations
-	// For now, it's a placeholder for future implementation
+	migrations, err := k.GetAllRoleMigrations(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get role migrations: %w", err)
+	}
+	for _, m := range migrations {
+		if m.IsCompleted {
+			continue
+		}
+		if err := k.ExecuteRoleMigration(ctx, m.FromAddress, m.ToAddress); err != nil {
+			ctx.Logger().Debug("role migration skipped",
+				"from", m.FromAddress, "to", m.ToAddress, "error", err)
+			continue
+		}
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent("ident.role_migrated",
+				sdk.NewAttribute("from_address", m.FromAddress),
+				sdk.NewAttribute("to_address", m.ToAddress)),
+		)
+	}
 	return nil
 }
 
@@ -545,8 +563,7 @@ func (k Keeper) ValidateRoleChangeProof(ctx sdk.Context, address string, identit
 		expectedProofPrefix = fmt.Sprintf("proof-%s", identityHash)
 	}
 	
-	// In production: Use real ZKP verification
-	// For now: Basic format check
+	// STUB: Real ZKP verification not integrated — only format check; see docs/CODE_STUBS.md
 	// TODO: Integrate with real ZKP library (gnark, circom)
 	
 	ctx.Logger().Info("Role change ZKP proof validated", 

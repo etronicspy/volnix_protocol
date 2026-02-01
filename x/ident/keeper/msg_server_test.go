@@ -354,16 +354,25 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 }
 
 func (suite *MsgServerTestSuite) TestRegisterVerificationProvider() {
-	// Test valid provider registration
-	// This is a stub implementation, so we just test that it doesn't error
-	msg := &identv1.MsgRegisterVerificationProvider{}
+	// Test valid provider registration (keeper stores provider and returns real accreditation hash)
+	msg := &identv1.MsgRegisterVerificationProvider{
+		ProviderId:          "new-provider",
+		ProviderName:        "New Provider",
+		ProviderPublicKey:   "pubkey123",
+		AccreditationProof:  "proof-data",
+	}
 
 	resp, err := suite.msgServer.RegisterVerificationProvider(suite.ctx, msg)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), resp)
 	require.True(suite.T(), resp.Success)
 	require.NotEmpty(suite.T(), resp.AccreditationHash)
-	require.Equal(suite.T(), "accreditation-123", resp.AccreditationHash)
+	// Hash is deterministic from provider_id + accreditation_proof
+	require.Len(suite.T(), resp.AccreditationHash, 64)
+
+	// Empty provider_id should fail
+	_, err = suite.msgServer.RegisterVerificationProvider(suite.ctx, &identv1.MsgRegisterVerificationProvider{})
+	require.Error(suite.T(), err)
 }
 
 func TestMsgServerTestSuite(t *testing.T) {

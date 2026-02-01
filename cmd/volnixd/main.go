@@ -19,6 +19,86 @@ func main() {
 		Long:  "Volnix Protocol with integrated modules: ident, lizenz, anteil, consensus",
 	}
 
+	initCmd := &cobra.Command{
+		Use:   "init [moniker]",
+		Short: "Initialize node configuration",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			moniker := args[0]
+			homeDir, _ := cmd.Flags().GetString("home")
+			if homeDir == "" {
+				homeDir = os.Getenv("HOME")
+				if homeDir == "" {
+					homeDir = os.Getenv("USERPROFILE") // Windows
+				}
+				homeDir = filepath.Join(homeDir, ".volnix")
+			} else {
+				homeDir, _ = filepath.Abs(homeDir)
+			}
+
+			fmt.Printf("🔧 Initializing Volnix Protocol node: %s\n", moniker)
+			fmt.Printf("📁 Home directory: %s\n", homeDir)
+
+			logger := log.NewLogger(os.Stdout)
+			server, err := NewFullVolnixServer(homeDir, logger)
+			if err != nil {
+				return fmt.Errorf("failed to create server: %w", err)
+			}
+
+			if err := server.initializeFiles(); err != nil {
+				return fmt.Errorf("failed to initialize files: %w", err)
+			}
+
+			fmt.Println("✅ Node configuration initialized!")
+			fmt.Println("📁 Config directory: " + filepath.Join(homeDir, "config"))
+			fmt.Println("📁 Data directory: " + filepath.Join(homeDir, "data"))
+			fmt.Println("🔑 Validator key generated")
+			fmt.Println("🌐 Genesis file created")
+			fmt.Println("")
+			fmt.Println("Next steps:")
+			fmt.Println("  1. volnixd start - Start the blockchain")
+			fmt.Println("  2. volnixd status - Check node status")
+
+			return nil
+		},
+	}
+	initCmd.Flags().String("home", "", "Directory for config and data (default: $HOME/.volnix)")
+
+	startCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start the blockchain node",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			homeDir, _ := cmd.Flags().GetString("home")
+			if homeDir == "" {
+				homeDir = os.Getenv("HOME")
+				if homeDir == "" {
+					homeDir = os.Getenv("USERPROFILE") // Windows
+				}
+				homeDir = filepath.Join(homeDir, ".volnix")
+			} else {
+				homeDir, _ = filepath.Abs(homeDir)
+			}
+
+			configDir := filepath.Join(homeDir, "config")
+			if _, err := os.Stat(configDir); os.IsNotExist(err) {
+				return fmt.Errorf("❌ Node not initialized. Run 'volnixd init <moniker>' first")
+			}
+
+			logger := log.NewLogger(os.Stdout)
+			server, err := NewFullVolnixServer(homeDir, logger)
+			if err != nil {
+				return fmt.Errorf("failed to create server: %w", err)
+			}
+
+			fmt.Println("⚡ Starting CometBFT consensus...")
+			fmt.Println("✨ Full Volnix Protocol node running! Press Ctrl+C to stop...")
+
+			ctx := cmd.Context()
+			return server.Start(ctx)
+		},
+	}
+	startCmd.Flags().String("home", "", "Directory for config and data (default: $HOME/.volnix)")
+
 	rootCmd.AddCommand(
 		&cobra.Command{
 			Use:   "version",
@@ -54,7 +134,7 @@ func main() {
 				encodingConfig := app.MakeEncodingConfig()
 
 				// Create app instance
-				volnixApp := app.NewVolnixApp(logger, db, nil, encodingConfig)
+				volnixApp := app.NewVolnixApp(logger, db, nil, encodingConfig, nil)
 
 				fmt.Println("✅ App created successfully!")
 				fmt.Printf("✅ App name: %s\n", volnixApp.Name())
@@ -70,73 +150,8 @@ func main() {
 				fmt.Println("🚀 Volnix Protocol is ready for blockchain operations!")
 			},
 		},
-		&cobra.Command{
-			Use:   "init [moniker]",
-			Short: "Initialize node configuration",
-			Args:  cobra.ExactArgs(1),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				moniker := args[0]
-				homeDir := os.Getenv("HOME")
-				if homeDir == "" {
-					homeDir = os.Getenv("USERPROFILE") // Windows
-				}
-				homeDir = filepath.Join(homeDir, ".volnix")
-
-				fmt.Printf("🔧 Initializing Volnix Protocol node: %s\n", moniker)
-				fmt.Printf("📁 Home directory: %s\n", homeDir)
-
-				logger := log.NewLogger(os.Stdout)
-				server, err := NewFullVolnixServer(homeDir, logger)
-				if err != nil {
-					return fmt.Errorf("failed to create server: %w", err)
-				}
-
-				// Initialize files (creates genesis.json and config.toml)
-				if err := server.initializeFiles(); err != nil {
-					return fmt.Errorf("failed to initialize files: %w", err)
-				}
-
-				fmt.Println("✅ Node configuration initialized!")
-				fmt.Println("📁 Config directory: " + filepath.Join(homeDir, "config"))
-				fmt.Println("🔑 Validator key generated")
-				fmt.Println("🌐 Genesis file created")
-				fmt.Println("")
-				fmt.Println("Next steps:")
-				fmt.Println("  1. volnixd start - Start the blockchain")
-				fmt.Println("  2. volnixd status - Check node status")
-
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:   "start",
-			Short: "Start the blockchain node",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				homeDir := os.Getenv("HOME")
-				if homeDir == "" {
-					homeDir = os.Getenv("USERPROFILE") // Windows
-				}
-				homeDir = filepath.Join(homeDir, ".volnix")
-
-				// Check if node is initialized
-				configDir := filepath.Join(homeDir, "config")
-				if _, err := os.Stat(configDir); os.IsNotExist(err) {
-					return fmt.Errorf("❌ Node not initialized. Run 'volnixd init <moniker>' first")
-				}
-
-				logger := log.NewLogger(os.Stdout)
-				server, err := NewFullVolnixServer(homeDir, logger)
-				if err != nil {
-					return fmt.Errorf("failed to create server: %w", err)
-				}
-
-				fmt.Println("⚡ Starting CometBFT consensus...")
-				fmt.Println("✨ Full Volnix Protocol node running! Press Ctrl+C to stop...")
-
-				ctx := cmd.Context()
-				return server.Start(ctx)
-			},
-		},
+		initCmd,
+		startCmd,
 		&cobra.Command{
 			Use:   "status",
 			Short: "Query node status",

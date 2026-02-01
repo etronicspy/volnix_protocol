@@ -176,10 +176,8 @@ func (ms *MonitoringService) getConsensusMetrics() map[string]interface{} {
 		"next_halving_height":  0,
 	}
 
-	// TODO: Get actual metrics from consensus keeper via context
-	// For now, return zero values - real implementation should query keeper
-	// Example: consensusKeeper := ms.app.GetConsensusKeeper()
-	//          validators := consensusKeeper.GetAllValidators(ctx)
+	// TODO: Get actual metrics from consensus keeper when sdk.Context is available for monitoring.
+	// See docs/CODE_STUBS.md — proper context management (e.g. last committed state) is required.
 	metrics["total_validators"] = 0
 	metrics["active_validators"] = 0
 	metrics["total_burned_tokens"] = 0
@@ -202,15 +200,11 @@ func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 
 	// Get actual metrics from anteil keeper
 	if ms.app.anteilKeeper != nil {
-		// Note: For monitoring, we need a proper context
-		// In production, this should use the latest committed state
-		// For now, we return zero values as before until proper context management is implemented
-		// TODO: Implement proper context management for monitoring queries
+		// Note: Monitoring needs sdk.Context; see docs/CODE_STUBS.md.
 		return metrics
-		
+
 		/* Commented out until proper context is available
 		ctx := sdk.UnwrapSDKContext(context.Background())
-		
 		// Get all orders
 		orders, err := ms.app.AnteilKeeper.GetAllOrders(ctx)
 		if err == nil {
@@ -264,15 +258,11 @@ func (ms *MonitoringService) getIdentityMetrics() map[string]interface{} {
 
 	// Get actual metrics from ident keeper
 	if ms.app.identKeeper != nil {
-		// Note: For monitoring, we need a proper context
-		// In production, this should use the latest committed state
-		// For now, we return zero values as before until proper context management is implemented
-		// TODO: Implement proper context management for monitoring queries
-		return metrics
-		
+	// Note: Monitoring needs sdk.Context; see docs/CODE_STUBS.md.
+	return metrics
+
 		/* Commented out until proper context is available
 		ctx := sdk.UnwrapSDKContext(context.Background())
-		
 		// Get all verified accounts
 		accounts, err := ms.app.IdentKeeper.GetAllVerifiedAccounts(ctx)
 		if err == nil {
@@ -314,10 +304,9 @@ func (ms *MonitoringService) getIdentityMetrics() map[string]interface{} {
 // getValidatorCount gets the current validator count
 func (ms *MonitoringService) getValidatorCount() int {
 	if ms.app.consensusKeeper != nil {
-		// Note: Proper context management needed for monitoring
-		// TODO: Implement proper context management
+		// Note: sdk.Context needed for keeper queries; see docs/CODE_STUBS.md
 		return 0
-		
+
 		/* Commented out until proper context is available
 		ctx := sdk.UnwrapSDKContext(context.Background())
 		validators, err := ms.app.ConsensusKeeper.GetAllValidators(ctx)

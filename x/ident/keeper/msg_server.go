@@ -2,9 +2,13 @@ package keeper
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/ident/types"
 )
@@ -169,9 +173,45 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 }
 
 func (s MsgServer) RegisterVerificationProvider(ctx context.Context, req *identv1.MsgRegisterVerificationProvider) (*identv1.MsgRegisterVerificationProviderResponse, error) {
-	// Simple stub implementation
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+	if req.ProviderId == "" {
+		return nil, fmt.Errorf("provider_id cannot be empty")
+	}
+	if req.ProviderName == "" {
+		return nil, fmt.Errorf("provider_name cannot be empty")
+	}
+	if req.ProviderPublicKey == "" {
+		return nil, fmt.Errorf("provider_public_key cannot be empty")
+	}
+
+	// Deterministic accreditation hash from provider id and proof (no ZKP verification here)
+	payload := req.ProviderId + req.AccreditationProof
+	hash := sha256.Sum256([]byte(payload))
+	accreditationHash := hex.EncodeToString(hash[:])
+
+	if err := s.k.SetAccreditationRecord(sdkCtx, accreditationHash, true); err != nil {
+		return nil, fmt.Errorf("failed to set accreditation record: %w", err)
+	}
+
+	provider := &VerificationProvider{
+		ProviderID:         req.ProviderId,
+		ProviderName:       req.ProviderName,
+		PublicKey:          req.ProviderPublicKey,
+		AccreditationHash:  accreditationHash,
+		IsActive:           true,
+		RegistrationTime:  timestamppb.Now(),
+		ExpirationTime:     nil,
+	}
+	if err := s.k.SetVerificationProvider(sdkCtx, provider); err != nil {
+		return nil, fmt.Errorf("failed to set verification provider: %w", err)
+	}
+
 	return &identv1.MsgRegisterVerificationProviderResponse{
 		Success:           true,
-		AccreditationHash: "accreditation-123",
+		AccreditationHash: accreditationHash,
 	}, nil
 }

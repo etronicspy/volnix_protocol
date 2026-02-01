@@ -80,4 +80,40 @@ func (s QueryServer) VerifiedAccounts(ctx context.Context, req *identv1.QueryVer
 
 // VerifiedAccountsByRole method removed - not in current protobuf definition
 
+func (s QueryServer) VerificationProviders(ctx context.Context, req *identv1.QueryVerificationProvidersRequest) (*identv1.QueryVerificationProvidersResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	list, err := s.k.GetAllVerificationProviders(sdkCtx)
+	if err != nil {
+		return nil, err
+	}
+	// Convert keeper VerificationProvider to proto
+	protoList := make([]*identv1.VerificationProvider, 0, len(list))
+	for _, p := range list {
+		protoList = append(protoList, &identv1.VerificationProvider{
+			ProviderId:        p.ProviderID,
+			ProviderName:      p.ProviderName,
+			ProviderPublicKey: p.PublicKey,
+			IsAccredited:      p.IsActive,
+			AccreditationDate: p.RegistrationTime,
+			AccreditationHash: p.AccreditationHash,
+		})
+	}
+	// Simple pagination if requested
+	if req.Pagination != nil {
+		offset := req.Pagination.Offset
+		limit := req.Pagination.Limit
+		if limit > 0 && offset < uint64(len(protoList)) {
+			end := offset + limit
+			if end > uint64(len(protoList)) {
+				end = uint64(len(protoList))
+			}
+			protoList = protoList[offset:end]
+		}
+	}
+	return &identv1.QueryVerificationProvidersResponse{
+		VerificationProviders: protoList,
+		Pagination:            nil,
+	}, nil
+}
+
 func (s QueryServer) mustEmbedUnimplementedQueryServer() {}

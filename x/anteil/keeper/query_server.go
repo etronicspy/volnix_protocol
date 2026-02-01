@@ -29,8 +29,18 @@ func (s QueryServer) Params(ctx context.Context, _ *anteilv1.QueryParamsRequest)
 }
 
 func (s QueryServer) Orders(ctx context.Context, req *anteilv1.QueryOrdersRequest) (*anteilv1.QueryOrdersResponse, error) {
-	_ = sdkquery.PageRequest{}
-	return &anteilv1.QueryOrdersResponse{Orders: nil, Pagination: nil}, nil
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	var orders []*anteilv1.Order
+	var err error
+	if req.Owner != "" {
+		orders, err = s.k.GetOrdersByOwner(sdkCtx, req.Owner)
+	} else {
+		orders, err = s.k.GetAllOrders(sdkCtx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &anteilv1.QueryOrdersResponse{Orders: orders, Pagination: nil}, nil
 }
 
 func (s QueryServer) Trades(ctx context.Context, req *anteilv1.QueryTradesRequest) (*anteilv1.QueryTradesResponse, error) {
@@ -39,6 +49,10 @@ func (s QueryServer) Trades(ctx context.Context, req *anteilv1.QueryTradesReques
 }
 
 func (s QueryServer) Auctions(ctx context.Context, req *anteilv1.QueryAuctionsRequest) (*anteilv1.QueryAuctionsResponse, error) {
-	_ = sdkquery.PageRequest{}
-	return &anteilv1.QueryAuctionsResponse{Auctions: nil, Pagination: nil}, nil
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	auctions, err := s.k.GetAllAuctions(sdkCtx)
+	if err != nil {
+		return nil, err
+	}
+	return &anteilv1.QueryAuctionsResponse{Auctions: auctions, Pagination: nil}, nil
 }

@@ -6,19 +6,22 @@ import (
 	"fmt"
 	"io"
 
-	coreservice "cosmossdk.io/core/store"
 	sdklog "cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
-	// bank module for token management
+	"github.com/cosmos/cosmos-sdk/x/auth"
+	authcodec "github.com/cosmos/cosmos-sdk/x/auth/codec"
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -50,50 +53,6 @@ import (
 
 // Application name
 const Name = "volnix"
-
-// kvStoreServiceWrapper wraps KVStoreKey to implement KVStoreService interface
-// This is needed for bank keeper in Cosmos SDK v0.53
-type kvStoreServiceWrapper struct {
-	key *storetypes.KVStoreKey
-}
-
-// OpenKVStore opens a KVStore from the service
-func (w *kvStoreServiceWrapper) OpenKVStore(ctx context.Context) coreservice.KVStore {
-	// This will be called by bank keeper to get the store
-	// The actual store access happens through sdk.Context
-	// For now, we return a simple implementation
-	return &kvStoreWrapper{key: w.key}
-}
-
-// kvStoreWrapper implements KVStore interface
-type kvStoreWrapper struct {
-	key *storetypes.KVStoreKey
-}
-
-func (w *kvStoreWrapper) Get(key []byte) ([]byte, error) {
-	// This is a placeholder - actual implementation uses sdk.Context
-	return nil, fmt.Errorf("kvStoreWrapper.Get should not be called directly")
-}
-
-func (w *kvStoreWrapper) Has(key []byte) (bool, error) {
-	return false, fmt.Errorf("kvStoreWrapper.Has should not be called directly")
-}
-
-func (w *kvStoreWrapper) Set(key, value []byte) error {
-	return fmt.Errorf("kvStoreWrapper.Set should not be called directly")
-}
-
-func (w *kvStoreWrapper) Delete(key []byte) error {
-	return fmt.Errorf("kvStoreWrapper.Delete should not be called directly")
-}
-
-func (w *kvStoreWrapper) Iterator(start, end []byte) (coreservice.Iterator, error) {
-	return nil, fmt.Errorf("kvStoreWrapper.Iterator should not be called directly")
-}
-
-func (w *kvStoreWrapper) ReverseIterator(start, end []byte) (coreservice.Iterator, error) {
-	return nil, fmt.Errorf("kvStoreWrapper.ReverseIterator should not be called directly")
-}
 
 // LizenzKeeperAdapter adapts lizenz keeper to consensus interface
 // Converts []*lizenzv1.ActivatedLizenz to []interface{} for interface compatibility
@@ -326,6 +285,7 @@ type VolnixApp struct {
 	// store keys
 	keyParams     *storetypes.KVStoreKey
 	tkeyParams    *storetypes.TransientStoreKey
+	keyAuth       *storetypes.KVStoreKey
 	keyBank       *storetypes.KVStoreKey
 	keyIdent      *storetypes.KVStoreKey
 	keyLizenz     *storetypes.KVStoreKey
@@ -335,6 +295,7 @@ type VolnixApp struct {
 
 	// keepers
 	paramsKeeper paramskeeper.Keeper
+	authKeeper   authkeeper.AccountKeeper
 	bankKeeper   bankkeeper.Keeper
 
 	// custom module keepers
@@ -357,8 +318,18 @@ type VolnixApp struct {
 	snapshotManager *SnapshotManager
 }
 
-func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig) *VolnixApp {
-	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder)
+func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig, paramStoreDB cosmosdb.DB) *VolnixApp {
+	// Set bech32 prefix so addresses use "volnix"
+	config := sdk.GetConfig()
+	config.SetBech32PrefixForAccount("volnix", "volnixpub")
+	config.SetBech32PrefixForValidator("volnixvaloper", "volnixvaloperpub")
+	config.SetBech32PrefixForConsensusNode("volnixvalcons", "volnixvalconspub")
+
+	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder, baseapp.SetChainID("volnix-1"))
+	if paramStoreDB == nil {
+		paramStoreDB = cosmosdb.NewMemDB()
+	}
+	bapp.SetParamStore(NewParamStore(paramStoreDB))
 	bapp.SetVersion("0.1.0")
 	// Provide interface registry so Msg/Query services can be registered safely
 	bapp.SetInterfaceRegistry(encoding.InterfaceRegistry)
@@ -368,6 +339,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// Store keys
 	keyParams := storetypes.NewKVStoreKey(paramtypes.StoreKey)
 	tkeyParams := storetypes.NewTransientStoreKey(paramtypes.TStoreKey)
+	keyAuth := storetypes.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := storetypes.NewKVStoreKey(banktypes.StoreKey)
 	keyIdent := storetypes.NewKVStoreKey(identtypes.StoreKey)
 	keyLizenz := storetypes.NewKVStoreKey(lizenztypes.StoreKey)
@@ -378,6 +350,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// Mount stores
 	bapp.MountKVStores(map[string]*storetypes.KVStoreKey{
 		paramtypes.StoreKey:      keyParams,
+		authtypes.StoreKey:       keyAuth,
 		banktypes.StoreKey:       keyBank,
 		identtypes.StoreKey:      keyIdent,
 		lizenztypes.StoreKey:     keyLizenz,
@@ -398,40 +371,37 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	consensusSubspace := paramsKeeper.Subspace(consensustypes.ModuleName)
 	governanceSubspace := paramsKeeper.Subspace(governancetypes.ModuleName)
 
+	// Auth keeper (x/auth) — provides AccountKeeper for bank and other modules
+	authStoreService := runtime.NewKVStoreService(keyAuth)
+	authAuthority := authtypes.NewModuleAddress(governancetypes.ModuleName).String()
+	maccPerms := map[string][]string{
+		authtypes.FeeCollectorName: nil,
+		banktypes.ModuleName:      nil,
+		identtypes.ModuleName:     nil,
+		lizenztypes.ModuleName:    nil,
+		anteiltypes.ModuleName:    nil,
+		consensustypes.ModuleName: nil,
+		governancetypes.ModuleName: nil,
+	}
+	authKeeper := authkeeper.NewAccountKeeper(
+		encoding.Codec,
+		authStoreService,
+		authtypes.ProtoBaseAccount,
+		maccPerms,
+		authcodec.NewBech32Codec("volnix"),
+		"volnix",
+		authAuthority,
+	)
+
 	// Bank keeper for token management (WRT, LZN, ANT)
-	// In Cosmos SDK v0.53, bank keeper requires KVStoreService and AccountKeeper
-	// We create a simple KVStoreService wrapper from KVStoreKey
-	// For minimal integration, we use nil AccountKeeper (limits some functionality)
-	// TODO: Add proper AccountKeeper integration for full functionality
-
-	// Create KVStoreService wrapper
-	// In v0.53, we need to implement KVStoreService interface
-	// For now, we create a simple wrapper that uses the KVStoreKey
-	bankStoreService := &kvStoreServiceWrapper{key: keyBank}
-
-	// Create a valid authority address for bank keeper
-	// In Cosmos SDK, authority must be a valid bech32 address
-	// For now, we use a placeholder that will be set properly in production
-	authorityAddr := sdk.AccAddress("authority123456789012345678901234567890") // 32 bytes minimum
-	if len(authorityAddr) == 0 {
-		// Fallback: create a valid bech32 address
-		authorityAddr = sdk.AccAddress(make([]byte, 20)) // 20 bytes for standard address
-	}
-	authority := authorityAddr.String()
-	if authority == "" {
-		// If still empty, use a default valid address format
-		authority = "volnix1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" // Placeholder address
-	}
-
-	// Create bank keeper
-	// Note: Without AccountKeeper, account-related operations are limited
-	// But SendCoins, MintCoins, GetBalance operations should work
+	bankStoreService := runtime.NewKVStoreService(keyBank)
+	bankAuthority := authtypes.NewModuleAddress(governancetypes.ModuleName).String()
 	bankKeeper := bankkeeper.NewBaseKeeper(
 		encoding.Codec,
 		bankStoreService,
-		nil,               // account keeper - will be added later if needed
+		authKeeper,
 		map[string]bool{}, // blocked addresses
-		authority,
+		bankAuthority,
 		logger,
 	)
 
@@ -480,7 +450,8 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 
 	// Module manager (register Msg/Query services only at this stage)
 	mm := module.NewManager(
-		bank.NewAppModule(encoding.Codec, bankKeeper, nil, nil), // account keeper and blocked addresses not needed for basic operations
+		auth.NewAppModule(encoding.Codec, authKeeper, nil, nil),
+		bank.NewAppModule(encoding.Codec, bankKeeper, authKeeper, nil),
 		ident.NewAppModule(identKeeper),
 		lizenz.NewAppModule(lizenzKeeper),
 		anteil.NewAppModule(anteilKeeper),
@@ -495,11 +466,12 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	rateLimiter := NewRateLimiter(DefaultRateLimitConfig())
 
 	// Create app instance
-	app := &VolnixApp{
+		app := &VolnixApp{
 		BaseApp:          bapp,
 		appCodec:         encoding.Codec,
 		keyParams:        keyParams,
 		tkeyParams:       tkeyParams,
+		keyAuth:          keyAuth,
 		keyBank:          keyBank,
 		keyIdent:         keyIdent,
 		keyLizenz:        keyLizenz,
@@ -507,6 +479,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		keyConsensus:     keyConsensus,
 		keyGovernance:    keyGovernance,
 		paramsKeeper:     paramsKeeper,
+		authKeeper:       authKeeper,
 		bankKeeper:       bankKeeper,
 		identKeeper:      identKeeper,
 		lizenzKeeper:     lizenzKeeper,
@@ -526,6 +499,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 
 	// Register interfaces first
 	basicManager := module.NewBasicManager(
+		auth.AppModuleBasic{},
 		bank.AppModuleBasic{},
 		ident.AppModuleBasic{},
 		lizenz.AppModuleBasic{},
@@ -596,11 +570,17 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			// Create default genesis state
 			genesisState = make(map[string]json.RawMessage)
 
+			// Auth and bank genesis (auth first so accounts exist for bank)
+			genesisState[authtypes.ModuleName] = encoding.Codec.MustMarshalJSON(authtypes.DefaultGenesisState())
+			genesisState[banktypes.ModuleName] = encoding.Codec.MustMarshalJSON(banktypes.DefaultGenesisState())
 			// Custom modules genesis
 			genesisState[identtypes.ModuleName] = encoding.Codec.MustMarshalJSON(ident.DefaultGenesis())
 			genesisState[lizenztypes.ModuleName] = encoding.Codec.MustMarshalJSON(lizenz.DefaultGenesis())
 			genesisState[anteiltypes.ModuleName] = encoding.Codec.MustMarshalJSON(anteil.DefaultGenesis())
-			genesisState[consensustypes.ModuleName] = encoding.Codec.MustMarshalJSON(consensus.DefaultGenesis())
+			// Consensus genesis with initial validators for ModuleManager HasABCIGenesis (non-empty validator set)
+			consensusGen := consensus.DefaultGenesis()
+			consensusGen.InitialValidators = consensustypes.AbciValidatorsToInitial(req.Validators)
+			genesisState[consensustypes.ModuleName] = encoding.Codec.MustMarshalJSON(consensusGen)
 			// Governance genesis uses JSON marshaling (not proto)
 			govGenState := governance.DefaultGenesis()
 			govGenBz, err := json.Marshal(govGenState)
@@ -609,6 +589,15 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			}
 			genesisState[governancetypes.ModuleName] = govGenBz
 		}
+		// Always inject consensus initial_validators from req.Validators so ModuleManager gets non-empty validator set
+		// (when app_state is {} we unmarshaled empty genesisState and consensus would be skipped otherwise)
+		consensusGen := consensus.DefaultGenesis()
+		if bz := genesisState[consensustypes.ModuleName]; len(bz) > 0 {
+			encoding.Codec.MustUnmarshalJSON(bz, consensusGen)
+		}
+		consensusGen.InitialValidators = consensustypes.AbciValidatorsToInitial(req.Validators)
+		genesisState[consensustypes.ModuleName] = encoding.Codec.MustMarshalJSON(consensusGen)
+
 		_, err := mm.InitGenesis(ctx, encoding.Codec, genesisState)
 		if err != nil {
 			return nil, err
@@ -660,7 +649,9 @@ func (app *VolnixApp) GetBaseApp() *baseapp.BaseApp {
 // ModuleAccountAddrs returns all the app's module account addresses.
 func (app *VolnixApp) ModuleAccountAddrs() map[string]bool {
 	modAccAddrs := make(map[string]bool)
-	// For now, return empty map since we don't have standard modules yet
+	for _, perm := range app.authKeeper.GetModulePermissions() {
+		modAccAddrs[perm.GetAddress().String()] = true
+	}
 	return modAccAddrs
 }
 

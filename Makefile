@@ -110,7 +110,7 @@ lint: ## Run linter
 	@golangci-lint run
 	@echo "$(GREEN)✅ Linting completed$(NC)"
 
-# Node management commands
+# Node management commands (default: $HOME/.volnix)
 init: build ## Initialize a new node
 	@echo "$(PURPLE)🚀 Initializing Volnix node...$(NC)"
 	@$(BUILD_DIR)/$(BINARY_NAME) init testnode

@@ -28,15 +28,15 @@ func (AppModuleBasic) Name() string {
 	return types.ModuleName
 }
 
-// RegisterLegacyAminoCodec registers the governance module's types on the LegacyAmino codec
+// RegisterLegacyAminoCodec registers the governance module's types on the LegacyAmino codec.
+// No legacy amino message types are used yet; register here when adding CLI/tx encoding.
 func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
-	// TODO: Register types when needed
+	// No types to register until legacy amino tx is used for governance messages
 }
 
 // RegisterInterfaces registers the governance module's interface types
 func (AppModuleBasic) RegisterInterfaces(reg codectypes.InterfaceRegistry) {
-	// Interface registration is handled automatically by Cosmos SDK
-	// governancev1.RegisterInterfaces(reg)
+	types.RegisterInterfaces(reg)
 }
 
 // DefaultGenesis returns default genesis state as raw bytes for the governance module

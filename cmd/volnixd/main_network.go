@@ -67,7 +67,7 @@ func createNetworkCommands() *cobra.Command {
 				encodingConfig := app.MakeEncodingConfig()
 
 				// Create app instance
-				volnixApp := app.NewVolnixApp(logger, db, nil, encodingConfig)
+				volnixApp := app.NewVolnixApp(logger, db, nil, encodingConfig, nil)
 
 				fmt.Printf("✅ Node %s started successfully!\n", nodeID)
 				fmt.Printf("📊 Node %s status:\n", nodeID)
