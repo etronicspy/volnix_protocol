@@ -20,9 +20,8 @@ alwaysApply: true
 - Exception: `README.md` can use any case
 
 ## Infrastructure Directory
-- All infrastructure files in `infrastructure/`: Docker scripts, monitoring configs, Grafana dashboards
-- Structure: `infrastructure/docker/`, `infrastructure/monitoring/`, `infrastructure/grafana/`
-- Referenced in `Dockerfile` and `docker-compose.yml`
+- All infrastructure files in `infrastructure/`: monitoring configs, Grafana dashboards
+- Structure: `infrastructure/monitoring/`, `infrastructure/grafana/`
 
 ## Backend Directory
 - All backend services and API servers go to `backend/`: REST API servers, gRPC gateways, microservices, background workers

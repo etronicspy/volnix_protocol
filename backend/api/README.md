@@ -210,24 +210,6 @@ buf generate
 ls proto/gen/go/volnix/consensus/v1/
 ```
 
-## Интеграция с Docker
-
-Пример Dockerfile:
-
-```dockerfile
-FROM golang:1.21-alpine AS builder
-WORKDIR /app
-COPY backend/api/ .
-RUN go mod download
-RUN go build -o volnix-rest-api main.go server.go
-
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/volnix-rest-api .
-CMD ["./volnix-rest-api"]
-```
-
 ## Лицензия
 
 Часть проекта Volnix Protocol.

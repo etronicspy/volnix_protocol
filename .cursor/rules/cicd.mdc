@@ -13,7 +13,7 @@ alwaysApply: true
 ## Build Process
 - Install dependencies, run code generation (protobuf)
 - Build binaries, run tests, create artifacts
-- Artifacts: Binaries, Docker images, documentation, release packages
+- Artifacts: Binaries, documentation, release packages
 
 ## Code Quality
 - Linting: `golangci-lint` for Go, ESLint for frontend
@@ -22,7 +22,7 @@ alwaysApply: true
 
 ## Security Scanning
 - Dependency vulnerability scanning, code security analysis
-- Secret scanning, container image scanning
+- Secret scanning
 - Use `govulncheck` for Go, `npm audit` for frontend
 
 ## Deployment
@@ -32,7 +32,7 @@ alwaysApply: true
 
 ## Release Automation
 - Tag releases automatically, generate changelog, create release notes
-- Publish artifacts: Binary releases, Docker images, documentation
+- Publish artifacts: Binary releases, documentation
 
 ## Best Practices
 - Cache dependencies, parallelize jobs, optimize build times

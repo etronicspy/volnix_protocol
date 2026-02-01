@@ -153,15 +153,6 @@ testnet-start-unix: build ## Start testnet (Linux/macOS)
 	@echo "$(CYAN)🌐 Starting testnet...$(NC)"
 	@cd testnet && chmod +x start.sh && ./start.sh
 
-# Docker commands (future)
-docker-build: ## Build Docker image
-	@echo "$(BLUE)🐳 Building Docker image...$(NC)"
-	@echo "$(YELLOW)⚠️  Docker support coming soon$(NC)"
-
-docker-run: ## Run in Docker container
-	@echo "$(BLUE)🐳 Running in Docker...$(NC)"
-	@echo "$(YELLOW)⚠️  Docker support coming soon$(NC)"
-
 # Release commands
 release: clean build-all test ## Prepare release build
 	@echo "$(GREEN)🎉 Release build completed!$(NC)"
