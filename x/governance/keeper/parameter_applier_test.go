@@ -237,3 +237,36 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_MinDeposit() {
 	require.Equal(suite.T(), "2000000", params.MinDeposit)
 }
 
+func (suite *ParameterApplierTestSuite) TestApplyParameterChange_LizenzKeeperNotSet() {
+	change := &governancev1.ParameterChange{
+		Module:    "lizenz",
+		Parameter: "activity_coefficient",
+		NewValue:  "0.2",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "lizenz keeper not set")
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyParameterChange_AnteilKeeperNotSet() {
+	change := &governancev1.ParameterChange{
+		Module:    "anteil",
+		Parameter: "min_ant_amount",
+		NewValue:  "100",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "anteil keeper not set")
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyParameterChange_ConsensusKeeperNotSet() {
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "base_block_time",
+		NewValue:  "10s",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "consensus keeper not set")
+}
+

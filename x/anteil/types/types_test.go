@@ -331,3 +331,73 @@ func TestIsBidValid(t *testing.T) {
 		})
 	}
 }
+
+func TestNewUserPosition(t *testing.T) {
+	pos := types.NewUserPosition("cosmos1owner", "1000000")
+	require.NotNil(t, pos)
+	require.Equal(t, "cosmos1owner", pos.Owner)
+	require.Equal(t, "1000000", pos.AntBalance)
+	require.Equal(t, "0", pos.LockedAnt)
+	require.Equal(t, "1000000", pos.AvailableAnt)
+	require.Empty(t, pos.OpenOrderIds)
+	require.Equal(t, "0", pos.TotalTrades)
+	require.Equal(t, "0", pos.TotalVolume)
+	require.NotNil(t, pos.LastActivity)
+}
+
+func TestNewAuction(t *testing.T) {
+	auc := types.NewAuction(100, "500000", "1.0")
+	require.NotNil(t, auc)
+	require.NotEmpty(t, auc.AuctionId)
+	require.Equal(t, uint64(100), auc.BlockHeight)
+	require.Equal(t, "500000", auc.AntAmount)
+	require.Equal(t, "1.0", auc.ReservePrice)
+	require.NotNil(t, auc.StartTime)
+	require.NotNil(t, auc.EndTime)
+	require.Equal(t, anteilv1.AuctionStatus_AUCTION_STATUS_OPEN, auc.Status)
+}
+
+func TestNewBid(t *testing.T) {
+	bid := types.NewBid("cosmos1bidder", "auction-1", "200000", "hash1")
+	require.NotNil(t, bid)
+	require.NotEmpty(t, bid.BidId)
+	require.Equal(t, "cosmos1bidder", bid.Bidder)
+	require.Equal(t, "200000", bid.Amount)
+	require.Equal(t, "hash1", bid.IdentityHash)
+	require.NotNil(t, bid.SubmittedAt)
+}
+
+func TestIsUserPositionValid(t *testing.T) {
+	valid := types.NewUserPosition("cosmos1owner", "1000")
+	require.NoError(t, types.IsUserPositionValid(valid))
+
+	emptyOwner := &anteilv1.UserPosition{Owner: "", AntBalance: "1000"}
+	require.Error(t, types.IsUserPositionValid(emptyOwner))
+	require.Equal(t, types.ErrEmptyOwner, types.IsUserPositionValid(emptyOwner))
+
+	emptyBalance := &anteilv1.UserPosition{Owner: "cosmos1owner", AntBalance: ""}
+	require.Error(t, types.IsUserPositionValid(emptyBalance))
+	require.Equal(t, types.ErrEmptyAntBalance, types.IsUserPositionValid(emptyBalance))
+}
+
+func TestUpdateOrderStatus(t *testing.T) {
+	order := types.NewOrder("cosmos1owner", anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "100", "1", "hash")
+	require.Equal(t, anteilv1.OrderStatus_ORDER_STATUS_OPEN, order.Status)
+	types.UpdateOrderStatus(order, anteilv1.OrderStatus_ORDER_STATUS_FILLED)
+	require.Equal(t, anteilv1.OrderStatus_ORDER_STATUS_FILLED, order.Status)
+}
+
+func TestUpdateUserPosition(t *testing.T) {
+	pos := types.NewUserPosition("cosmos1owner", "1000")
+	trade := types.NewTrade("b1", "s1", "cosmos1buyer", "cosmos1seller", "100", "1", "hash")
+	types.UpdateUserPosition(pos, trade, true)
+	require.Equal(t, "1", pos.TotalTrades)
+	require.Equal(t, "100", pos.TotalVolume)
+}
+
+func TestParseUint64(t *testing.T) {
+	require.Equal(t, uint64(0), types.ParseUint64(""))
+	require.Equal(t, uint64(0), types.ParseUint64("abc"))
+	require.Equal(t, uint64(42), types.ParseUint64("42"))
+	require.Equal(t, uint64(999), types.ParseUint64("999"))
+}

@@ -207,3 +207,62 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts_WithPagination() {
 	require.LessOrEqual(suite.T(), len(resp.VerifiedAccounts), 2)
 }
 
+func (suite *QueryServerTestSuite) TestVerificationProviders() {
+	// Add two providers via keeper
+	for i, id := range []string{"qp-a", "qp-b"} {
+		p := &VerificationProvider{
+			ProviderID:        id,
+			ProviderName:      "Query Provider " + string(rune('A'+i)),
+			PublicKey:         "pk-" + id,
+			AccreditationHash:  "hash-" + id,
+			IsActive:          true,
+			RegistrationTime:  timestamppb.Now(),
+			ExpirationTime:    nil,
+		}
+		err := suite.keeper.SetVerificationProvider(suite.ctx, p)
+		require.NoError(suite.T(), err)
+	}
+	ctx := sdk.WrapSDKContext(suite.ctx)
+	req := &identv1.QueryVerificationProvidersRequest{}
+	resp, err := suite.queryServer.VerificationProviders(ctx, req)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.Len(suite.T(), resp.VerificationProviders, 2)
+	require.Equal(suite.T(), "qp-a", resp.VerificationProviders[0].ProviderId)
+	require.Equal(suite.T(), "qp-b", resp.VerificationProviders[1].ProviderId)
+}
+
+func (suite *QueryServerTestSuite) TestVerificationProviders_Empty() {
+	ctx := sdk.WrapSDKContext(suite.ctx)
+	req := &identv1.QueryVerificationProvidersRequest{}
+	resp, err := suite.queryServer.VerificationProviders(ctx, req)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.Empty(suite.T(), resp.VerificationProviders)
+}
+
+func (suite *QueryServerTestSuite) TestVerificationProviders_WithPagination() {
+	for i := 0; i < 3; i++ {
+		id := "pag-" + string(rune('a'+i))
+		p := &VerificationProvider{
+			ProviderID:        id,
+			ProviderName:      "Paginated " + id,
+			PublicKey:         "pk",
+			AccreditationHash: "hash",
+			IsActive:          true,
+			RegistrationTime:  timestamppb.Now(),
+			ExpirationTime:    nil,
+		}
+		err := suite.keeper.SetVerificationProvider(suite.ctx, p)
+		require.NoError(suite.T(), err)
+	}
+	ctx := sdk.WrapSDKContext(suite.ctx)
+	req := &identv1.QueryVerificationProvidersRequest{
+		Pagination: &sdkquery.PageRequest{Offset: 1, Limit: 2},
+	}
+	resp, err := suite.queryServer.VerificationProviders(ctx, req)
+	require.NoError(suite.T(), err)
+	require.NotNil(suite.T(), resp)
+	require.LessOrEqual(suite.T(), len(resp.VerificationProviders), 2)
+}
+

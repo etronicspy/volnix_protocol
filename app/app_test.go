@@ -9,6 +9,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMakeEncodingConfig(t *testing.T) {
+	cfg := MakeEncodingConfig()
+	require.NotNil(t, cfg.InterfaceRegistry)
+	require.NotNil(t, cfg.Codec)
+	require.NotNil(t, cfg.LegacyAmino)
+	require.NotNil(t, cfg.TxConfig.TxDecoder)
+	require.NotNil(t, cfg.TxConfig.TxEncoder)
+}
+
+func TestEncodingConfig_TxEncoderDecoder(t *testing.T) {
+	cfg := MakeEncodingConfig()
+	bz, err := cfg.TxConfig.TxEncoder(nil)
+	require.NoError(t, err)
+	require.NotNil(t, bz)
+	require.Empty(t, bz)
+	tx, err := cfg.TxConfig.TxDecoder(bz)
+	require.NoError(t, err)
+	require.Nil(t, tx)
+}
+
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	require.NotNil(t, cfg)
+	require.Equal(t, "test-volnix", cfg.Network.ChainID)
+	require.NotEmpty(t, cfg.Consensus.Algorithm)
+	require.NotEmpty(t, cfg.Economic.BaseCurrency)
+	require.NotEmpty(t, cfg.Monitoring.Port)
+}
+
 func TestNewVolnixApp(t *testing.T) {
 	// Create test database
 	db := cosmosdb.NewMemDB()

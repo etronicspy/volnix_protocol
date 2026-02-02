@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -455,5 +456,48 @@ func (m *MockBankKeeper) GetAllBalances(ctx sdk.Context, addr sdk.AccAddress) sd
 
 func (m *MockBankKeeper) GetSupply(ctx sdk.Context, denom string) sdk.Coin {
 	return sdk.NewCoin(denom, math.NewIntFromUint64(m.supply))
+}
+
+func (suite *KeeperTestSuite) TestSetLizenzKeeper() {
+	suite.keeper.SetLizenzKeeper(nil)
+	// No assertion; just ensure no panic
+}
+
+func (suite *KeeperTestSuite) TestSetAnteilKeeper() {
+	suite.keeper.SetAnteilKeeper(nil)
+}
+
+func (suite *KeeperTestSuite) TestSetConsensusKeeper() {
+	suite.keeper.SetConsensusKeeper(nil)
+}
+
+func (suite *KeeperTestSuite) TestGetWRTBalance_NoBankKeeper() {
+	addr := sdk.AccAddress("addr1_______________")
+	bal := suite.keeper.GetWRTBalance(suite.ctx, addr)
+	require.Equal(suite.T(), uint64(0), bal)
+}
+
+func (suite *KeeperTestSuite) TestGetWRTBalance_WithBankKeeper() {
+	mock := &MockBankKeeper{balances: make(map[string]uint64)}
+	addr := sdk.AccAddress("addr1_______________")
+	mock.balances[addr.String()] = 1000
+	suite.keeper.SetBankKeeper(mock)
+	bal := suite.keeper.GetWRTBalance(suite.ctx, addr)
+	require.Equal(suite.T(), uint64(1000), bal)
+}
+
+func (suite *KeeperTestSuite) TestGetTotalWRTSupply_WithBankKeeper() {
+	mock := &MockBankKeeper{balances: make(map[string]uint64), supply: 5000000}
+	suite.keeper.SetBankKeeper(mock)
+	total := suite.keeper.GetTotalWRTSupply(suite.ctx)
+	require.Equal(suite.T(), uint64(5000000), total)
+}
+
+func (suite *KeeperTestSuite) TestCalculateVotingPower_ValidAddressNoBalance() {
+	// Keeper without bank keeper: balance 0. Use valid bech32 from bytes.
+	addr := sdk.AccAddress(bytes.Repeat([]byte{0x01}, 20))
+	power, err := suite.keeper.CalculateVotingPower(suite.ctx, addr.String())
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "0", power)
 }
 

@@ -2075,12 +2075,100 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_UpdateError() {
 	require.Contains(suite.T(), err.Error(), "failed")
 }
 
-// TestBeginBlocker_ProcessMigrationsError tests BeginBlocker when processRoleMigrations fails
+// TestBeginBlocker_ProcessMigrationsError tests BeginBlocker when processRoleMigrations runs (no pending migrations)
 func (suite *KeeperTestSuite) TestBeginBlocker_ProcessMigrationsError() {
-	// BeginBlocker calls processRoleMigrations which currently always returns nil
-	// This test verifies BeginBlocker handles it correctly
 	err := suite.keeper.BeginBlocker(suite.ctx)
 	require.NoError(suite.T(), err)
+}
+
+// TestBeginBlocker_ProcessRoleMigrations_PendingExecuted tests that pending role migrations are executed in BeginBlocker
+func (suite *KeeperTestSuite) TestBeginBlocker_ProcessRoleMigrations_PendingExecuted() {
+	fromAddr := "cosmos1from"
+	toAddr := "cosmos1to"
+	// Source account must exist for ExecuteRoleMigration
+	acc := &identv1.VerifiedAccount{
+		Address:              fromAddr,
+		Role:                 identv1.Role_ROLE_CITIZEN,
+		VerificationDate:     timestamppb.Now(),
+		LastActive:           timestamppb.Now(),
+		IsActive:             true,
+		IdentityHash:         "hash-mig",
+		VerificationProvider: "provider1",
+	}
+	err := suite.keeper.SetVerifiedAccount(suite.ctx, acc)
+	require.NoError(suite.T(), err)
+	// Pending migration (not completed)
+	migration := &identv1.RoleMigration{
+		FromAddress:   fromAddr,
+		ToAddress:     toAddr,
+		FromRole:      identv1.Role_ROLE_CITIZEN,
+		ToRole:        identv1.Role_ROLE_CITIZEN,
+		MigrationHash: "hash-mig",
+		IsCompleted:   false,
+	}
+	err = suite.keeper.SetRoleMigration(suite.ctx, migration)
+	require.NoError(suite.T(), err)
+	// BeginBlocker runs processRoleMigrations and executes the pending migration
+	err = suite.keeper.BeginBlocker(suite.ctx)
+	require.NoError(suite.T(), err)
+	// Target account should exist; migration should be completed
+	got, err := suite.keeper.GetVerifiedAccount(suite.ctx, toAddr)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), toAddr, got.Address)
+	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, got.Role)
+	m, err := suite.keeper.GetRoleMigration(suite.ctx, fromAddr, toAddr)
+	require.NoError(suite.T(), err)
+	require.True(suite.T(), m.IsCompleted)
+}
+
+// TestSetAccreditationRecord tests storing and resolving accreditation record
+func (suite *KeeperTestSuite) TestSetAccreditationRecord() {
+	err := suite.keeper.SetAccreditationRecord(suite.ctx, "accred-hash-1", true)
+	require.NoError(suite.T(), err)
+	// ValidateProviderAccreditation should pass for a provider with this hash
+	provider := &keeper.VerificationProvider{
+		ProviderID:         "pid1",
+		ProviderName:       "P1",
+		PublicKey:          "pk1",
+		AccreditationHash:   "accred-hash-1",
+		IsActive:           true,
+		RegistrationTime:   timestamppb.Now(),
+		ExpirationTime:     nil,
+	}
+	err = suite.keeper.SetVerificationProvider(suite.ctx, provider)
+	require.NoError(suite.T(), err)
+	err = suite.keeper.ValidateProviderAccreditation(suite.ctx, provider)
+	require.NoError(suite.T(), err)
+}
+
+// TestGetAllVerificationProviders tests listing stored verification providers
+func (suite *KeeperTestSuite) TestGetAllVerificationProviders() {
+	list, err := suite.keeper.GetAllVerificationProviders(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Empty(suite.T(), list)
+	// Add two providers
+	for i, id := range []string{"prov-a", "prov-b"} {
+		p := &keeper.VerificationProvider{
+			ProviderID:        id,
+			ProviderName:       "Provider " + string(rune('A'+i)),
+			PublicKey:          "pk-" + id,
+			AccreditationHash:  "hash-" + id,
+			IsActive:          true,
+			RegistrationTime:   timestamppb.Now(),
+			ExpirationTime:     nil,
+		}
+		err := suite.keeper.SetVerificationProvider(suite.ctx, p)
+		require.NoError(suite.T(), err)
+	}
+	list, err = suite.keeper.GetAllVerificationProviders(suite.ctx)
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), list, 2)
+	ids := make([]string, len(list))
+	for i, p := range list {
+		ids[i] = p.ProviderID
+	}
+	require.Contains(suite.T(), ids, "prov-a")
+	require.Contains(suite.T(), ids, "prov-b")
 }
 
 // TestUpdateVerifiedAccount_MarshalError tests UpdateVerifiedAccount edge cases

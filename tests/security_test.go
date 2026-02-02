@@ -162,9 +162,9 @@ func (suite *SecurityTestSuite) TestAuctionSecurity() {
 }
 
 func (suite *SecurityTestSuite) TestOrderSecurity() {
-	// Test 1: Verify that GUEST role is rejected (invalid role)
-	guestAccount := identtypes.NewVerifiedAccount("cosmos1guest", identv1.Role_ROLE_GUEST, "hash123")
-	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, guestAccount)
+	// Test 1: Verify that ROLE_UNSPECIFIED is rejected (invalid role)
+	unspecifiedAccount := identtypes.NewVerifiedAccount("cosmos1unspec", identv1.Role_ROLE_UNSPECIFIED, "hash123")
+	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, unspecifiedAccount)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), identtypes.ErrInvalidRole, err)
 
