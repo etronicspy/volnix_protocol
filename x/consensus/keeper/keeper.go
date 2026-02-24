@@ -462,8 +462,7 @@ func (k Keeper) ProcessHalving(ctx sdk.Context) error {
 	if currentHeight >= halvingInfo.NextHalvingHeight {
 		// Process halving
 		halvingInfo.LastHalvingHeight = halvingInfo.NextHalvingHeight
-		// TODO: Uncomment after proto generation
-		// halvingInfo.LastHalvingDate = timestamppb.New(currentTime)
+		halvingInfo.LastHalvingDate = timestamppb.New(currentTime)
 		halvingInfo.NextHalvingHeight += halvingInfo.HalvingInterval
 
 		// Calculate estimated next halving date based on average block time
@@ -472,9 +471,8 @@ func (k Keeper) ProcessHalving(ctx sdk.Context) error {
 			blocksRemaining := halvingInfo.NextHalvingHeight - currentHeight
 			estimatedDuration := avgBlockTime * time.Duration(blocksRemaining)
 			estimatedDate := currentTime.Add(estimatedDuration)
-			// TODO: Uncomment after proto generation
-			// halvingInfo.EstimatedNextHalvingDate = timestamppb.New(estimatedDate)
-			
+			halvingInfo.EstimatedNextHalvingDate = timestamppb.New(estimatedDate)
+
 			ctx.Logger().Info("halving processed",
 				"height", currentHeight,
 				"next_halving_height", halvingInfo.NextHalvingHeight,
@@ -492,9 +490,8 @@ func (k Keeper) ProcessHalving(ctx sdk.Context) error {
 			blocksRemaining := halvingInfo.NextHalvingHeight - currentHeight
 			estimatedDuration := avgBlockTime * time.Duration(blocksRemaining)
 			estimatedDate := currentTime.Add(estimatedDuration)
-			// TODO: Uncomment after proto generation
-			// halvingInfo.EstimatedNextHalvingDate = timestamppb.New(estimatedDate)
-			
+			halvingInfo.EstimatedNextHalvingDate = timestamppb.New(estimatedDate)
+
 			ctx.Logger().Info("halving date updated",
 				"next_halving_height", halvingInfo.NextHalvingHeight,
 				"estimated_date", estimatedDate,

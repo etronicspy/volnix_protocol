@@ -171,56 +171,62 @@ func (k Keeper) ProcessCrossModuleEvent(ctx sdk.Context, event *types.CrossModul
 	}
 }
 
-// handleIdentityVerified handles identity verification events
+// handleIdentityVerified handles identity verification events.
+// When identity is verified, check if validator is eligible for consensus participation.
 func (k Keeper) handleIdentityVerified(ctx sdk.Context, validator string) error {
-
-	// Update integration manager health
 	k.integrationManager.UpdateModuleHealth("ident", 100, "")
 
-	// Log cross-module event
-	k.integrationManager.AddCrossModuleEvent(
-		"identity_verified_processed",
-		"integration",
-		"ident",
-		"Identity verification processed",
-		validator,
-	)
+	lizenz, err := k.lizenzKeeper.GetActivatedLizenz(ctx, validator)
+	if err == nil && lizenz != nil {
+		_, err := k.consensusKeeper.GetValidator(ctx, validator)
+		if err != nil {
+			ctx.Logger().Info("identity verified for licensed user, eligible for consensus",
+				"validator", validator)
+		}
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		"integration.identity_verified",
+		sdk.NewAttribute("validator", validator),
+	))
 
 	return nil
 }
 
-// handleLizenzActivated handles LZN activation events
+// handleLizenzActivated handles LZN activation events.
+// When a lizenz is activated, verify identity is also active for consensus eligibility.
 func (k Keeper) handleLizenzActivated(ctx sdk.Context, validator string) error {
-
-	// Update integration manager health
 	k.integrationManager.UpdateModuleHealth("lizenz", 100, "")
 
-	// Log cross-module event
-	k.integrationManager.AddCrossModuleEvent(
-		"lzn_activated_processed",
-		"integration",
-		"lizenz",
-		"LZN activation processed",
-		validator,
-	)
+	account, err := k.identKeeper.GetVerifiedAccount(ctx, validator)
+	if err == nil && account != nil && account.IsActive {
+		ctx.Logger().Info("lizenz activated for verified identity, eligible for consensus",
+			"validator", validator)
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		"integration.lzn_activated",
+		sdk.NewAttribute("validator", validator),
+	))
 
 	return nil
 }
 
-// handleConsensusParticipation handles consensus participation events
+// handleConsensusParticipation handles consensus participation events.
+// Validates that the validator still meets all prerequisites.
 func (k Keeper) handleConsensusParticipation(ctx sdk.Context, validator string) error {
-
-	// Update integration manager health
 	k.integrationManager.UpdateModuleHealth("consensus", 100, "")
 
-	// Log cross-module event
-	k.integrationManager.AddCrossModuleEvent(
-		"consensus_participation_processed",
-		"integration",
-		"consensus",
-		"Consensus participation processed",
-		validator,
-	)
+	if err := k.ValidateCrossModuleOperation(ctx, "consensus_participation", validator); err != nil {
+		ctx.Logger().Warn("consensus participation validation failed",
+			"validator", validator, "error", err)
+		return err
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		"integration.consensus_participation",
+		sdk.NewAttribute("validator", validator),
+	))
 
 	return nil
 }
@@ -245,16 +251,5 @@ func (k Keeper) GetAllModulesHealth() map[string]*types.ModuleIntegration {
 
 // getAnteilUserPosition retrieves user position from anteil module
 func (k Keeper) getAnteilUserPosition(ctx sdk.Context, userAddress string) (*anteilv1.UserPosition, error) {
-	// Create a mock user position for now
-	// In production, this would query the actual anteil keeper
-	position := &anteilv1.UserPosition{
-		Owner:        userAddress,
-		AntBalance:   "1000.0",
-		LockedAnt:    "100.0",
-		AvailableAnt: "900.0",
-		TotalTrades:  "5",
-		TotalVolume:  "5000.0",
-	}
-
-	return position, nil
+	return k.anteilKeeper.GetUserPosition(ctx, userAddress)
 }

@@ -7,7 +7,11 @@ import (
 	"io"
 
 	sdklog "cosmossdk.io/log"
+	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
+	upgrade "cosmossdk.io/x/upgrade"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
@@ -292,6 +296,7 @@ type VolnixApp struct {
 	keyAnteil     *storetypes.KVStoreKey
 	keyConsensus  *storetypes.KVStoreKey
 	keyGovernance *storetypes.KVStoreKey
+	keyUpgrade    *storetypes.KVStoreKey
 
 	// keepers
 	paramsKeeper paramskeeper.Keeper
@@ -304,12 +309,10 @@ type VolnixApp struct {
 	anteilKeeper     *anteilkeeper.Keeper
 	consensusKeeper  *consensuskeeper.Keeper
 	governanceKeeper *governancekeeper.Keeper
+	upgradeKeeper    *upgradekeeper.Keeper
 
 	// module manager
 	mm *module.Manager
-
-	// IMPROVED: Upgrade manager for handling network upgrades
-	upgradeManager *UpgradeManager
 
 	// IMPROVED: Rate limiter for DDoS protection
 	rateLimiter *RateLimiter
@@ -346,6 +349,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	keyAnteil := storetypes.NewKVStoreKey(anteiltypes.StoreKey)
 	keyConsensus := storetypes.NewKVStoreKey(consensustypes.StoreKey)
 	keyGovernance := storetypes.NewKVStoreKey(governancetypes.StoreKey)
+	keyUpgrade := storetypes.NewKVStoreKey(upgradetypes.StoreKey)
 
 	// Mount stores
 	bapp.MountKVStores(map[string]*storetypes.KVStoreKey{
@@ -357,6 +361,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		anteiltypes.StoreKey:     keyAnteil,
 		consensustypes.StoreKey:  keyConsensus,
 		governancetypes.StoreKey: keyGovernance,
+		upgradetypes.StoreKey:    keyUpgrade,
 	})
 	bapp.MountTransientStores(map[string]*storetypes.TransientStoreKey{
 		paramtypes.TStoreKey: tkeyParams,
@@ -446,6 +451,17 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	anteilAdapterForIdent := &AnteilKeeperAdapterForIdent{keeper: anteilKeeper}
 	identKeeper.SetAnteilKeeper(anteilAdapterForIdent)
 
+	// Standard Cosmos SDK x/upgrade keeper (governance-driven upgrades)
+	upgradeAuthority := authtypes.NewModuleAddress(governancetypes.ModuleName).String()
+	upgradeKeeper := upgradekeeper.NewKeeper(
+		map[int64]bool{},
+		runtime.NewKVStoreService(keyUpgrade),
+		encoding.Codec,
+		".",
+		bapp,
+		upgradeAuthority,
+	)
+
 	// Interface registration temporarily disabled for CometBFT integration
 
 	// Module manager (register Msg/Query services only at this stage)
@@ -457,10 +473,8 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		anteil.NewAppModule(anteilKeeper),
 		consensus.NewConsensusAppModule(encoding.Codec, *consensusKeeper),
 		governance.NewAppModule(governanceKeeper),
+		upgrade.NewAppModule(upgradeKeeper, authcodec.NewBech32Codec("volnix")),
 	)
-
-	// IMPROVED: Create upgrade manager
-	upgradeManager := NewUpgradeManager(logger)
 
 	// IMPROVED: Create rate limiter with default configuration
 	rateLimiter := NewRateLimiter(DefaultRateLimitConfig())
@@ -478,6 +492,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		keyAnteil:        keyAnteil,
 		keyConsensus:     keyConsensus,
 		keyGovernance:    keyGovernance,
+		keyUpgrade:       keyUpgrade,
 		paramsKeeper:     paramsKeeper,
 		authKeeper:       authKeeper,
 		bankKeeper:       bankKeeper,
@@ -486,16 +501,16 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		anteilKeeper:     anteilKeeper,
 		consensusKeeper:  consensusKeeper,
 		governanceKeeper: governanceKeeper,
+		upgradeKeeper:    upgradeKeeper,
 		mm:               mm,
-		upgradeManager:   upgradeManager,
 		rateLimiter:      rateLimiter,
 	}
 
 	// IMPROVED: Create snapshot manager after app is created
 	app.snapshotManager = NewSnapshotManager(app)
 
-	// Register upgrade handlers with app reference
-	SetupUpgradeHandlers(upgradeManager, app)
+	// Register x/upgrade handlers with app migrations.
+	SetupSDKUpgradeHandlers(upgradeKeeper, app)
 
 	// Register interfaces first
 	basicManager := module.NewBasicManager(
@@ -506,6 +521,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		anteil.AppModuleBasic{},
 		consensus.ConsensusAppModuleBasic{},
 		governance.AppModuleBasic{},
+		upgrade.AppModuleBasic{},
 	)
 	basicManager.RegisterInterfaces(encoding.InterfaceRegistry)
 
@@ -520,16 +536,13 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// IMPROVED: Use AnteHandler with rate limiting support
 	bapp.SetAnteHandler(app.createAnteHandler())
 
+	// Run pre-block hooks so x/upgrade executes planned governance upgrades.
+	bapp.SetPreBlocker(func(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
+		return app.mm.PreBlock(ctx)
+	})
+
 	// Set BeginBlocker and EndBlocker for all modules
 	bapp.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
-		// IMPROVED: Check for upgrades at the beginning of each block
-		if app.upgradeManager != nil {
-			if err := app.upgradeManager.CheckUpgradeNeeded(ctx, app); err != nil {
-				// Log error but don't fail the block
-				logger.Error("Upgrade check failed", "error", err)
-			}
-		}
-
 		// Execute BeginBlocker for all modules
 		if err := identKeeper.BeginBlocker(ctx); err != nil {
 			return sdk.BeginBlock{}, fmt.Errorf("ident BeginBlocker failed: %w", err)
@@ -544,7 +557,6 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	})
 
 	bapp.SetEndBlocker(func(ctx sdk.Context) (sdk.EndBlock, error) {
-		// Execute EndBlocker for all modules
 		if err := identKeeper.EndBlocker(ctx); err != nil {
 			return sdk.EndBlock{}, fmt.Errorf("ident EndBlocker failed: %w", err)
 		}
@@ -554,59 +566,70 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		if err := consensusKeeper.EndBlocker(ctx); err != nil {
 			return sdk.EndBlock{}, fmt.Errorf("consensus EndBlocker failed: %w", err)
 		}
-		return sdk.EndBlock{}, nil
+
+		// Build ValidatorUpdates from active LZN holders so CometBFT
+		// adjusts its validator set based on economic activity.
+		var valUpdates []abci.ValidatorUpdate
+		allLizenz, err := lizenzKeeper.GetAllActivatedLizenz(ctx)
+		if err == nil {
+			for _, lz := range allLizenz {
+				if lz == nil || !lz.IsEligibleForRewards {
+					continue
+				}
+				// Voting power proportional to activated LZN amount (min 1)
+				power := int64(1)
+				if lz.Amount != "" && lz.Amount != "0" {
+					if amt, ok := math.NewIntFromString(lz.Amount); ok {
+						p := amt.Quo(math.NewInt(1_000_000)).Int64()
+						if p > 0 {
+							power = p
+						}
+					}
+				}
+				valUpdates = append(valUpdates, abci.ValidatorUpdate{
+					PubKey: abci.Ed25519ValidatorUpdate([]byte(lz.Validator), power).PubKey,
+					Power:  power,
+				})
+			}
+		}
+
+		return sdk.EndBlock{ValidatorUpdates: valUpdates}, nil
 	})
 
-	// InitGenesis handler (v0.53 InitChainer signature)
+	// InitGenesis handler — initializes each module individually.
+	// We bypass mm.InitGenesis because:
+	// 1. protojson cannot marshal/unmarshal types containing math.Int (sdk.Coin)
+	// 2. mm.InitGenesis enforces non-empty ValidatorUpdates which requires consensus module in genesis
+	// Instead, we process modules with app_state data via their own InitGenesis,
+	// and set params directly via keepers for modules without genesis data.
 	bapp.SetInitChainer(func(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
-		// If AppStateBytes is empty, BaseApp will have no-op; the CLI can pass default genesis explicitly
-		// and we also support initializing from provided bytes.
 		var genesisState map[string]json.RawMessage
 		if len(req.AppStateBytes) > 0 {
 			if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
 				return nil, err
 			}
 		} else {
-			// Create default genesis state
 			genesisState = make(map[string]json.RawMessage)
-
-			// Auth and bank genesis (auth first so accounts exist for bank)
-			genesisState[authtypes.ModuleName] = encoding.Codec.MustMarshalJSON(authtypes.DefaultGenesisState())
-			genesisState[banktypes.ModuleName] = encoding.Codec.MustMarshalJSON(banktypes.DefaultGenesisState())
-			// Custom modules genesis
-			genesisState[identtypes.ModuleName] = encoding.Codec.MustMarshalJSON(ident.DefaultGenesis())
-			genesisState[lizenztypes.ModuleName] = encoding.Codec.MustMarshalJSON(lizenz.DefaultGenesis())
-			genesisState[anteiltypes.ModuleName] = encoding.Codec.MustMarshalJSON(anteil.DefaultGenesis())
-			// Consensus genesis with initial validators for ModuleManager HasABCIGenesis (non-empty validator set)
-			consensusGen := consensus.DefaultGenesis()
-			consensusGen.InitialValidators = consensustypes.AbciValidatorsToInitial(req.Validators)
-			genesisState[consensustypes.ModuleName] = encoding.Codec.MustMarshalJSON(consensusGen)
-			// Governance genesis uses JSON marshaling (not proto)
-			govGenState := governance.DefaultGenesis()
-			govGenBz, err := json.Marshal(govGenState)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal governance genesis: %w", err)
-			}
-			genesisState[governancetypes.ModuleName] = govGenBz
-		}
-		// Always inject consensus initial_validators from req.Validators so ModuleManager gets non-empty validator set
-		// (when app_state is {} we unmarshaled empty genesisState and consensus would be skipped otherwise)
-		consensusGen := consensus.DefaultGenesis()
-		if bz := genesisState[consensustypes.ModuleName]; len(bz) > 0 {
-			encoding.Codec.MustUnmarshalJSON(bz, consensusGen)
-		}
-		consensusGen.InitialValidators = consensustypes.AbciValidatorsToInitial(req.Validators)
-		genesisState[consensustypes.ModuleName] = encoding.Codec.MustMarshalJSON(consensusGen)
-
-		_, err := mm.InitGenesis(ctx, encoding.Codec, genesisState)
-		if err != nil {
-			return nil, err
 		}
 
-		// CRITICAL: Return validators in ResponseInitChain
-		// CometBFT uses this to verify validator consistency during replay
-		// If validators are not returned, CometBFT will see mismatch during replay
-		// This is required for proper P2P authentication between validators
+		// Initialize auth module (from app_state or defaults)
+		if data := genesisState[authtypes.ModuleName]; len(data) > 0 {
+			auth.NewAppModule(encoding.Codec, authKeeper, nil, nil).InitGenesis(ctx, encoding.Codec, data)
+		}
+
+		// Initialize bank module (from app_state; needed for demo wallet balances)
+		if data := genesisState[banktypes.ModuleName]; len(data) > 0 {
+			bank.NewAppModule(encoding.Codec, bankKeeper, authKeeper, nil).InitGenesis(ctx, encoding.Codec, data)
+		}
+
+		// Initialize custom module params directly via keepers
+		identKeeper.SetParams(ctx, identtypes.DefaultParams())
+		lizenzKeeper.SetParams(ctx, lizenztypes.DefaultParams())
+		anteilKeeper.SetParams(ctx, anteiltypes.DefaultParams())
+		consensusKeeper.SetParams(ctx, *consensustypes.DefaultParams())
+
+		// Return CometBFT genesis validators so the chain can start producing blocks.
+		// The EndBlocker will adjust the validator set based on LZN activations.
 		validators := make([]abci.ValidatorUpdate, len(req.Validators))
 		for i, val := range req.Validators {
 			validators[i] = abci.ValidatorUpdate{
@@ -621,6 +644,11 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			AppHash:         []byte{},
 		}, nil
 	})
+
+	// Load latest version (commits store mounting)
+	if err := bapp.LoadLatestVersion(); err != nil {
+		panic(fmt.Errorf("failed to load latest version: %w", err))
+	}
 
 	return app
 }

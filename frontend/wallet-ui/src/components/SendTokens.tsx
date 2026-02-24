@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Send, ArrowRight } from 'lucide-react';
+import { blockchainService } from '../services/blockchainService';
 
 interface SendTokensProps {
   onSend: (to: string, amount: string, token: string) => void;
@@ -15,6 +16,11 @@ const SendTokens: React.FC<SendTokensProps> = ({ onSend, balance }) => {
   const [amount, setAmount] = useState('');
   const [selectedToken, setSelectedToken] = useState('WRT');
   const [isSending, setIsSending] = useState(false);
+  const [estimatedFee, setEstimatedFee] = useState('0.001 WRT');
+
+  useEffect(() => {
+    blockchainService.getEstimatedFee().then(setEstimatedFee);
+  }, []);
 
   const handleSend = async () => {
     if (!recipient || !amount) {
@@ -179,12 +185,12 @@ const SendTokens: React.FC<SendTokensProps> = ({ onSend, balance }) => {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
           <span>Network Fee:</span>
-          <span>0.001 WRT</span>
+          <span>{estimatedFee}</span>
         </div>
         <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #d1d5db' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '600' }}>
           <span>Total:</span>
-          <span>{amount || '0'} {selectedToken} + 0.001 WRT</span>
+          <span>{amount || '0'} {selectedToken} + {estimatedFee}</span>
         </div>
       </div>
 

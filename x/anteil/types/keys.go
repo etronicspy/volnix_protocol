@@ -32,6 +32,18 @@ var (
 	
 	// LastDistributionTimeKey defines the key for storing last ANT distribution time
 	LastDistributionTimeKey = []byte{0x06}
+
+	// MarketMakerKeyPrefix defines the prefix for market maker keys
+	MarketMakerKeyPrefix = []byte{0x07}
+
+	// StakingPositionKeyPrefix defines the prefix for staking position keys
+	StakingPositionKeyPrefix = []byte{0x08}
+
+	// LiquidityPoolKeyPrefix defines the prefix for liquidity pool keys
+	LiquidityPoolKeyPrefix = []byte{0x09}
+
+	// LiquidityShareKeyPrefix defines the prefix for liquidity provider share keys
+	LiquidityShareKeyPrefix = []byte{0x0A}
 )
 
 // GetOrderKey returns the key for an order
@@ -77,4 +89,24 @@ func GetAuctionPrefix() []byte {
 // GetBidPrefix returns the bid prefix
 func GetBidPrefix() []byte {
 	return BidKeyPrefix
+}
+
+// GetMarketMakerKey returns the key for a market maker
+func GetMarketMakerKey(makerID string) []byte {
+	return append(MarketMakerKeyPrefix, []byte(makerID)...)
+}
+
+// GetStakingPositionKey returns the key for a staking position
+func GetStakingPositionKey(owner string) []byte {
+	return append(StakingPositionKeyPrefix, []byte(owner)...)
+}
+
+// GetLiquidityPoolKey returns the key for a liquidity pool
+func GetLiquidityPoolKey(poolID string) []byte {
+	return append(LiquidityPoolKeyPrefix, []byte(poolID)...)
+}
+
+// GetLiquidityShareKey returns the key for a liquidity provider share
+func GetLiquidityShareKey(poolID, owner string) []byte {
+	return append(LiquidityShareKeyPrefix, []byte(poolID+"_"+owner)...)
 }

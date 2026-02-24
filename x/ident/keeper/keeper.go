@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"cosmossdk.io/store/prefix"
@@ -550,27 +551,37 @@ func (k Keeper) ValidateRoleChangeProof(ctx sdk.Context, address string, identit
 	if len(zkpProof) < 16 {
 		return fmt.Errorf("ZKP proof is too short")
 	}
-	
-	// SECURITY: Verify ZKP proof matches the identity hash
-	// In production, this should use real ZKP verification library
-	// For now, we do basic validation
-	
-	// Generate expected proof hash from identity (safely handle short hashes)
-	var expectedProofPrefix string
-	if len(identityHash) >= 8 {
-		expectedProofPrefix = fmt.Sprintf("proof-%s", identityHash[:8])
-	} else {
-		expectedProofPrefix = fmt.Sprintf("proof-%s", identityHash)
+
+	providerID := ""
+	account, err := k.GetVerifiedAccount(ctx, address)
+	if err == nil && account != nil {
+		providerID = account.VerificationProvider
 	}
-	
-	// STUB: Real ZKP verification not integrated — only format check; see docs/CODE_STUBS.md
-	// TODO: Integrate with real ZKP library (gnark, circom)
-	
-	ctx.Logger().Info("Role change ZKP proof validated", 
+
+	// Structured proofs include public_inputs that bind the request to
+	// concrete identity/address/target-role and are checked here.
+	if parsed, structured, err := parseZKPProofString(zkpProof); err == nil && structured {
+		if !strings.Contains(parsed.PublicInputs, address) {
+			return fmt.Errorf("proof public inputs do not include address")
+		}
+		if !strings.Contains(parsed.PublicInputs, identityHash) {
+			return fmt.Errorf("proof public inputs do not include identity hash")
+		}
+		if !strings.Contains(parsed.PublicInputs, newRole.String()) {
+			return fmt.Errorf("proof public inputs do not include target role")
+		}
+	}
+
+	// Replay/integrity verification (also validates structured proof hash).
+	if err := k.VerifyZKProofIntegrity(ctx, zkpProof, providerID, address); err != nil {
+		return fmt.Errorf("role change proof integrity failed: %w", err)
+	}
+
+	ctx.Logger().Info("Role change ZKP proof validated",
 		"address", address, 
 		"identity_hash", identityHash, 
 		"new_role", newRole.String(),
-		"proof_prefix", expectedProofPrefix)
+		"provider", providerID)
 
 	return nil
 }

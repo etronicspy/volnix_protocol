@@ -32,7 +32,7 @@ func (rateLimitMockTx) ValidateBasic() error { return nil }
 
 func TestDefaultRateLimitConfig(t *testing.T) {
 	cfg := DefaultRateLimitConfig()
-	require.True(t, cfg.Enabled)
+	require.False(t, cfg.Enabled) // Off by default; enable for RPC-only
 	require.Equal(t, 1000.0, cfg.GlobalRate)
 	require.Equal(t, 10.0, cfg.PerAddrRate)
 	require.Equal(t, 20, cfg.BurstSize)
@@ -45,7 +45,7 @@ func TestNewRateLimiter_Disabled(t *testing.T) {
 }
 
 func TestNewRateLimiter_Enabled(t *testing.T) {
-	cfg := DefaultRateLimitConfig()
+	cfg := RateLimitConfig{GlobalRate: 1000, PerAddrRate: 10, BurstSize: 20, Enabled: true}
 	rl := NewRateLimiter(cfg)
 	require.NotNil(t, rl)
 }
@@ -79,7 +79,8 @@ func TestRateLimiter_GetStats_Nil(t *testing.T) {
 }
 
 func TestRateLimiter_GetStats_Enabled(t *testing.T) {
-	rl := NewRateLimiter(DefaultRateLimitConfig())
+	cfg := RateLimitConfig{GlobalRate: 1000, PerAddrRate: 10, BurstSize: 20, Enabled: true}
+	rl := NewRateLimiter(cfg)
 	require.NotNil(t, rl)
 	stats := rl.GetStats()
 	require.True(t, stats["enabled"].(bool))
@@ -93,6 +94,8 @@ func TestRateLimiter_Cleanup_Nil(t *testing.T) {
 }
 
 func TestRateLimiter_Cleanup_Enabled(t *testing.T) {
-	rl := NewRateLimiter(DefaultRateLimitConfig())
+	cfg := RateLimitConfig{GlobalRate: 1000, PerAddrRate: 10, BurstSize: 20, Enabled: true}
+	rl := NewRateLimiter(cfg)
+	require.NotNil(t, rl)
 	rl.Cleanup(0)
 }

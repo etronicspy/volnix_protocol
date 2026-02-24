@@ -21,42 +21,28 @@ var (
 // AppModuleBasic defines the basic application module used by the integration module.
 type AppModuleBasic struct{}
 
-// Name returns the integration module's name.
 func (AppModuleBasic) Name() string {
 	return "integration"
 }
 
-// RegisterLegacyAminoCodec registers the integration module's types on the LegacyAmino codec.
-func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
-	// Register types here when needed
-}
+func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {}
 
-// RegisterInterfaces registers the integration module's interface types.
-func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
-	// Register interfaces here when needed
-}
+func (AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry) {}
 
-// DefaultGenesis returns default genesis state as raw bytes for the integration module.
 func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 	return []byte("{}")
 }
 
-// ValidateGenesis performs genesis state validation for the integration module.
 func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
 	return nil
 }
 
-// RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the integration module.
-func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	// Register routes here when needed
-}
+func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {}
 
-// GetTxCmd returns the root tx command for the integration module.
 func (AppModuleBasic) GetTxCmd() *cobra.Command {
 	return nil
 }
 
-// GetQueryCmd returns the root query command for the integration module.
 func (AppModuleBasic) GetQueryCmd() *cobra.Command {
 	return nil
 }
@@ -64,50 +50,55 @@ func (AppModuleBasic) GetQueryCmd() *cobra.Command {
 // AppModule implements an application module for the integration module.
 type AppModule struct {
 	AppModuleBasic
-
-	keeper keeper.Keeper
+	keeper *keeper.Keeper
 }
 
-// NewAppModule creates a new AppModule object.
-func NewAppModule(keeper keeper.Keeper) AppModule {
+func NewAppModule(k *keeper.Keeper) AppModule {
 	return AppModule{
 		AppModuleBasic: AppModuleBasic{},
-		keeper:         keeper,
+		keeper:         k,
 	}
 }
 
-// IsAppModule implements the appmodule.AppModule interface.
 func (am AppModule) IsAppModule() {}
 
-// RegisterServices registers a gRPC query service to respond to the module-specific gRPC queries.
-func (am AppModule) RegisterServices(cfg module.Configurator) {
-	// Register services here when needed
-}
+func (am AppModule) RegisterServices(cfg module.Configurator) {}
 
-// RegisterInvariants registers the integration module invariants.
-func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {
-	// Register invariants here
-}
+func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
 
-// InitGenesis performs genesis initialization for the integration module.
+// InitGenesis initializes all module health statuses.
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) {
-	// Initialize genesis here when needed
+	im := am.keeper.GetIntegrationManager()
+	for name := range im.Modules {
+		im.UpdateModuleHealth(name, 100, "")
+	}
+	ctx.Logger().Info("integration module genesis initialized")
 }
 
-// ExportGenesis returns the exported genesis state as raw bytes for the integration module.
+// ExportGenesis exports the module health map as JSON.
 func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
-	return []byte("{}")
+	healthMap := am.keeper.GetAllModulesHealth()
+
+	type exportedHealth struct {
+		Name   string `json:"name"`
+		Health int64  `json:"health"`
+	}
+	export := make([]exportedHealth, 0, len(healthMap))
+	for name, mod := range healthMap {
+		export = append(export, exportedHealth{Name: name, Health: mod.HealthScore})
+	}
+
+	bz, err := json.Marshal(export)
+	if err != nil {
+		return []byte("{}")
+	}
+	return bz
 }
 
-// ConsensusVersion implements ConsensusVersion.
 func (AppModule) ConsensusVersion() uint64 { return 1 }
 
-// BeginBlock executes all ABCI BeginBlock logic respective to the integration module.
-func (am AppModule) BeginBlock(ctx sdk.Context, _ interface{}) {
-	// Begin block logic here when needed
-}
+func (am AppModule) BeginBlock(ctx sdk.Context, _ interface{}) {}
 
-// EndBlock executes all ABCI EndBlock logic respective to the integration module.
 func (am AppModule) EndBlock(ctx sdk.Context, _ interface{}) []interface{} {
 	return nil
 }

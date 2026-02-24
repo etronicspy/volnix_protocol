@@ -20,7 +20,7 @@ import (
 
 // VolnixServer wraps Volnix app with CometBFT node functionality
 type VolnixServer struct {
-	app       *MinimalVolnixApp
+	app       *VolnixApp
 	node      *node.Node
 	config    *cmtcfg.Config
 	homeDir   string
@@ -47,7 +47,7 @@ func (s *VolnixServer) Start(ctx context.Context) error {
 
 	s.logger.Info("✅ CometBFT node created successfully")
 	s.logger.Info("🌐 Network configuration:")
-	s.logger.Info("   🔗 Chain ID: test-volnix")
+	s.logger.Info("   🔗 Chain ID: volnix-1")
 	s.logger.Info("   📁 Home: " + s.homeDir)
 	s.logger.Info("   💾 Database: GoLevelDB")
 	s.logger.Info("   🏗️  Framework: Cosmos SDK + CometBFT")
@@ -94,7 +94,7 @@ func (s *VolnixServer) Stop() error {
 }
 
 // GetApp returns the Volnix app
-func (s *VolnixServer) GetApp() *MinimalVolnixApp {
+func (s *VolnixServer) GetApp() *VolnixApp {
 	return s.app
 }
 
@@ -165,6 +165,18 @@ func (s *VolnixServer) initializeFiles() error {
 		return err
 	}
 
+	// CosmJS compatibility: always reset priv_validator_state on startup
+	privValStateFile := filepath.Join(dataDir, "priv_validator_state.json")
+	if err := os.WriteFile(privValStateFile, []byte(`{"height":"0","round":0,"step":0}`), 0600); err != nil {
+		return fmt.Errorf("failed to reset priv_validator_state.json: %w", err)
+	}
+
+	// CosmJS compatibility: ensure CreateEmptyBlocks in config and on disk
+	if s.config != nil {
+		s.config.Consensus.CreateEmptyBlocks = true
+		s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
+	}
+
 	// Create genesis file if it doesn't exist
 	genesisFile := filepath.Join(configDir, "genesis.json")
 	if _, err := os.Stat(genesisFile); os.IsNotExist(err) {
@@ -173,7 +185,7 @@ func (s *VolnixServer) initializeFiles() error {
 		}
 	}
 
-	// Create config file if it doesn't exist
+	// Create config file if it doesn't exist (re-applied settings are already in s.config)
 	configFile := filepath.Join(configDir, "config.toml")
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		if err := s.createConfigFile(configFile); err != nil {
@@ -189,7 +201,7 @@ func (s *VolnixServer) createGenesisFile(genesisFile string) error {
 	// Create a proper genesis document
 	genDoc := &types.GenesisDoc{
 		GenesisTime:     time.Now(),
-		ChainID:         "test-volnix",
+		ChainID:         "volnix-1",
 		InitialHeight:   1,
 		ConsensusParams: types.DefaultConsensusParams(),
 		AppHash:         []byte{},

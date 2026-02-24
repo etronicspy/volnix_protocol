@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"cosmossdk.io/log"
+	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 )
 
 // MonitoringService provides monitoring and metrics for Volnix Protocol
@@ -29,7 +31,6 @@ func NewMonitoringService(app *VolnixApp, logger log.Logger) *MonitoringService 
 func (ms *MonitoringService) Start(port string) error {
 	mux := http.NewServeMux()
 
-	// Register endpoints
 	mux.HandleFunc("/health", ms.healthHandler)
 	mux.HandleFunc("/metrics", ms.metricsHandler)
 	mux.HandleFunc("/status", ms.statusHandler)
@@ -64,7 +65,7 @@ func (ms *MonitoringService) healthHandler(w http.ResponseWriter, r *http.Reques
 		"status":    "healthy",
 		"timestamp": time.Now().Unix(),
 		"version":   "0.1.0-alpha",
-		"chain_id":  "test-volnix",
+		"chain_id":  "volnix-1",
 	}
 
 	json.NewEncoder(w).Encode(health)
@@ -74,10 +75,8 @@ func (ms *MonitoringService) healthHandler(w http.ResponseWriter, r *http.Reques
 func (ms *MonitoringService) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 
-	// Collect metrics (simplified for monitoring)
 	metrics := ms.collectAllMetrics()
 
-	// Format as Prometheus metrics
 	for key, value := range metrics {
 		fmt.Fprintf(w, "volnix_%s %v\n", key, value)
 	}
@@ -87,9 +86,11 @@ func (ms *MonitoringService) metricsHandler(w http.ResponseWriter, r *http.Reque
 func (ms *MonitoringService) statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	ctx := ms.app.NewContext(true)
+
 	status := map[string]interface{}{
-		"chain_id":      "test-volnix",
-		"latest_height": 0, // Would get from actual context
+		"chain_id":      "volnix-1",
+		"latest_height": ctx.BlockHeight(),
 		"timestamp":     time.Now().Unix(),
 		"modules": map[string]interface{}{
 			"ident":     "active",
@@ -110,54 +111,39 @@ func (ms *MonitoringService) statusHandler(w http.ResponseWriter, r *http.Reques
 // consensusHandler provides consensus-specific metrics
 func (ms *MonitoringService) consensusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	// Get consensus metrics
-	consensusMetrics := ms.getConsensusMetrics()
-
-	json.NewEncoder(w).Encode(consensusMetrics)
+	json.NewEncoder(w).Encode(ms.getConsensusMetrics())
 }
 
 // economicHandler provides economic metrics
 func (ms *MonitoringService) economicHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	// Get economic metrics
-	economicMetrics := ms.getEconomicMetrics()
-
-	json.NewEncoder(w).Encode(economicMetrics)
+	json.NewEncoder(w).Encode(ms.getEconomicMetrics())
 }
 
 // identityHandler provides identity system metrics
 func (ms *MonitoringService) identityHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
-	// Get identity metrics
-	identityMetrics := ms.getIdentityMetrics()
-
-	json.NewEncoder(w).Encode(identityMetrics)
+	json.NewEncoder(w).Encode(ms.getIdentityMetrics())
 }
 
 // collectAllMetrics collects metrics from all modules
 func (ms *MonitoringService) collectAllMetrics() map[string]interface{} {
 	metrics := make(map[string]interface{})
 
-	// System metrics
-	metrics["uptime_seconds"] = time.Now().Unix() // Simplified
-	metrics["chain_height"] = 0                   // Would get from actual context
+	ctx := ms.app.NewContext(true)
+	metrics["uptime_seconds"] = time.Now().Unix()
+	metrics["chain_height"] = ctx.BlockHeight()
 
-	// Consensus metrics
 	consensusMetrics := ms.getConsensusMetrics()
 	metrics["consensus_validators_total"] = consensusMetrics["total_validators"]
 	metrics["consensus_validators_active"] = consensusMetrics["active_validators"]
 	metrics["consensus_burned_tokens"] = consensusMetrics["total_burned_tokens"]
 
-	// Economic metrics
 	economicMetrics := ms.getEconomicMetrics()
 	metrics["economic_orders_total"] = economicMetrics["total_orders"]
 	metrics["economic_orders_active"] = economicMetrics["active_orders"]
 	metrics["economic_volume_24h"] = economicMetrics["volume_24h"]
 
-	// Identity metrics
 	identityMetrics := ms.getIdentityMetrics()
 	metrics["identity_verified_accounts"] = identityMetrics["verified_accounts"]
 	metrics["identity_pending_verifications"] = identityMetrics["pending_verifications"]
@@ -165,28 +151,37 @@ func (ms *MonitoringService) collectAllMetrics() map[string]interface{} {
 	return metrics
 }
 
-// getConsensusMetrics gets consensus system metrics
+// getConsensusMetrics gets consensus system metrics from keeper
 func (ms *MonitoringService) getConsensusMetrics() map[string]interface{} {
 	metrics := map[string]interface{}{
-		"total_validators":     0,
-		"active_validators":    0,
-		"total_burned_tokens":  0,
-		"total_weight":         0,
-		"halving_count":        0,
-		"next_halving_height":  0,
+		"total_validators":    0,
+		"active_validators":   0,
+		"total_burned_tokens": 0,
+		"total_weight":        0,
+		"halving_count":       0,
+		"next_halving_height": 0,
 	}
 
-	// TODO: Get actual metrics from consensus keeper when sdk.Context is available for monitoring.
-	// See docs/CODE_STUBS.md — proper context management (e.g. last committed state) is required.
-	metrics["total_validators"] = 0
-	metrics["active_validators"] = 0
-	metrics["total_burned_tokens"] = 0
-	metrics["total_weight"] = 0
+	if ms.app.consensusKeeper == nil {
+		return metrics
+	}
+
+	ctx := ms.app.NewContext(true)
+
+	validators := ms.app.consensusKeeper.GetAllValidators(ctx)
+	metrics["total_validators"] = len(validators)
+	activeCount := 0
+	for _, v := range validators {
+		if v.Status == 1 { // ACTIVE
+			activeCount++
+		}
+	}
+	metrics["active_validators"] = activeCount
 
 	return metrics
 }
 
-// getEconomicMetrics gets economic system metrics
+// getEconomicMetrics gets economic system metrics from keeper
 func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 	metrics := map[string]interface{}{
 		"total_orders":     0,
@@ -198,52 +193,44 @@ func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 		"avg_price":        0,
 	}
 
-	// Get actual metrics from anteil keeper
-	if ms.app.anteilKeeper != nil {
-		// Note: Monitoring needs sdk.Context; see docs/CODE_STUBS.md.
+	if ms.app.anteilKeeper == nil {
 		return metrics
+	}
 
-		/* Commented out until proper context is available
-		ctx := sdk.UnwrapSDKContext(context.Background())
-		// Get all orders
-		orders, err := ms.app.AnteilKeeper.GetAllOrders(ctx)
-		if err == nil {
-			metrics["total_orders"] = len(orders)
-			
-			// Count active orders
-			activeCount := 0
-			for _, order := range orders {
-				if order.Status == 1 { // OPEN status
-					activeCount++
-				}
+	ctx := ms.app.NewContext(true)
+
+	orders, err := ms.app.anteilKeeper.GetAllOrders(ctx)
+	if err == nil {
+		metrics["total_orders"] = len(orders)
+		activeCount := 0
+		for _, order := range orders {
+			if order.Status == anteilv1.OrderStatus_ORDER_STATUS_OPEN {
+				activeCount++
 			}
-			metrics["active_orders"] = activeCount
 		}
-		
-		// Get all auctions
-		auctions, err := ms.app.AnteilKeeper.GetAllAuctions(ctx)
-		if err == nil {
-			activeAuctions := 0
-			for _, auction := range auctions {
-				if auction.Status == 1 { // OPEN status
-					activeAuctions++
-				}
+		metrics["active_orders"] = activeCount
+	}
+
+	auctions, err := ms.app.anteilKeeper.GetAllAuctions(ctx)
+	if err == nil {
+		activeAuctions := 0
+		for _, auction := range auctions {
+			if auction.Status == anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
+				activeAuctions++
 			}
-			metrics["active_auctions"] = activeAuctions
 		}
-		
-		// Get all trades
-		trades, err := ms.app.AnteilKeeper.GetAllTrades(ctx)
-		if err == nil {
-			metrics["completed_orders"] = len(trades)
-		}
-		*/
+		metrics["active_auctions"] = activeAuctions
+	}
+
+	trades, err := ms.app.anteilKeeper.GetAllTrades(ctx)
+	if err == nil {
+		metrics["completed_orders"] = len(trades)
 	}
 
 	return metrics
 }
 
-// getIdentityMetrics gets identity system metrics
+// getIdentityMetrics gets identity system metrics from keeper
 func (ms *MonitoringService) getIdentityMetrics() map[string]interface{} {
 	metrics := map[string]interface{}{
 		"verified_accounts":         0,
@@ -256,64 +243,47 @@ func (ms *MonitoringService) getIdentityMetrics() map[string]interface{} {
 		"guests":                    0,
 	}
 
-	// Get actual metrics from ident keeper
-	if ms.app.identKeeper != nil {
-	// Note: Monitoring needs sdk.Context; see docs/CODE_STUBS.md.
-	return metrics
+	if ms.app.identKeeper == nil {
+		return metrics
+	}
 
-		/* Commented out until proper context is available
-		ctx := sdk.UnwrapSDKContext(context.Background())
-		// Get all verified accounts
-		accounts, err := ms.app.IdentKeeper.GetAllVerifiedAccounts(ctx)
-		if err == nil {
-			metrics["verified_accounts"] = len(accounts)
-			metrics["total_accounts"] = len(accounts)
-			
-			// Count by role
-			citizens := 0
-			validators := 0
-			guests := 0
-			
-			for _, account := range accounts {
-				switch account.Role {
-				case 2: // ROLE_CITIZEN
-					citizens++
-				case 3: // ROLE_VALIDATOR
-					validators++
-				case 1: // ROLE_GUEST
-					guests++
-				}
+	ctx := ms.app.NewContext(true)
+
+	accounts, err := ms.app.identKeeper.GetAllVerifiedAccounts(ctx)
+	if err == nil {
+		metrics["verified_accounts"] = len(accounts)
+		metrics["total_accounts"] = len(accounts)
+
+		citizens := 0
+		validators := 0
+		guests := 0
+
+		for _, account := range accounts {
+			switch account.Role {
+			case identv1.Role_ROLE_CITIZEN:
+				citizens++
+			case identv1.Role_ROLE_VALIDATOR:
+				validators++
+			case identv1.Role_ROLE_GUEST:
+				guests++
 			}
-			
-			metrics["citizens"] = citizens
-			metrics["validators"] = validators
-			metrics["guests"] = guests
 		}
-		
-		// Get role migrations
-		migrations, err := ms.app.IdentKeeper.GetAllRoleMigrations(ctx)
-		if err == nil {
-			metrics["role_migrations"] = len(migrations)
-		}
-		*/
+
+		metrics["citizens"] = citizens
+		metrics["validators"] = validators
+		metrics["guests"] = guests
 	}
 
 	return metrics
 }
 
-// getValidatorCount gets the current validator count
+// getValidatorCount gets the current validator count from keeper
 func (ms *MonitoringService) getValidatorCount() int {
-	if ms.app.consensusKeeper != nil {
-		// Note: sdk.Context needed for keeper queries; see docs/CODE_STUBS.md
+	if ms.app.consensusKeeper == nil {
 		return 0
-
-		/* Commented out until proper context is available
-		ctx := sdk.UnwrapSDKContext(context.Background())
-		validators, err := ms.app.ConsensusKeeper.GetAllValidators(ctx)
-		if err == nil {
-			return len(validators)
-		}
-		*/
 	}
-	return 0
+
+	ctx := ms.app.NewContext(true)
+	validators := ms.app.consensusKeeper.GetAllValidators(ctx)
+	return len(validators)
 }

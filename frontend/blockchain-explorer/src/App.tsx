@@ -5,6 +5,7 @@ import { NetworkOverview } from './components/NetworkOverview';
 import { StatsGrid } from './components/StatsGrid';
 import { Tabs } from './components/Tabs';
 import { BlocksList } from './components/BlocksList';
+import { BlockDetail } from './components/BlockDetail';
 import { TransactionsList } from './components/TransactionsList';
 import { ValidatorsList } from './components/ValidatorsList';
 import { ConsensusInfo } from './components/ConsensusInfo';
@@ -13,6 +14,7 @@ import './App.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('blocks');
+  const [selectedBlockHeight, setSelectedBlockHeight] = useState<number | null>(null);
   const { status, blocks, transactions, validators, consensusParams, restApiAvailable, loading, refreshData } = useNetworkData();
 
   // Calculate statistics
@@ -35,7 +37,7 @@ function App() {
   }, [status, transactions, validators]);
 
   const handleViewBlock = (height: number) => {
-    alert(`Viewing Block #${height}\n\nThis would open detailed block information including:\n• All transactions in the block\n• Validator information\n• Block hash and metadata\n• Gas usage and fees`);
+    setSelectedBlockHeight(height);
   };
 
   const handleTabChange = (tab: TabType) => {
@@ -62,8 +64,14 @@ function App() {
 
       {activeTab === 'blocks' && (
         <div className="card">
-          <h3 style={{ marginBottom: '20px' }}>📦 Latest Blocks</h3>
-          <BlocksList blocks={blocks} loading={loading} onViewBlock={handleViewBlock} />
+          {selectedBlockHeight != null ? (
+            <BlockDetail height={selectedBlockHeight} onBack={() => setSelectedBlockHeight(null)} />
+          ) : (
+            <>
+              <h3 style={{ marginBottom: '20px' }}>📦 Latest Blocks</h3>
+              <BlocksList blocks={blocks} loading={loading} onViewBlock={handleViewBlock} />
+            </>
+          )}
         </div>
       )}
 

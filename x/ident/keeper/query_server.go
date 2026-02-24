@@ -19,12 +19,14 @@ func NewQueryServer(k *Keeper) QueryServer { return QueryServer{k: *k} }
 var _ identv1.QueryServer = QueryServer{}
 
 func (s QueryServer) Params(ctx context.Context, _ *identv1.QueryParamsRequest) (*identv1.QueryParamsResponse, error) {
-	// Simple stub implementation
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	params := s.k.GetParams(sdkCtx)
+
 	return &identv1.QueryParamsResponse{
 		Params: &identv1.Params{
-			MaxIdentitiesPerAddress:     5,
-			RequireIdentityVerification: true,
-			DefaultVerificationProvider: "default-provider",
+			MaxIdentitiesPerAddress:     uint64(params.MaxIdentitiesPerAddress),
+			RequireIdentityVerification: params.RequireIdentityVerification,
+			DefaultVerificationProvider: params.DefaultVerificationProvider,
 		},
 	}, nil
 }
@@ -82,21 +84,9 @@ func (s QueryServer) VerifiedAccounts(ctx context.Context, req *identv1.QueryVer
 
 func (s QueryServer) VerificationProviders(ctx context.Context, req *identv1.QueryVerificationProvidersRequest) (*identv1.QueryVerificationProvidersResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	list, err := s.k.GetAllVerificationProviders(sdkCtx)
+	protoList, err := s.k.GetAllVerificationProviders(sdkCtx)
 	if err != nil {
 		return nil, err
-	}
-	// Convert keeper VerificationProvider to proto
-	protoList := make([]*identv1.VerificationProvider, 0, len(list))
-	for _, p := range list {
-		protoList = append(protoList, &identv1.VerificationProvider{
-			ProviderId:        p.ProviderID,
-			ProviderName:      p.ProviderName,
-			ProviderPublicKey: p.PublicKey,
-			IsAccredited:      p.IsActive,
-			AccreditationDate: p.RegistrationTime,
-			AccreditationHash: p.AccreditationHash,
-		})
 	}
 	// Simple pagination if requested
 	if req.Pagination != nil {

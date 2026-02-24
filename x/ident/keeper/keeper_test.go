@@ -2126,14 +2126,13 @@ func (suite *KeeperTestSuite) TestSetAccreditationRecord() {
 	err := suite.keeper.SetAccreditationRecord(suite.ctx, "accred-hash-1", true)
 	require.NoError(suite.T(), err)
 	// ValidateProviderAccreditation should pass for a provider with this hash
-	provider := &keeper.VerificationProvider{
-		ProviderID:         "pid1",
-		ProviderName:       "P1",
-		PublicKey:          "pk1",
-		AccreditationHash:   "accred-hash-1",
-		IsActive:           true,
-		RegistrationTime:   timestamppb.Now(),
-		ExpirationTime:     nil,
+	provider := &identv1.VerificationProvider{
+		ProviderId:        "pid1",
+		ProviderName:      "P1",
+		ProviderPublicKey: "pk1",
+		AccreditationHash: "accred-hash-1",
+		IsAccredited:      true,
+		AccreditationDate: timestamppb.Now(),
 	}
 	err = suite.keeper.SetVerificationProvider(suite.ctx, provider)
 	require.NoError(suite.T(), err)
@@ -2148,14 +2147,13 @@ func (suite *KeeperTestSuite) TestGetAllVerificationProviders() {
 	require.Empty(suite.T(), list)
 	// Add two providers
 	for i, id := range []string{"prov-a", "prov-b"} {
-		p := &keeper.VerificationProvider{
-			ProviderID:        id,
-			ProviderName:       "Provider " + string(rune('A'+i)),
-			PublicKey:          "pk-" + id,
-			AccreditationHash:  "hash-" + id,
-			IsActive:          true,
-			RegistrationTime:   timestamppb.Now(),
-			ExpirationTime:     nil,
+		p := &identv1.VerificationProvider{
+			ProviderId:        id,
+			ProviderName:      "Provider " + string(rune('A'+i)),
+			ProviderPublicKey: "pk-" + id,
+			AccreditationHash: "hash-" + id,
+			IsAccredited:      true,
+			AccreditationDate: timestamppb.Now(),
 		}
 		err := suite.keeper.SetVerificationProvider(suite.ctx, p)
 		require.NoError(suite.T(), err)
@@ -2165,7 +2163,7 @@ func (suite *KeeperTestSuite) TestGetAllVerificationProviders() {
 	require.Len(suite.T(), list, 2)
 	ids := make([]string, len(list))
 	for i, p := range list {
-		ids[i] = p.ProviderID
+		ids[i] = p.ProviderId
 	}
 	require.Contains(suite.T(), ids, "prov-a")
 	require.Contains(suite.T(), ids, "prov-b")

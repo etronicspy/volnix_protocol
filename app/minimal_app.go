@@ -25,6 +25,10 @@ func NewMinimalVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore interf
 	bapp.SetInterfaceRegistry(encoding.InterfaceRegistry)
 	bapp.SetTxEncoder(encoding.TxConfig.TxEncoder)
 
+	// ParamStore is required for consensus params storage during InitChain
+	paramStoreDB := cosmosdb.NewMemDB()
+	bapp.SetParamStore(NewParamStore(paramStoreDB))
+
 	app := &MinimalVolnixApp{
 		BaseApp:  bapp,
 		appCodec: encoding.Codec,
@@ -40,7 +44,10 @@ func NewMinimalVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore interf
 	})
 
 	bapp.SetInitChainer(func(ctx sdk.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
-		return &abci.ResponseInitChain{}, nil
+		// Return genesis validators so CometBFT can verify they match
+		return &abci.ResponseInitChain{
+			Validators: req.Validators,
+		}, nil
 	})
 
 	// Set minimal AnteHandler

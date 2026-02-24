@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -54,16 +53,18 @@ func TestQueryServerTestSuite(t *testing.T) {
 }
 
 func (suite *QueryServerTestSuite) TestParams() {
-	ctx := context.Background()
+	ctx := sdk.WrapSDKContext(suite.ctx)
 	req := &identv1.QueryParamsRequest{}
-	
+
 	resp, err := suite.queryServer.Params(ctx, req)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), resp)
 	require.NotNil(suite.T(), resp.Params)
-	require.Equal(suite.T(), uint64(5), resp.Params.MaxIdentitiesPerAddress)
-	require.True(suite.T(), resp.Params.RequireIdentityVerification)
-	require.Equal(suite.T(), "default-provider", resp.Params.DefaultVerificationProvider)
+
+	defaultParams := types.DefaultParams()
+	require.Equal(suite.T(), defaultParams.MaxIdentitiesPerAddress, resp.Params.MaxIdentitiesPerAddress)
+	require.Equal(suite.T(), defaultParams.RequireIdentityVerification, resp.Params.RequireIdentityVerification)
+	require.Equal(suite.T(), defaultParams.DefaultVerificationProvider, resp.Params.DefaultVerificationProvider)
 }
 
 func (suite *QueryServerTestSuite) TestVerifiedAccount() {
@@ -210,14 +211,13 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts_WithPagination() {
 func (suite *QueryServerTestSuite) TestVerificationProviders() {
 	// Add two providers via keeper
 	for i, id := range []string{"qp-a", "qp-b"} {
-		p := &VerificationProvider{
-			ProviderID:        id,
+		p := &identv1.VerificationProvider{
+			ProviderId:        id,
 			ProviderName:      "Query Provider " + string(rune('A'+i)),
-			PublicKey:         "pk-" + id,
-			AccreditationHash:  "hash-" + id,
-			IsActive:          true,
-			RegistrationTime:  timestamppb.Now(),
-			ExpirationTime:    nil,
+			ProviderPublicKey: "pk-" + id,
+			AccreditationHash: "hash-" + id,
+			IsAccredited:      true,
+			AccreditationDate: timestamppb.Now(),
 		}
 		err := suite.keeper.SetVerificationProvider(suite.ctx, p)
 		require.NoError(suite.T(), err)
@@ -244,14 +244,13 @@ func (suite *QueryServerTestSuite) TestVerificationProviders_Empty() {
 func (suite *QueryServerTestSuite) TestVerificationProviders_WithPagination() {
 	for i := 0; i < 3; i++ {
 		id := "pag-" + string(rune('a'+i))
-		p := &VerificationProvider{
-			ProviderID:        id,
+		p := &identv1.VerificationProvider{
+			ProviderId:        id,
 			ProviderName:      "Paginated " + id,
-			PublicKey:         "pk",
+			ProviderPublicKey: "pk",
 			AccreditationHash: "hash",
-			IsActive:          true,
-			RegistrationTime:  timestamppb.Now(),
-			ExpirationTime:    nil,
+			IsAccredited:      true,
+			AccreditationDate: timestamppb.Now(),
 		}
 		err := suite.keeper.SetVerificationProvider(suite.ctx, p)
 		require.NoError(suite.T(), err)

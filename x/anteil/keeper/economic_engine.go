@@ -3,10 +3,12 @@ package keeper
 import (
 	"fmt"
 	"sort"
-	"strconv"
 
+	"cosmossdk.io/math"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	"github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
 
 // EconomicEngine handles advanced economic operations
@@ -35,18 +37,24 @@ func NewMatchingEngine() *MatchingEngine {
 	}
 }
 
+// mustParseDec parses a string to math.LegacyDec, returning zero on failure.
+func mustParseDec(s string) math.LegacyDec {
+	d, err := math.LegacyNewDecFromStr(s)
+	if err != nil {
+		return math.LegacyZeroDec()
+	}
+	return d
+}
+
 // ProcessOrderMatching processes order matching for the internal market
 func (ee *EconomicEngine) ProcessOrderMatching(ctx sdk.Context) error {
-	// Get all active orders
 	orders, err := ee.keeper.GetAllOrders(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get orders: %w", err)
 	}
 
-	// Create matching engine
 	engine := NewMatchingEngine()
 
-	// Separate buy and sell orders
 	for _, order := range orders {
 		if order.Status == anteilv1.OrderStatus_ORDER_STATUS_OPEN {
 			switch order.OrderSide {
@@ -58,20 +66,18 @@ func (ee *EconomicEngine) ProcessOrderMatching(ctx sdk.Context) error {
 		}
 	}
 
-	// Sort orders by price (buy orders descending, sell orders ascending)
 	sort.Slice(engine.buyOrders, func(i, j int) bool {
-		priceI, _ := strconv.ParseFloat(engine.buyOrders[i].Price, 64)
-		priceJ, _ := strconv.ParseFloat(engine.buyOrders[j].Price, 64)
-		return priceI > priceJ // Higher prices first for buy orders
+		pi := mustParseDec(engine.buyOrders[i].Price)
+		pj := mustParseDec(engine.buyOrders[j].Price)
+		return pi.GT(pj)
 	})
 
 	sort.Slice(engine.sellOrders, func(i, j int) bool {
-		priceI, _ := strconv.ParseFloat(engine.sellOrders[i].Price, 64)
-		priceJ, _ := strconv.ParseFloat(engine.sellOrders[j].Price, 64)
-		return priceI < priceJ // Lower prices first for sell orders
+		pi := mustParseDec(engine.sellOrders[i].Price)
+		pj := mustParseDec(engine.sellOrders[j].Price)
+		return pi.LT(pj)
 	})
 
-	// Execute matching
 	return ee.executeMatching(ctx, engine)
 }
 
@@ -81,17 +87,14 @@ func (ee *EconomicEngine) executeMatching(ctx sdk.Context, engine *MatchingEngin
 		buyOrder := engine.buyOrders[0]
 		sellOrder := engine.sellOrders[0]
 
-		buyPrice, _ := strconv.ParseFloat(buyOrder.Price, 64)
-		sellPrice, _ := strconv.ParseFloat(sellOrder.Price, 64)
+		buyPrice := mustParseDec(buyOrder.Price)
+		sellPrice := mustParseDec(sellOrder.Price)
 
-		// Check if orders can match
-		if buyPrice >= sellPrice {
-			// Execute trade
+		if buyPrice.GTE(sellPrice) {
 			if err := ee.executeTrade(ctx, buyOrder, sellOrder); err != nil {
 				return fmt.Errorf("failed to execute trade: %w", err)
 			}
 
-			// Remove completed orders
 			if buyOrder.Status == anteilv1.OrderStatus_ORDER_STATUS_FILLED {
 				engine.buyOrders = engine.buyOrders[1:]
 			}
@@ -99,7 +102,6 @@ func (ee *EconomicEngine) executeMatching(ctx sdk.Context, engine *MatchingEngin
 				engine.sellOrders = engine.sellOrders[1:]
 			}
 		} else {
-			// No more matches possible
 			break
 		}
 	}
@@ -107,47 +109,43 @@ func (ee *EconomicEngine) executeMatching(ctx sdk.Context, engine *MatchingEngin
 	return nil
 }
 
-// executeTrade executes a trade between two orders
+// executeTrade executes a trade between two orders using deterministic decimal math
 func (ee *EconomicEngine) executeTrade(ctx sdk.Context, buyOrder, sellOrder *anteilv1.Order) error {
-	// Determine trade price (use sell order price for simplicity)
-	tradePrice, _ := strconv.ParseFloat(sellOrder.Price, 64)
+	tradePrice := mustParseDec(sellOrder.Price)
+	buyQty := mustParseDec(buyOrder.AntAmount)
+	sellQty := mustParseDec(sellOrder.AntAmount)
 
-	// Determine trade quantity (minimum of both orders)
-	buyQty, _ := strconv.ParseFloat(buyOrder.AntAmount, 64)
-	sellQty, _ := strconv.ParseFloat(sellOrder.AntAmount, 64)
 	tradeQty := buyQty
-	if sellQty < buyQty {
+	if sellQty.LT(buyQty) {
 		tradeQty = sellQty
 	}
 
-	// Create trade record
+	totalValue := tradeQty.Mul(tradePrice)
+
 	trade := &anteilv1.Trade{
 		TradeId:     fmt.Sprintf("trade_%s_%s", buyOrder.OrderId, sellOrder.OrderId),
 		BuyOrderId:  buyOrder.OrderId,
 		SellOrderId: sellOrder.OrderId,
 		Buyer:       buyOrder.Owner,
 		Seller:      sellOrder.Owner,
-		AntAmount:   fmt.Sprintf("%.6f", tradeQty),
-		Price:       fmt.Sprintf("%.6f", tradePrice),
-		TotalValue:  fmt.Sprintf("%.6f", tradeQty*tradePrice),
+		AntAmount:   tradeQty.String(),
+		Price:       tradePrice.String(),
+		TotalValue:  totalValue.String(),
 	}
 
-	// Update order quantities
-	newBuyQty := buyQty - tradeQty
-	newSellQty := sellQty - tradeQty
+	newBuyQty := buyQty.Sub(tradeQty)
+	newSellQty := sellQty.Sub(tradeQty)
 
-	buyOrder.AntAmount = fmt.Sprintf("%.6f", newBuyQty)
-	sellOrder.AntAmount = fmt.Sprintf("%.6f", newSellQty)
+	buyOrder.AntAmount = newBuyQty.String()
+	sellOrder.AntAmount = newSellQty.String()
 
-	// Update order status if fully filled
-	if newBuyQty == 0 {
+	if newBuyQty.IsZero() {
 		buyOrder.Status = anteilv1.OrderStatus_ORDER_STATUS_FILLED
 	}
-	if newSellQty == 0 {
+	if newSellQty.IsZero() {
 		sellOrder.Status = anteilv1.OrderStatus_ORDER_STATUS_FILLED
 	}
 
-	// Update orders in store
 	if err := ee.keeper.UpdateOrder(ctx, buyOrder); err != nil {
 		return fmt.Errorf("failed to update buy order: %w", err)
 	}
@@ -155,17 +153,14 @@ func (ee *EconomicEngine) executeTrade(ctx sdk.Context, buyOrder, sellOrder *ant
 		return fmt.Errorf("failed to update sell order: %w", err)
 	}
 
-	// Update user positions
 	if err := ee.updateUserPositions(ctx, trade, buyOrder.Owner, sellOrder.Owner); err != nil {
 		return fmt.Errorf("failed to update user positions: %w", err)
 	}
 
-	// Store trade record
 	if err := ee.keeper.SetTrade(ctx, trade); err != nil {
 		return fmt.Errorf("failed to store trade: %w", err)
 	}
 
-	// Emit trade event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			"trade_executed",
@@ -184,15 +179,14 @@ func (ee *EconomicEngine) executeTrade(ctx sdk.Context, buyOrder, sellOrder *ant
 
 // updateUserPositions updates user ANT positions after trade
 func (ee *EconomicEngine) updateUserPositions(ctx sdk.Context, trade *anteilv1.Trade, buyer, seller string) error {
-	tradeQty, _ := strconv.ParseFloat(trade.AntAmount, 64)
+	tradeQty := mustParseDec(trade.AntAmount)
 
-	// Update buyer position (increase ANT)
-	if err := ee.keeper.UpdateUserPosition(ctx, buyer, fmt.Sprintf("%.6f", tradeQty), 1); err != nil {
+	if err := ee.keeper.UpdateUserPosition(ctx, buyer, tradeQty.String(), 1); err != nil {
 		return fmt.Errorf("failed to update buyer position: %w", err)
 	}
 
-	// Update seller position (decrease ANT) - use 0 for decrease operation
-	if err := ee.keeper.UpdateUserPosition(ctx, seller, fmt.Sprintf("%.6f", -tradeQty), 0); err != nil {
+	negQty := tradeQty.Neg()
+	if err := ee.keeper.UpdateUserPosition(ctx, seller, negQty.String(), 0); err != nil {
 		return fmt.Errorf("failed to update seller position: %w", err)
 	}
 
@@ -201,7 +195,6 @@ func (ee *EconomicEngine) updateUserPositions(ctx sdk.Context, trade *anteilv1.T
 
 // ProcessAuctions processes auction settlements
 func (ee *EconomicEngine) ProcessAuctions(ctx sdk.Context) error {
-	// Get all active auctions
 	auctions, err := ee.keeper.GetAllAuctions(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get auctions: %w", err)
@@ -209,7 +202,6 @@ func (ee *EconomicEngine) ProcessAuctions(ctx sdk.Context) error {
 
 	for _, auction := range auctions {
 		if auction.Status == anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
-			// Check if auction should be settled (simplified: settle all active auctions)
 			if err := ee.settleAuction(ctx, auction); err != nil {
 				return fmt.Errorf("failed to settle auction %s: %w", auction.AuctionId, err)
 			}
@@ -219,48 +211,41 @@ func (ee *EconomicEngine) ProcessAuctions(ctx sdk.Context) error {
 	return nil
 }
 
-// settleAuction settles an auction
+// settleAuction settles an auction using deterministic decimal comparison
 func (ee *EconomicEngine) settleAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
-	// Get all bids for this auction
 	bids, err := ee.keeper.GetBidsByAuction(ctx, auction.AuctionId)
 	if err != nil {
 		return fmt.Errorf("failed to get bids: %w", err)
 	}
 
 	if len(bids) == 0 {
-		// No bids, cancel auction
 		auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CANCELLED
 		return ee.keeper.UpdateAuction(ctx, auction)
 	}
 
-	// Find highest bid
 	var winningBid *anteilv1.Bid
-	highestAmount := 0.0
+	highestAmount := math.LegacyZeroDec()
 
 	for _, bid := range bids {
-		amount, _ := strconv.ParseFloat(bid.Amount, 64)
-		if amount > highestAmount {
+		amount := mustParseDec(bid.Amount)
+		if amount.GT(highestAmount) {
 			highestAmount = amount
 			winningBid = bid
 		}
 	}
 
-	// Settle auction
 	auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_SETTLED
-	auction.WinningBid = winningBid.BidId // Use BidId instead of Amount
+	auction.WinningBid = winningBid.BidId
 
-	// Update auction in store
 	if err := ee.keeper.UpdateAuction(ctx, auction); err != nil {
 		return fmt.Errorf("failed to update auction: %w", err)
 	}
 
-	// Update winner's position
-	auctionQty, _ := strconv.ParseFloat(auction.AntAmount, 64)
-	if err := ee.keeper.UpdateUserPosition(ctx, winningBid.Bidder, fmt.Sprintf("%.6f", auctionQty), 1); err != nil {
+	auctionQty := mustParseDec(auction.AntAmount)
+	if err := ee.keeper.UpdateUserPosition(ctx, winningBid.Bidder, auctionQty.String(), 1); err != nil {
 		return fmt.Errorf("failed to update winner position: %w", err)
 	}
 
-	// Emit auction settled event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			"auction_settled",
@@ -274,90 +259,91 @@ func (ee *EconomicEngine) settleAuction(ctx sdk.Context, auction *anteilv1.Aucti
 	return nil
 }
 
-// CalculateMarketMetrics calculates market metrics
+// MarketMetrics represents market statistics using deterministic types
+type MarketMetrics struct {
+	TotalOrders  int              `json:"total_orders"`
+	ActiveOrders int              `json:"active_orders"`
+	TotalTrades  int              `json:"total_trades"`
+	TotalVolume  math.LegacyDec   `json:"total_volume"`
+	AveragePrice math.LegacyDec   `json:"average_price"`
+	HighestPrice math.LegacyDec   `json:"highest_price"`
+	LowestPrice  math.LegacyDec   `json:"lowest_price"`
+	PriceSpread  math.LegacyDec   `json:"price_spread"`
+}
+
+// CalculateMarketMetrics calculates market metrics with deterministic math
 func (ee *EconomicEngine) CalculateMarketMetrics(ctx sdk.Context) (*MarketMetrics, error) {
-	// Get all orders
 	orders, err := ee.keeper.GetAllOrders(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get orders: %w", err)
 	}
 
-	// Get all trades
 	trades, err := ee.keeper.GetAllTrades(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trades: %w", err)
 	}
 
-	// Calculate metrics
+	maxDecSentinel, _ := math.LegacyNewDecFromStr("999999999999")
 	metrics := &MarketMetrics{
 		TotalOrders:  len(orders),
 		ActiveOrders: 0,
 		TotalTrades:  len(trades),
-		TotalVolume:  0.0,
-		AveragePrice: 0.0,
-		HighestPrice: 0.0,
-		LowestPrice:  999999.0,
-		PriceSpread:  0.0,
+		TotalVolume:  math.LegacyZeroDec(),
+		AveragePrice: math.LegacyZeroDec(),
+		HighestPrice: math.LegacyZeroDec(),
+		LowestPrice:  maxDecSentinel,
+		PriceSpread:  math.LegacyZeroDec(),
 	}
 
-	// Count active orders
 	for _, order := range orders {
 		if order.Status == anteilv1.OrderStatus_ORDER_STATUS_OPEN {
 			metrics.ActiveOrders++
 		}
 	}
 
-	// Calculate trade metrics
-	totalValue := 0.0
+	totalValue := math.LegacyZeroDec()
 	for _, trade := range trades {
-		qty, _ := strconv.ParseFloat(trade.AntAmount, 64)
-		price, _ := strconv.ParseFloat(trade.Price, 64)
-		value := qty * price
+		qty := mustParseDec(trade.AntAmount)
+		price := mustParseDec(trade.Price)
+		value := qty.Mul(price)
 
-		metrics.TotalVolume += qty
-		totalValue += value
+		metrics.TotalVolume = metrics.TotalVolume.Add(qty)
+		totalValue = totalValue.Add(value)
 
-		if price > metrics.HighestPrice {
+		if price.GT(metrics.HighestPrice) {
 			metrics.HighestPrice = price
 		}
-		if price < metrics.LowestPrice {
+		if price.LT(metrics.LowestPrice) {
 			metrics.LowestPrice = price
 		}
 	}
 
-	// Calculate average price
-	if metrics.TotalVolume > 0 {
-		metrics.AveragePrice = totalValue / metrics.TotalVolume
+	if metrics.TotalVolume.GT(math.LegacyZeroDec()) {
+		metrics.AveragePrice = totalValue.Quo(metrics.TotalVolume)
 	}
 
-	// Calculate price spread
-	metrics.PriceSpread = metrics.HighestPrice - metrics.LowestPrice
+	if metrics.HighestPrice.GT(metrics.LowestPrice) {
+		metrics.PriceSpread = metrics.HighestPrice.Sub(metrics.LowestPrice)
+	} else {
+		metrics.PriceSpread = math.LegacyZeroDec()
+	}
 
 	return metrics, nil
 }
 
-// MarketMetrics represents market statistics
-type MarketMetrics struct {
-	TotalOrders  int     `json:"total_orders"`
-	ActiveOrders int     `json:"active_orders"`
-	TotalTrades  int     `json:"total_trades"`
-	TotalVolume  float64 `json:"total_volume"`
-	AveragePrice float64 `json:"average_price"`
-	HighestPrice float64 `json:"highest_price"`
-	LowestPrice  float64 `json:"lowest_price"`
-	PriceSpread  float64 `json:"price_spread"`
-}
-
-// ProcessMarketMaking handles automated market making
+// ProcessMarketMaking handles automated market making via module account
 func (ee *EconomicEngine) ProcessMarketMaking(ctx sdk.Context) error {
-	// Get market metrics
-	metrics, err := ee.calculateCurrentMarketPrice(ctx)
+	metrics, err := ee.CalculateMarketMetrics(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to calculate market price: %w", err)
 	}
 
-	// Create market making orders if spread is too wide
-	if metrics.PriceSpread > 0.1 { // 10% spread threshold
+	if metrics.TotalTrades == 0 {
+		return nil
+	}
+
+	spreadThreshold, _ := math.LegacyNewDecFromStr("0.1")
+	if metrics.PriceSpread.GT(spreadThreshold) {
 		if err := ee.createMarketMakingOrders(ctx, metrics.AveragePrice); err != nil {
 			return fmt.Errorf("failed to create market making orders: %w", err)
 		}
@@ -366,59 +352,51 @@ func (ee *EconomicEngine) ProcessMarketMaking(ctx sdk.Context) error {
 	return nil
 }
 
-// calculateCurrentMarketPrice calculates current market price
-func (ee *EconomicEngine) calculateCurrentMarketPrice(ctx sdk.Context) (*MarketMetrics, error) {
-	return ee.CalculateMarketMetrics(ctx)
-}
-
-// createMarketMakingOrders creates market making orders
-func (ee *EconomicEngine) createMarketMakingOrders(ctx sdk.Context, marketPrice float64) error {
-	// Get market making parameters
+// createMarketMakingOrders creates market making orders using deterministic math
+func (ee *EconomicEngine) createMarketMakingOrders(ctx sdk.Context, marketPrice math.LegacyDec) error {
 	params := ee.keeper.GetParams(ctx)
-	
-	// Parse buy discount (default: 0.99 = 1% below market)
-	buyDiscount, err := strconv.ParseFloat(params.MarketMakingBuyDiscount, 64)
-	if err != nil || buyDiscount <= 0 {
-		buyDiscount = 0.99 // Default fallback
+
+	buyDiscount := mustParseDec(params.MarketMakingBuyDiscount)
+	if buyDiscount.IsZero() || buyDiscount.IsNegative() {
+		buyDiscount, _ = math.LegacyNewDecFromStr("0.99")
 	}
-	
-	// Parse sell premium (default: 1.01 = 1% above market)
-	sellPremium, err := strconv.ParseFloat(params.MarketMakingSellPremium, 64)
-	if err != nil || sellPremium <= 0 {
-		sellPremium = 1.01 // Default fallback
+
+	sellPremium := mustParseDec(params.MarketMakingSellPremium)
+	if sellPremium.IsZero() || sellPremium.IsNegative() {
+		sellPremium, _ = math.LegacyNewDecFromStr("1.01")
 	}
-	
-	// Get order size (default: "1000.0")
+
 	orderSize := params.MarketMakingOrderSize
 	if orderSize == "" {
-		orderSize = "1000.0" // Default fallback
+		orderSize = "1000.0"
 	}
-	
-	// Create buy order slightly below market price
-	buyPrice := marketPrice * buyDiscount
+
+	buyPrice := marketPrice.Mul(buyDiscount)
+	sellPrice := marketPrice.Mul(sellPremium)
+
+	// Use anteil module account for market making (governance can fund via proposals)
+	moduleAddr := authtypes.NewModuleAddress(types.ModuleName).String()
+
 	buyOrder := &anteilv1.Order{
 		OrderId:   fmt.Sprintf("mm_buy_%d", ctx.BlockTime().Unix()),
-		Owner:     "market_maker_system",
+		Owner:     moduleAddr,
 		OrderType: anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide: anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount: orderSize,
-		Price:     fmt.Sprintf("%.6f", buyPrice),
+		Price:     buyPrice.String(),
 		Status:    anteilv1.OrderStatus_ORDER_STATUS_OPEN,
 	}
 
-	// Create sell order slightly above market price
-	sellPrice := marketPrice * sellPremium
 	sellOrder := &anteilv1.Order{
 		OrderId:   fmt.Sprintf("mm_sell_%d", ctx.BlockTime().Unix()),
-		Owner:     "market_maker_system",
+		Owner:     moduleAddr,
 		OrderType: anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide: anteilv1.OrderSide_ORDER_SIDE_SELL,
 		AntAmount: orderSize,
-		Price:     fmt.Sprintf("%.6f", sellPrice),
+		Price:     sellPrice.String(),
 		Status:    anteilv1.OrderStatus_ORDER_STATUS_OPEN,
 	}
 
-	// Store orders
 	if err := ee.keeper.CreateOrder(ctx, buyOrder); err != nil {
 		return fmt.Errorf("failed to create market making buy order: %w", err)
 	}
@@ -427,13 +405,12 @@ func (ee *EconomicEngine) createMarketMakingOrders(ctx sdk.Context, marketPrice 
 		return fmt.Errorf("failed to create market making sell order: %w", err)
 	}
 
-	// Emit market making event
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			"market_making_orders_created",
-			sdk.NewAttribute("buy_price", fmt.Sprintf("%.6f", buyPrice)),
-			sdk.NewAttribute("sell_price", fmt.Sprintf("%.6f", sellPrice)),
-			sdk.NewAttribute("market_price", fmt.Sprintf("%.6f", marketPrice)),
+			sdk.NewAttribute("buy_price", buyPrice.String()),
+			sdk.NewAttribute("sell_price", sellPrice.String()),
+			sdk.NewAttribute("market_price", marketPrice.String()),
 		),
 	)
 

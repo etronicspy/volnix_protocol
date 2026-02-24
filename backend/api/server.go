@@ -39,8 +39,9 @@ func NewServer(consensusClient consensusv1.QueryClient, identClient identv1.Quer
 
 // SetupRoutes sets up HTTP routes
 func (s *Server) SetupRoutes(mux *http.ServeMux) {
-	// Health check
+	// Health check and status
 	mux.HandleFunc("/health", s.healthHandler)
+	mux.HandleFunc("/status", s.statusHandler)
 	mux.HandleFunc("/", s.rootHandler)
 
 	// Consensus module endpoints

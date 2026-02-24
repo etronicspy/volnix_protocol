@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, User, Shield, Crown, CheckCircle, Lock } from 'lucide-react';
+import { Users, User, Shield, Crown, CheckCircle } from 'lucide-react';
 import { WalletType } from '../types/wallet';
 
 interface WalletTypesProps {

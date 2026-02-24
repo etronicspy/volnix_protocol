@@ -122,38 +122,41 @@ func GetValidatorIntegrationStatus(
 }
 
 // calculateOverallScore calculates the overall integration score for a validator
+// calculateOverallScore computes a 0-100 integration score.
+// Weights: identity 25, lizenz 25, anteil 25 (scaled by balance), consensus 25 (scaled by weight).
 func calculateOverallScore(
 	identAccount *identv1.VerifiedAccount,
 	lizenzLicense *lizenzv1.ActivatedLizenz,
 	anteilPosition *anteilv1.UserPosition,
 	consensusValidator *consensusv1.Validator,
 ) string {
-	
-	// This is a placeholder implementation
-	// In a real implementation, you would calculate based on:
-	// - Identity verification status
-	// - LZN license activation
-	// - ANT market participation
-	// - Consensus contribution
-	
+
 	score := 0.0
-	
+
 	if identAccount != nil && identAccount.IsActive {
 		score += 25.0
 	}
-	
+
 	if lizenzLicense != nil {
 		score += 25.0
 	}
-	
+
 	if anteilPosition != nil {
-		score += 25.0
+		antScore := 10.0
+		if anteilPosition.AntBalance != "" && anteilPosition.AntBalance != "0" {
+			antScore = 25.0
+		}
+		score += antScore
 	}
-	
+
 	if consensusValidator != nil {
-		score += 25.0
+		consScore := 10.0
+		if consensusValidator.Status == 1 { // ACTIVE
+			consScore = 25.0
+		}
+		score += consScore
 	}
-	
+
 	return fmt.Sprintf("%.2f", score)
 }
 

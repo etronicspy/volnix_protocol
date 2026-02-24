@@ -1,12 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Clock } from 'lucide-react';
 import { AntMarketOrder } from '../types/wallet';
+import { blockchainService } from '../services/blockchainService';
 
 interface AntMarketProps {
   walletType: 'citizen' | 'validator';
   antBalance: string;
   wrtBalance: string;
   onCreateOrder: (order: Partial<AntMarketOrder>) => void;
+}
+
+function mapApiOrderToAntMarketOrder(o: any): AntMarketOrder {
+  const statusMap: Record<string, string> = {
+    ORDER_STATUS_OPEN: 'OPEN',
+    ORDER_STATUS_PARTIALLY_FILLED: 'PARTIAL',
+    ORDER_STATUS_FILLED: 'FILLED',
+    ORDER_STATUS_CANCELLED: 'CANCELLED',
+    ORDER_STATUS_EXPIRED: 'CANCELLED',
+    '1': 'OPEN',
+    '2': 'PARTIAL',
+    '3': 'FILLED',
+    '4': 'CANCELLED',
+    '5': 'CANCELLED',
+  };
+  const status = typeof o.status === 'number' ? statusMap[String(o.status)] : statusMap[o.status] || 'OPEN';
+  return {
+    orderId: String(o.order_id || o.orderId || ''),
+    owner: o.owner || '',
+    orderType: (o.order_type === 'ORDER_TYPE_MARKET' || o.orderType === 'MARKET') ? 'MARKET' : 'LIMIT',
+    orderSide: (o.order_side === 'ORDER_SIDE_BUY' || o.orderSide === 'BUY') ? 'BUY' : 'SELL',
+    antAmount: o.ant_amount || o.antAmount || '0',
+    pricePerAnt: o.price || o.pricePerAnt || '0',
+    status: status as AntMarketOrder['status'],
+    createdAt: o.created_at || o.createdAt || new Date().toISOString(),
+    expiresAt: o.expires_at || o.expiresAt || new Date(Date.now() + 86400000).toISOString(),
+    filledAmount: o.filled_amount || o.filledAmount,
+  };
 }
 
 const AntMarket: React.FC<AntMarketProps> = ({ 
@@ -18,69 +47,56 @@ const AntMarket: React.FC<AntMarketProps> = ({
   const [orderType, setOrderType] = useState<'LIMIT' | 'MARKET'>('LIMIT');
   const [amount, setAmount] = useState('');
   const [price, setPrice] = useState('');
+  const [sellOrders, setSellOrders] = useState<AntMarketOrder[]>([]);
+  const [buyOrders, setBuyOrders] = useState<AntMarketOrder[]>([]);
+  const [marketPrice, setMarketPrice] = useState('0.5');
+  const [stats, setStats] = useState({ volume24h: '0', maxPrice: '0', minPrice: '0', tradesCount: 0 });
+  const [loading, setLoading] = useState(true);
 
-  // Мок данные для демонстрации
-  const marketPrice = '0.5'; // WRT за 1 ANT
-  const [sellOrders] = useState<AntMarketOrder[]>([
-    {
-      orderId: '1',
-      owner: 'volnix1abc...def',
-      orderType: 'LIMIT',
-      orderSide: 'SELL',
-      antAmount: '100',
-      pricePerAnt: '0.48',
-      status: 'OPEN',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 86400000).toISOString()
-    },
-    {
-      orderId: '2',
-      owner: 'volnix1ghi...jkl',
-      orderType: 'LIMIT',
-      orderSide: 'SELL',
-      antAmount: '250',
-      pricePerAnt: '0.50',
-      status: 'OPEN',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 86400000).toISOString()
-    },
-    {
-      orderId: '3',
-      owner: 'volnix1mno...pqr',
-      orderType: 'LIMIT',
-      orderSide: 'SELL',
-      antAmount: '150',
-      pricePerAnt: '0.52',
-      status: 'OPEN',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 86400000).toISOString()
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { orders } = await blockchainService.getAntOrders();
+      const open = orders.filter((o: any) => {
+        const s = o.status;
+        return s === 1 || s === 'ORDER_STATUS_OPEN' || s === 'OPEN';
+      });
+      const sells = open.filter((o: any) => o.order_side === 'ORDER_SIDE_SELL' || o.orderSide === 'SELL' || o.order_side === 2);
+      const buys = open.filter((o: any) => o.order_side === 'ORDER_SIDE_BUY' || o.orderSide === 'BUY' || o.order_side === 1);
+      setSellOrders(sells.map(mapApiOrderToAntMarketOrder));
+      setBuyOrders(buys.map(mapApiOrderToAntMarketOrder));
+      const prices = open.map((o: any) => parseFloat(o.price || o.pricePerAnt || '0')).filter((p) => !isNaN(p) && p > 0);
+      const vol = orders.reduce((a: number, o: any) => a + parseFloat(o.ant_amount || o.antAmount || '0') * parseFloat(o.price || o.pricePerAnt || '0'), 0);
+      if (prices.length > 0) {
+        const mid = (Math.min(...prices) + Math.max(...prices)) / 2;
+        setMarketPrice(mid.toFixed(2));
+        setStats({
+          volume24h: vol.toFixed(0),
+          maxPrice: Math.max(...prices).toFixed(2),
+          minPrice: Math.min(...prices).toFixed(2),
+          tradesCount: open.length,
+        });
+      } else {
+        setStats({
+          volume24h: vol.toFixed(0),
+          maxPrice: '0',
+          minPrice: '0',
+          tradesCount: 0,
+        });
+      }
+    } catch {
+      setSellOrders([]);
+      setBuyOrders([]);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  }, []);
 
-  const [buyOrders] = useState<AntMarketOrder[]>([
-    {
-      orderId: '4',
-      owner: 'volnix1stu...vwx',
-      orderType: 'LIMIT',
-      orderSide: 'BUY',
-      antAmount: '200',
-      pricePerAnt: '0.47',
-      status: 'OPEN',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 86400000).toISOString()
-    },
-    {
-      orderId: '5',
-      owner: 'volnix1yza...bcd',
-      orderType: 'LIMIT',
-      orderSide: 'BUY',
-      antAmount: '300',
-      pricePerAnt: '0.45',
-      status: 'OPEN',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 86400000).toISOString()
-    }
-  ]);
+  useEffect(() => {
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 15000);
+    return () => clearInterval(interval);
+  }, [fetchOrders]);
 
   const handleCreateOrder = () => {
     if (!amount || (orderType === 'LIMIT' && !price)) return;
@@ -137,14 +153,16 @@ const AntMarket: React.FC<AntMarketProps> = ({
         <div className="card" style={{ background: '#f0fdf4' }}>
           <h5 style={{ marginBottom: '12px', color: '#166534' }}>Рыночная цена ANT</h5>
           <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#10b981', marginBottom: '8px' }}>
-            {marketPrice} WRT
+            {loading ? '...' : `${marketPrice} WRT`}
           </div>
           <div style={{ fontSize: '14px', color: '#6b7280' }}>
             за 1 ANT
           </div>
-          <div style={{ marginTop: '12px', fontSize: '13px', color: '#059669' }}>
-            ↑ +5.2% за 24ч
-          </div>
+          {!loading && sellOrders.length + buyOrders.length > 0 && (
+            <div style={{ marginTop: '12px', fontSize: '13px', color: '#059669' }}>
+              {sellOrders.length + buyOrders.length} открытых ордеров
+            </div>
+          )}
         </div>
 
         {/* Ваш баланс */}
@@ -177,7 +195,12 @@ const AntMarket: React.FC<AntMarketProps> = ({
             <span style={{ textAlign: 'right' }}>Количество (ANT)</span>
             <span style={{ textAlign: 'right' }}>Сумма (WRT)</span>
           </div>
-          {sellOrders.map((order) => (
+          {loading ? (
+            <div style={{ padding: '16px', color: '#6b7280', textAlign: 'center' }}>Загрузка...</div>
+          ) : sellOrders.length === 0 ? (
+            <div style={{ padding: '16px', color: '#6b7280', textAlign: 'center' }}>Нет ордеров на продажу</div>
+          ) : (
+          sellOrders.map((order) => (
             <div 
               key={order.orderId}
               style={{ 
@@ -197,7 +220,7 @@ const AntMarket: React.FC<AntMarketProps> = ({
                 {(parseFloat(order.pricePerAnt) * parseFloat(order.antAmount)).toFixed(2)}
               </span>
             </div>
-          ))}
+          )))}
         </div>
 
         {/* Ордера на покупку */}
@@ -211,7 +234,12 @@ const AntMarket: React.FC<AntMarketProps> = ({
             <span style={{ textAlign: 'right' }}>Количество (ANT)</span>
             <span style={{ textAlign: 'right' }}>Сумма (WRT)</span>
           </div>
-          {buyOrders.map((order) => (
+          {loading ? (
+            <div style={{ padding: '16px', color: '#6b7280', textAlign: 'center' }}>Загрузка...</div>
+          ) : buyOrders.length === 0 ? (
+            <div style={{ padding: '16px', color: '#6b7280', textAlign: 'center' }}>Нет ордеров на покупку</div>
+          ) : (
+          buyOrders.map((order) => (
             <div 
               key={order.orderId}
               style={{ 
@@ -231,7 +259,7 @@ const AntMarket: React.FC<AntMarketProps> = ({
                 {(parseFloat(order.pricePerAnt) * parseFloat(order.antAmount)).toFixed(2)}
               </span>
             </div>
-          ))}
+          )))}
         </div>
       </div>
 
@@ -358,23 +386,23 @@ const AntMarket: React.FC<AntMarketProps> = ({
 
       {/* Статистика рынка */}
       <div className="card" style={{ background: '#f9fafb', marginTop: '20px' }}>
-        <h5 style={{ marginBottom: '12px' }}>Статистика рынка за 24ч</h5>
+        <h5 style={{ marginBottom: '12px' }}>Статистика рынка</h5>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', fontSize: '14px' }}>
           <div>
-            <div style={{ color: '#6b7280', marginBottom: '4px' }}>Объем торгов</div>
-            <div style={{ fontWeight: '600' }}>12,450 ANT</div>
+            <div style={{ color: '#6b7280', marginBottom: '4px' }}>Объём (WRT)</div>
+            <div style={{ fontWeight: '600' }}>{loading ? '...' : stats.volume24h}</div>
           </div>
           <div>
             <div style={{ color: '#6b7280', marginBottom: '4px' }}>Макс. цена</div>
-            <div style={{ fontWeight: '600', color: '#10b981' }}>0.55 WRT</div>
+            <div style={{ fontWeight: '600', color: '#10b981' }}>{loading ? '...' : `${stats.maxPrice} WRT`}</div>
           </div>
           <div>
             <div style={{ color: '#6b7280', marginBottom: '4px' }}>Мин. цена</div>
-            <div style={{ fontWeight: '600', color: '#ef4444' }}>0.42 WRT</div>
+            <div style={{ fontWeight: '600', color: '#ef4444' }}>{loading ? '...' : `${stats.minPrice} WRT`}</div>
           </div>
           <div>
-            <div style={{ color: '#6b7280', marginBottom: '4px' }}>Сделок</div>
-            <div style={{ fontWeight: '600' }}>1,247</div>
+            <div style={{ color: '#6b7280', marginBottom: '4px' }}>Ордеров</div>
+            <div style={{ fontWeight: '600' }}>{loading ? '...' : stats.tradesCount}</div>
           </div>
         </div>
       </div>

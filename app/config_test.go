@@ -61,7 +61,7 @@ func TestLoadConfig_FileNotExist(t *testing.T) {
 	cfg, err := LoadConfig(path)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
-	require.Equal(t, "test-volnix", cfg.Network.ChainID)
+	require.Equal(t, "volnix-1", cfg.Network.ChainID)
 	// SaveConfig creates the file, so it should exist now
 	_, err = os.Stat(path)
 	require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestSaveConfig(t *testing.T) {
 	require.NoError(t, err)
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.Contains(t, string(data), "test-volnix")
+	require.Contains(t, string(data), "volnix-1")
 }
 
 func TestNewConfigManager(t *testing.T) {
@@ -108,7 +108,7 @@ func TestConfigManager_Load_GetConfig_Save(t *testing.T) {
 	cm := NewConfigManager(path, log.NewNopLogger())
 	require.NoError(t, cm.Load())
 	require.NotNil(t, cm.GetConfig())
-	require.Equal(t, "test-volnix", cm.GetConfig().Network.ChainID)
+	require.Equal(t, "volnix-1", cm.GetConfig().Network.ChainID)
 	require.NoError(t, cm.Save())
 }
 
@@ -155,7 +155,7 @@ func TestConfigManager_GetNetworkConfig(t *testing.T) {
 	cm2 := NewConfigManager(path, log.NewNopLogger())
 	require.NoError(t, cm2.Load())
 	nc2 := cm2.GetNetworkConfig()
-	require.Equal(t, "test-volnix", nc2.ChainID)
+	require.Equal(t, "volnix-1", nc2.ChainID)
 }
 
 func TestConfigManager_GetConsensusConfig(t *testing.T) {

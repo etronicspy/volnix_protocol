@@ -97,7 +97,7 @@ type LoggingConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Network: NetworkConfig{
-			ChainID:         "test-volnix",
+			ChainID:         "volnix-1",
 			ListenAddress:   "tcp://0.0.0.0:26656",
 			ExternalAddress: "",
 			Seeds:           []string{},

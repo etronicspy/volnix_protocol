@@ -6,71 +6,60 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 )
 
-// ABCIWrapper wraps VolnixApp to provide context-aware ABCI methods
+// DemoWalletAddress is derived from the well-known test mnemonic
+// "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+// with HD path m/44'/118'/0'/0/0 and bech32 prefix "volnix".
+const DemoWalletAddress = "volnix19rl4cm2hmr8afy4kldpxz3fka4jguq0a9r0ces"
+
+// ABCIWrapper bridges CometBFT v0.38 context-aware ABCI interface
+// to Cosmos SDK BaseApp methods. All state (balances, accounts, modules)
+// is managed by the real VolnixApp through proper Cosmos SDK modules.
 type ABCIWrapper struct {
-	*MinimalVolnixApp
+	*VolnixApp
 }
 
-// NewABCIWrapper creates a new ABCI wrapper
-func NewABCIWrapper(app *MinimalVolnixApp) *ABCIWrapper {
-	return &ABCIWrapper{MinimalVolnixApp: app}
+// NewABCIWrapper creates a new ABCI wrapper around the full Volnix app.
+func NewABCIWrapper(app *VolnixApp) *ABCIWrapper {
+	return &ABCIWrapper{VolnixApp: app}
 }
 
-// CheckTx implements ABCI interface with context
 func (w *ABCIWrapper) CheckTx(ctx context.Context, req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
-	resp, err := w.MinimalVolnixApp.CheckTx(req)
-	return resp, err
+	return w.VolnixApp.CheckTx(req)
 }
 
-// FinalizeBlock implements ABCI interface with context
 func (w *ABCIWrapper) FinalizeBlock(ctx context.Context, req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
-	resp, err := w.MinimalVolnixApp.FinalizeBlock(req)
-	return resp, err
+	return w.VolnixApp.FinalizeBlock(req)
 }
 
-// Commit implements ABCI interface with context
 func (w *ABCIWrapper) Commit(ctx context.Context, req *abci.RequestCommit) (*abci.ResponseCommit, error) {
-	resp, err := w.MinimalVolnixApp.Commit()
+	resp, err := w.VolnixApp.Commit()
 	return resp, err
 }
 
-// Query implements ABCI interface with context
 func (w *ABCIWrapper) Query(ctx context.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
-	resp, err := w.MinimalVolnixApp.Query(ctx, req)
-	return resp, err
+	return w.VolnixApp.Query(ctx, req)
 }
 
-// Info implements ABCI interface with context
 func (w *ABCIWrapper) Info(ctx context.Context, req *abci.RequestInfo) (*abci.ResponseInfo, error) {
-	resp, err := w.MinimalVolnixApp.Info(req)
-	return resp, err
+	return w.VolnixApp.Info(req)
 }
 
-// InitChain implements ABCI interface with context
 func (w *ABCIWrapper) InitChain(ctx context.Context, req *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
-	return w.MinimalVolnixApp.InitChain(req)
+	return w.VolnixApp.InitChain(req)
 }
 
-// PrepareProposal implements ABCI interface with context
 func (w *ABCIWrapper) PrepareProposal(ctx context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
-	resp, err := w.MinimalVolnixApp.PrepareProposal(req)
-	return resp, err
+	return w.VolnixApp.PrepareProposal(req)
 }
 
-// ProcessProposal implements ABCI interface with context
 func (w *ABCIWrapper) ProcessProposal(ctx context.Context, req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
-	resp, err := w.MinimalVolnixApp.ProcessProposal(req)
-	return resp, err
+	return w.VolnixApp.ProcessProposal(req)
 }
 
-// ExtendVote implements ABCI interface with context
 func (w *ABCIWrapper) ExtendVote(ctx context.Context, req *abci.RequestExtendVote) (*abci.ResponseExtendVote, error) {
-	resp, err := w.MinimalVolnixApp.ExtendVote(ctx, req)
-	return resp, err
+	return w.VolnixApp.ExtendVote(ctx, req)
 }
 
-// VerifyVoteExtension implements ABCI interface with context
 func (w *ABCIWrapper) VerifyVoteExtension(ctx context.Context, req *abci.RequestVerifyVoteExtension) (*abci.ResponseVerifyVoteExtension, error) {
-	resp, err := w.MinimalVolnixApp.VerifyVoteExtension(req)
-	return resp, err
+	return w.VolnixApp.VerifyVoteExtension(req)
 }

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, Send, History, Users, Coins, Crown } from 'lucide-react';
+import { Wallet, Send, History, Users, Coins, Shield } from 'lucide-react';
 import WalletConnect from './components/WalletConnect';
 import Balance from './components/Balance';
 import SendTokens from './components/SendTokens';
 import TransactionHistory from './components/TransactionHistory';
 import WalletTypes from './components/WalletTypes';
-import ValidatorManagement from './components/ValidatorManagement';
+import NetworkStaking from './components/NetworkStaking';
 import { WalletState, WalletType } from './types/wallet';
 import { blockchainService } from './services/blockchainService';
 
@@ -23,7 +23,7 @@ function App() {
     isVerified: false
   });
 
-  const [activeTab, setActiveTab] = useState<'wallet' | 'send' | 'history' | 'types' | 'validators'>('wallet');
+  const [activeTab, setActiveTab] = useState<'wallet' | 'send' | 'history' | 'types' | 'staking'>('wallet');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isRestoring, setIsRestoring] = useState(true); // Флаг для отслеживания восстановления состояния
@@ -39,7 +39,7 @@ function App() {
       try {
         // Восстанавливаем активную вкладку
         const savedTab = localStorage.getItem(ACTIVE_TAB_KEY);
-        if (savedTab && ['wallet', 'send', 'history', 'types', 'validators'].includes(savedTab)) {
+        if (savedTab && ['wallet', 'send', 'history', 'types', 'staking'].includes(savedTab)) {
           setActiveTab(savedTab as typeof activeTab);
         }
 
@@ -414,12 +414,12 @@ function App() {
                 Wallet Types
               </button>
               <button
-                className={`button ${activeTab === 'validators' ? '' : 'button-secondary'}`}
-                onClick={() => setActiveTab('validators')}
-                style={activeTab !== 'validators' ? { background: '#6b7280', opacity: 0.7 } : {}}
+                className={`button ${activeTab === 'staking' ? '' : 'button-secondary'}`}
+                onClick={() => setActiveTab('staking')}
+                style={activeTab !== 'staking' ? { background: '#6b7280', opacity: 0.7 } : {}}
               >
-                <Crown size={20} />
-                Validators
+                <Shield size={20} />
+                Staking
               </button>
             </div>
           </nav>
@@ -429,7 +429,7 @@ function App() {
             {activeTab === 'send' && <SendTokens onSend={sendTokens} balance={walletState.balance} />}
             {activeTab === 'history' && <TransactionHistory transactions={walletState.transactions} />}
             {activeTab === 'types' && <WalletTypes currentType={walletState.walletType} onUpgrade={upgradeWalletType} />}
-            {activeTab === 'validators' && <ValidatorManagement />}
+            {activeTab === 'staking' && <NetworkStaking userAddress={walletState.address} />}
           </div>
         </>
       )}

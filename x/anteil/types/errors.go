@@ -92,4 +92,20 @@ var (
 
 	// Bid errors
 	ErrBidNotFound = errors.Register(ModuleName, 32, "bid not found")
+
+	// Market maker errors
+	ErrMarketMakerNotFound      = errors.Register(ModuleName, 33, "market maker not found")
+	ErrMarketMakerAlreadyExists = errors.Register(ModuleName, 34, "market maker already registered")
+
+	// Staking errors
+	ErrStakingPositionNotFound = errors.Register(ModuleName, 35, "staking position not found")
+	ErrInsufficientStake       = errors.Register(ModuleName, 36, "insufficient staked amount")
+	ErrNoRewardsToClaim        = errors.Register(ModuleName, 37, "no rewards available to claim")
+
+	// Liquidity errors
+	ErrLiquidityPoolNotFound = errors.Register(ModuleName, 38, "liquidity pool not found")
+	ErrInsufficientShares    = errors.Register(ModuleName, 39, "insufficient liquidity shares")
+
+	// Order update errors
+	ErrOrderNotOpen = errors.Register(ModuleName, 40, "order is not open for updates")
 )

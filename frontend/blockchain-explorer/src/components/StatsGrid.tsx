@@ -1,5 +1,4 @@
 import React from 'react';
-import { Block, Validator } from '../types';
 
 interface StatsGridProps {
   totalBlocks: number;

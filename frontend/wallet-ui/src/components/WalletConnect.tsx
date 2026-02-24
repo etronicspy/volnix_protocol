@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, Key, Shield, Trash2, RefreshCw, Copy, Eye, EyeOff, Check } from 'lucide-react';
+import { Wallet, Key, Shield, Trash2, Copy, Eye, EyeOff, Check } from 'lucide-react';
 import { blockchainService } from '../services/blockchainService';
-import { getAllWallets, saveWallet, deleteWallet, walletExists, SavedWallet, getWallet } from '../utils/walletStorage';
+import { getAllWallets, saveWallet, deleteWallet, walletExists, SavedWallet } from '../utils/walletStorage';
 import { generateMnemonic, validateMnemonic } from '../utils/mnemonicGenerator';
 
 interface WalletConnectProps {

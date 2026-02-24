@@ -197,14 +197,13 @@ func (s MsgServer) RegisterVerificationProvider(ctx context.Context, req *identv
 		return nil, fmt.Errorf("failed to set accreditation record: %w", err)
 	}
 
-	provider := &VerificationProvider{
-		ProviderID:         req.ProviderId,
-		ProviderName:       req.ProviderName,
-		PublicKey:          req.ProviderPublicKey,
-		AccreditationHash:  accreditationHash,
-		IsActive:           true,
-		RegistrationTime:  timestamppb.Now(),
-		ExpirationTime:     nil,
+	provider := &identv1.VerificationProvider{
+		ProviderId:        req.ProviderId,
+		ProviderName:      req.ProviderName,
+		ProviderPublicKey: req.ProviderPublicKey,
+		AccreditationHash: accreditationHash,
+		IsAccredited:      true,
+		AccreditationDate: timestamppb.Now(),
 	}
 	if err := s.k.SetVerificationProvider(sdkCtx, provider); err != nil {
 		return nil, fmt.Errorf("failed to set verification provider: %w", err)

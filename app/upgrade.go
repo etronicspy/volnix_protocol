@@ -1,10 +1,14 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module"
 	sdklog "cosmossdk.io/log"
 )
 
@@ -86,6 +90,26 @@ func SetupUpgradeHandlers(um *UpgradeManager, app *VolnixApp) {
 	// Add more upgrade handlers as needed
 }
 
+// SetupSDKUpgradeHandlers registers handlers in the standard Cosmos SDK x/upgrade keeper.
+// This path is used by the app runtime and supersedes the custom UpgradeManager scheduler.
+func SetupSDKUpgradeHandlers(uk *upgradekeeper.Keeper, app *VolnixApp) {
+	uk.SetUpgradeHandler("v0.2.0", func(goCtx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+		ctx := sdk.UnwrapSDKContext(goCtx)
+		if err := MigrateToV0_2_0(ctx, app); err != nil {
+			return nil, err
+		}
+		return fromVM, nil
+	})
+
+	uk.SetUpgradeHandler("v0.3.0", func(goCtx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+		ctx := sdk.UnwrapSDKContext(goCtx)
+		if err := MigrateToV0_3_0(ctx, app); err != nil {
+			return nil, err
+		}
+		return fromVM, nil
+	})
+}
+
 // MigrateToV0_3_0 performs state migration to version 0.3.0
 func MigrateToV0_3_0(ctx sdk.Context, app *VolnixApp) error {
 	// Example: Migrate all modules
@@ -109,48 +133,83 @@ func MigrateToV0_3_0(ctx sdk.Context, app *VolnixApp) error {
 }
 
 // migrateIdentModuleV0_3_0 migrates ident module to v0.3.0
+// Re-saves all accounts so newly added proto fields get serialized with defaults.
 func migrateIdentModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
-	// Example: Add new fields or update structure
 	accounts, err := app.identKeeper.GetAllVerifiedAccounts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get verified accounts: %w", err)
 	}
-	
-	// Perform migration for each account
+
+	migrated := 0
 	for _, account := range accounts {
-		// Example migration logic
-		_ = account // Use account in migration
+		if err := app.identKeeper.SetVerifiedAccount(ctx, account); err != nil {
+			return fmt.Errorf("failed to re-save account %s: %w", account.Address, err)
+		}
+		migrated++
 	}
-	
+
+	ctx.Logger().Info("ident module migrated to v0.3.0", "accounts_migrated", migrated)
 	return nil
 }
 
 // migrateLizenzModuleV0_3_0 migrates lizenz module to v0.3.0
+// Re-saves all licenses so newly added proto fields get serialized with defaults.
 func migrateLizenzModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
-	// Example migration
 	lizenzs, err := app.lizenzKeeper.GetAllActivatedLizenz(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get activated lizenzs: %w", err)
 	}
-	
-	for _, lizenz := range lizenzs {
-		_ = lizenz // Use lizenz in migration
+
+	migrated := 0
+	for _, lz := range lizenzs {
+		if err := app.lizenzKeeper.SetActivatedLizenz(ctx, lz); err != nil {
+			return fmt.Errorf("failed to re-save lizenz for %s: %w", lz.Validator, err)
+		}
+		migrated++
 	}
-	
+
+	ctx.Logger().Info("lizenz module migrated to v0.3.0", "licenses_migrated", migrated)
 	return nil
 }
 
 // migrateAnteilModuleV0_3_0 migrates anteil module to v0.3.0
+// Updates module params to include new fields with defaults.
 func migrateAnteilModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
-	// Example migration for anteil module
-	// This is a placeholder - implement actual migration logic
+	params := app.anteilKeeper.GetParams(ctx)
+
+	if params.StakingRewardRate == "" {
+		params.StakingRewardRate = "0.05"
+	}
+	if params.LiquidityPoolFee == "" {
+		params.LiquidityPoolFee = "0.003"
+	}
+	if params.MarketMakingBuyDiscount == "" {
+		params.MarketMakingBuyDiscount = "0.99"
+	}
+	if params.MarketMakingSellPremium == "" {
+		params.MarketMakingSellPremium = "1.01"
+	}
+	if params.MarketMakingOrderSize == "" {
+		params.MarketMakingOrderSize = "1000.0"
+	}
+
+	app.anteilKeeper.SetParams(ctx, params)
+	ctx.Logger().Info("anteil module migrated to v0.3.0")
 	return nil
 }
 
 // migrateConsensusModuleV0_3_0 migrates consensus module to v0.3.0
+// Re-saves all validators so newly added proto fields get serialized with defaults.
 func migrateConsensusModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
-	// Example migration for consensus module
-	// This is a placeholder - implement actual migration logic
+	validators := app.consensusKeeper.GetAllValidators(ctx)
+
+	migrated := 0
+	for _, v := range validators {
+		app.consensusKeeper.SetValidator(ctx, v)
+		migrated++
+	}
+
+	ctx.Logger().Info("consensus module migrated to v0.3.0", "validators_migrated", migrated)
 	return nil
 }
 
@@ -173,44 +232,38 @@ func MigrateToV0_2_0(ctx sdk.Context, app *VolnixApp) error {
 }
 
 // migrateIdentModuleV0_2_0 migrates the ident module to v0.2.0
+// Re-saves all accounts to populate newly added proto fields.
 func migrateIdentModuleV0_2_0(ctx sdk.Context, app *VolnixApp) error {
-	// Example migration: Update account structure or parameters
-	// This is a placeholder - implement actual migration logic
-	
-	// Get all verified accounts
 	accounts, err := app.identKeeper.GetAllVerifiedAccounts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get verified accounts: %w", err)
 	}
-	
-	// Example: Update each account if needed
+
 	for _, account := range accounts {
-		// Perform migration logic here
-		// For example: add new fields, update structure, etc.
-		_ = account // Use account in migration
+		if err := app.identKeeper.SetVerifiedAccount(ctx, account); err != nil {
+			return fmt.Errorf("failed to re-save account %s: %w", account.Address, err)
+		}
 	}
-	
+
+	ctx.Logger().Info("ident module migrated to v0.2.0", "accounts", len(accounts))
 	return nil
 }
 
 // migrateLizenzModuleV0_2_0 migrates the lizenz module to v0.2.0
+// Re-saves all licenses to populate newly added proto fields.
 func migrateLizenzModuleV0_2_0(ctx sdk.Context, app *VolnixApp) error {
-	// Example migration: Update lizenz structure or parameters
-	// This is a placeholder - implement actual migration logic
-	
-	// Get all activated lizenzs
 	lizenzs, err := app.lizenzKeeper.GetAllActivatedLizenz(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get activated lizenzs: %w", err)
 	}
-	
-	// Example: Update each lizenz if needed
-	for _, lizenz := range lizenzs {
-		// Perform migration logic here
-		// For example: add new fields, update structure, etc.
-		_ = lizenz // Use lizenz in migration
+
+	for _, lz := range lizenzs {
+		if err := app.lizenzKeeper.SetActivatedLizenz(ctx, lz); err != nil {
+			return fmt.Errorf("failed to re-save lizenz for %s: %w", lz.Validator, err)
+		}
 	}
-	
+
+	ctx.Logger().Info("lizenz module migrated to v0.2.0", "licenses", len(lizenzs))
 	return nil
 }
 

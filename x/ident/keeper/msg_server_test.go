@@ -75,14 +75,13 @@ func (suite *MsgServerTestSuite) SetupTest() {
 	store.Set(accreditationKey, accreditationBz)
 	
 	// Then register the provider
-	testProvider := &VerificationProvider{
-		ProviderID:        "provider123",
-		ProviderName:     "Test Provider",
-		PublicKey:        "test_public_key",
+	testProvider := &identv1.VerificationProvider{
+		ProviderId:        "provider123",
+		ProviderName:      "Test Provider",
+		ProviderPublicKey: "test_public_key",
 		AccreditationHash: accreditationHash,
-		IsActive:          true,
-		RegistrationTime: timestamppb.Now(),
-		ExpirationTime:   nil, // No expiration for test
+		IsAccredited:      true,
+		AccreditationDate: timestamppb.Now(),
 	}
 	err = suite.keeper.SetVerificationProvider(suite.ctx, testProvider)
 	if err != nil {

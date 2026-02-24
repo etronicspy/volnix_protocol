@@ -9,20 +9,22 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// RateLimiter provides rate limiting for transactions
+// RateLimiter provides optional rate limiting for CheckTx (RPC layer only).
+// NOT used for consensus: mempool and fee market handle anti-spam. When enabled,
+// use only for RPC protection (e.g. public node). Disabled by default.
 type RateLimiter struct {
-	// Global rate limiter for all transactions
-	globalLimiter *rate.Limiter
-	
-	// Per-address rate limiters
-	addressLimiters map[string]*rate.Limiter
-	
-	// Configuration
-	globalRate  rate.Limit // Transactions per second globally
-	perAddrRate rate.Limit // Transactions per second per address
-	burstSize   int        // Burst size for rate limiting
-	
-	mu sync.RWMutex
+	globalLimiter   *rate.Limiter
+	addressLimiters map[string]*addressEntry
+	globalRate      rate.Limit
+	perAddrRate     rate.Limit
+	burstSize       int
+	mu              sync.RWMutex
+}
+
+// addressEntry tracks a per-address limiter and its last access time.
+type addressEntry struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
 }
 
 // RateLimitConfig holds configuration for rate limiting
@@ -40,13 +42,14 @@ type RateLimitConfig struct {
 	Enabled bool
 }
 
-// DefaultRateLimitConfig returns default rate limit configuration
+// DefaultRateLimitConfig returns default rate limit configuration.
+// Enabled: false — rate limiter does not affect consensus; enable only for RPC protection.
 func DefaultRateLimitConfig() RateLimitConfig {
 	return RateLimitConfig{
 		GlobalRate:  1000.0, // 1000 tx/sec globally
 		PerAddrRate: 10.0,   // 10 tx/sec per address
 		BurstSize:   20,     // Allow bursts of 20 transactions
-		Enabled:     true,
+		Enabled:     false,  // Off by default; enable for RPC-only protection
 	}
 }
 
@@ -58,10 +61,10 @@ func NewRateLimiter(config RateLimitConfig) *RateLimiter {
 	
 	rl := &RateLimiter{
 		globalLimiter:   rate.NewLimiter(rate.Limit(config.GlobalRate), config.BurstSize),
-		addressLimiters: make(map[string]*rate.Limiter),
-		globalRate:       rate.Limit(config.GlobalRate),
-		perAddrRate:      rate.Limit(config.PerAddrRate),
-		burstSize:        config.BurstSize,
+		addressLimiters: make(map[string]*addressEntry),
+		globalRate:      rate.Limit(config.GlobalRate),
+		perAddrRate:     rate.Limit(config.PerAddrRate),
+		burstSize:       config.BurstSize,
 	}
 	
 	return rl
@@ -91,22 +94,24 @@ func (rl *RateLimiter) Allow(ctx sdk.Context, tx sdk.Tx) error {
 			for _, signer := range signers {
 				addr := signer.String()
 				
-				// Get or create per-address limiter
-				addrLimiter, exists := rl.addressLimiters[addr]
+				entry, exists := rl.addressLimiters[addr]
 				if !exists {
 					rl.mu.RUnlock()
 					rl.mu.Lock()
-					// Double-check after acquiring write lock
-					addrLimiter, exists = rl.addressLimiters[addr]
+					entry, exists = rl.addressLimiters[addr]
 					if !exists {
-						addrLimiter = rate.NewLimiter(rl.perAddrRate, rl.burstSize)
-						rl.addressLimiters[addr] = addrLimiter
+						entry = &addressEntry{
+							limiter:  rate.NewLimiter(rl.perAddrRate, rl.burstSize),
+							lastSeen: time.Now(),
+						}
+						rl.addressLimiters[addr] = entry
 					}
 					rl.mu.Unlock()
 					rl.mu.RLock()
 				}
-				
-				if !addrLimiter.Allow() {
+				entry.lastSeen = time.Now()
+
+				if !entry.limiter.Allow() {
 					return fmt.Errorf("rate limit exceeded for address %s: %v tx/sec", addr, rl.perAddrRate)
 				}
 			}
@@ -116,15 +121,21 @@ func (rl *RateLimiter) Allow(ctx sdk.Context, tx sdk.Tx) error {
 	return nil
 }
 
-// Cleanup removes old address limiters to prevent memory leaks
+// Cleanup removes address limiters that haven't been used within maxAge.
 func (rl *RateLimiter) Cleanup(maxAge time.Duration) {
 	if rl == nil {
 		return
 	}
-	
-	// For now, we keep all limiters
-	// In production, you might want to implement LRU cache or time-based cleanup
-	// This is a simplified implementation
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-maxAge)
+	for addr, entry := range rl.addressLimiters {
+		if entry.lastSeen.Before(cutoff) {
+			delete(rl.addressLimiters, addr)
+		}
+	}
 }
 
 // GetStats returns current rate limiter statistics
