@@ -7,6 +7,7 @@ import (
 
 	"cosmossdk.io/log"
 	cosmosdb "github.com/cosmos/cosmos-db"
+	"github.com/cometbft/cometbft/p2p"
 	"github.com/spf13/cobra"
 
 	"github.com/volnix-protocol/volnix-protocol/app"
@@ -44,6 +45,7 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("failed to create server: %w", err)
 			}
+			server.Config().Moniker = moniker
 
 			if err := server.InitializeFiles(); err != nil {
 				return fmt.Errorf("failed to initialize files: %w", err)
@@ -118,6 +120,7 @@ func main() {
 			},
 		},
 		createNetworkCommands(),
+		createTendermintCommands(),
 		&cobra.Command{
 			Use:   "test-integration",
 			Short: "Test module integration",
@@ -182,4 +185,43 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func getHomeDir(cmd *cobra.Command) string {
+	homeDir, _ := cmd.Flags().GetString("home")
+	if homeDir == "" {
+		homeDir = os.Getenv("HOME")
+		if homeDir == "" {
+			homeDir = os.Getenv("USERPROFILE")
+		}
+		homeDir = filepath.Join(homeDir, ".volnix")
+	} else {
+		homeDir, _ = filepath.Abs(homeDir)
+	}
+	return homeDir
+}
+
+func createTendermintCommands() *cobra.Command {
+	tendermintCmd := &cobra.Command{
+		Use:   "tendermint",
+		Short: "Tendermint/CometBFT subcommands",
+	}
+	tendermintCmd.AddCommand(
+		&cobra.Command{
+			Use:   "show-node-id",
+			Short: "Show this node's ID for P2P connection (persistent_peers)",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				homeDir := getHomeDir(cmd)
+				nodeKeyFile := filepath.Join(homeDir, "config", "node_key.json")
+				nodeKey, err := p2p.LoadOrGenNodeKey(nodeKeyFile)
+				if err != nil {
+					return fmt.Errorf("failed to load node key: %w", err)
+				}
+				fmt.Println(nodeKey.ID())
+				return nil
+			},
+		},
+	)
+	tendermintCmd.PersistentFlags().String("home", "", "Directory for config and data (default: $HOME/.volnix)")
+	return tendermintCmd
 }

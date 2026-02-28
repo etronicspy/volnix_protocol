@@ -7,7 +7,7 @@ export interface Balance {
 
 export interface Transaction {
   id: string;
-  type: 'send' | 'receive' | 'ant_buy' | 'ant_sell' | 'lzn_activate' | 'lzn_deactivate';
+  type: 'send' | 'receive' | 'ant_buy' | 'ant_sell' | 'lzn_activate' | 'lzn_deactivate' | 'identity_verified' | 'role_changed';
   amount: string;
   token: string;
   from: string;
@@ -15,6 +15,7 @@ export interface Transaction {
   timestamp: string;
   status: 'pending' | 'completed' | 'failed';
   price?: string; // Для ANT сделок
+  newRole?: string; // Для role_changed
 }
 
 // Роли взаимоисключающие после верификации!

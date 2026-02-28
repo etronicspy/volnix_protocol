@@ -15,12 +15,12 @@ import './App.css';
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('blocks');
   const [selectedBlockHeight, setSelectedBlockHeight] = useState<number | null>(null);
-  const { status, blocks, transactions, validators, consensusParams, restApiAvailable, loading, refreshData } = useNetworkData();
+  const { status, blocks, transactions, totalTransactionCount, validators, consensusParams, restApiAvailable, loading, refreshData } = useNetworkData();
 
   // Calculate statistics
   const stats = useMemo(() => {
     const totalBlocks = status ? parseInt(status.sync_info.latest_block_height) : -1;
-    const totalTransactions = transactions.length;
+    const totalTransactions = totalTransactionCount;
     const activeValidators = validators.filter(v => v.status === 'VALIDATOR_STATUS_ACTIVE').length;
     const burnedAnt = validators.reduce((sum, v) => sum + parseInt(v.total_burn_amount || '0'), 0);
     const avgBlockTime = '-'; // TODO: Calculate from blocks

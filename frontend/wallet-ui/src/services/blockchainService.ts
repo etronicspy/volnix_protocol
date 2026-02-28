@@ -26,6 +26,7 @@ export interface BlockchainTransaction {
   amount: string;
   denom: string;
   status: 'success' | 'failed';
+  tx_type?: 'transfer' | 'identity_verified' | 'role_changed';
 }
 
 class BlockchainService {
@@ -195,6 +196,27 @@ class BlockchainService {
     }
   }
 
+  // Получение ANT из anteil UserPosition (для граждан и валидаторов).
+  // ANT хранится в модуле anteil, а не в bank — getAllBalances не возвращает ANT.
+  async getUserPositionAnt(address: string): Promise<string> {
+    const REST_ENDPOINT = process.env.REACT_APP_REST_ENDPOINT || 'http://localhost:1317';
+    try {
+      const response = await fetch(`${REST_ENDPOINT}/volnix/anteil/v1/user_position/${encodeURIComponent(address)}`);
+      if (!response.ok) {
+        if (response.status === 404) return '0';
+        return '0';
+      }
+      const data = await response.json();
+      const position = data?.position;
+      const antBalance = position?.ant_balance ?? position?.antBalance ?? '0';
+      const amountNum = parseInt(antBalance, 10);
+      if (isNaN(amountNum)) return '0';
+      return (amountNum / 1_000_000).toFixed(6);
+    } catch {
+      return '0';
+    }
+  }
+
   // Получение балансов всех токенов
   async getBalances(address: string): Promise<{ wrt: string; lzn: string; ant: string }> {
     const readBalances = async (): Promise<{ wrt: string; lzn: string; ant: string }> => {
@@ -202,7 +224,13 @@ class BlockchainService {
       if (!this.client) throw new Error('Client not initialized');
 
       const balances = await this.client.getAllBalances(address);
-      return this.normalizeBalances(balances || []);
+      const normalized = this.normalizeBalances(balances || []);
+      // ANT для граждан/валидаторов хранится в anteil UserPosition, не в bank
+      const antFromPosition = await this.getUserPositionAnt(address);
+      return {
+        ...normalized,
+        ant: antFromPosition !== '0' ? antFromPosition : normalized.ant,
+      };
     };
 
     try {
@@ -269,9 +297,9 @@ class BlockchainService {
     }
   }
 
-  // Парсинг событий transfer из tx_result в BlockchainTransaction
+  // Парсинг событий transfer и ident из tx_result в BlockchainTransaction
   private parseTxEventsToTransaction(
-    tx: { hash?: string; height: string | number },
+    tx: { hash?: string; height?: string | number },
     txResult: { code?: number; events?: Array<{ type?: string; attributes?: Array<{ key?: string; value?: string; index?: boolean }> }> },
     address: string
   ): BlockchainTransaction {
@@ -279,11 +307,21 @@ class BlockchainService {
     let to = '';
     let amount = '0';
     let denom = 'uwrt';
+    let txType: 'transfer' | 'identity_verified' | 'role_changed' = 'transfer';
+
+    const getAttr = (attrs: Array<{ key?: string; value?: string; index?: boolean }>, key: string): string => {
+      for (const a of attrs) {
+        const k = a.index ? (a.key || '') : (a.key ? atob(a.key) : '');
+        const v = a.index ? (a.value || '') : (a.value ? atob(a.value) : '');
+        if (k === key) return v;
+      }
+      return '';
+    };
 
     const events = txResult.events || [];
     for (const event of events) {
+      const attributes = event.attributes || [];
       if (event.type === 'transfer' || event.type === 'coin_spent' || event.type === 'coin_received') {
-        const attributes = event.attributes || [];
         for (const attr of attributes) {
           const isIndexed = attr.index === true;
           let key = '';
@@ -314,11 +352,22 @@ class BlockchainService {
             }
           }
         }
+      } else if (event.type === 'ident.identity_verified' || event.type === 'ident.role_changed') {
+        const addr = getAttr(attributes, 'address');
+        if (addr === address) {
+          txType = event.type === 'ident.identity_verified' ? 'identity_verified' : 'role_changed';
+          from = addr;
+          to = '';
+          amount = '0';
+          denom = txType === 'identity_verified' ? 'identity' : 'role';
+        }
       }
     }
 
     const hash = (typeof tx.hash === 'string' ? tx.hash : '').replace(/^0x/i, '').toUpperCase();
-    const height = typeof tx.height === 'string' ? parseInt(tx.height, 10) : tx.height;
+    const height = tx.height !== undefined
+      ? (typeof tx.height === 'string' ? parseInt(tx.height, 10) : tx.height)
+      : 0;
 
     return {
       hash,
@@ -329,46 +378,154 @@ class BlockchainService {
       amount,
       denom,
       status: (txResult.code === 0 ? 'success' : 'failed') as 'success' | 'failed',
+      tx_type: txType,
     };
   }
 
-  // Получение транзакций через tx_search (источник правды — нода)
-  async getTransactions(address: string, limit: number = 50, _scanBlocks?: boolean): Promise<BlockchainTransaction[]> {
-    await this.initializeClient();
-    if (!this.client) throw new Error('Client not initialized');
-
+  // Сканирование блоков для поиска транзакций (fallback когда tx_search не индексирует события)
+  private async scanBlocksForTransactions(address: string, blocksToScan: number = 100): Promise<string[]> {
+    const hashes: string[] = [];
     try {
-      const perPage = Math.min(limit, 100);
+      const statusRes = await fetch(`${RPC_ENDPOINT}/status`);
+      const statusData = await statusRes.json();
+      const latestHeight = parseInt(statusData.result?.sync_info?.latest_block_height || '0');
+      if (latestHeight === 0) return hashes;
 
-      const fetchTxSearch = async (query: string): Promise<BlockchainTransaction[]> => {
-        const url = `${RPC_ENDPOINT}/tx_search?query=${encodeURIComponent(query)}&prove=false&per_page=${perPage}&order_by=desc`;
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.error) {
-          console.warn(`tx_search failed for ${query}:`, data.error);
-          return [];
+      const startHeight = Math.max(1, latestHeight - blocksToScan + 1);
+      for (let height = latestHeight; height >= startHeight; height--) {
+        try {
+          const [blockRes, resultsRes] = await Promise.all([
+            fetch(`${RPC_ENDPOINT}/block?height=${height}`),
+            fetch(`${RPC_ENDPOINT}/block_results?height=${height}`),
+          ]);
+          const blockData = await blockRes.json();
+          const resultsData = await resultsRes.json();
+          const txs = blockData.result?.block?.data?.txs || [];
+          const txResults = resultsData.result?.txs_results || [];
+
+          for (let i = 0; i < txResults.length; i++) {
+            const events = txResults[i]?.events || [];
+            for (const event of events) {
+              let isRelevant = false;
+              if (event.type === 'transfer' || event.type === 'coin_spent' || event.type === 'coin_received') {
+                const attrs = event.attributes || [];
+                let recipient = '';
+                let sender = '';
+                for (const a of attrs) {
+                  const k = a.index ? (a.key || '') : (a.key ? atob(a.key) : '');
+                  const v = a.index ? (a.value || '') : (a.value ? atob(a.value) : '');
+                  if (k === 'recipient' || k === 'receiver') recipient = v;
+                  if (k === 'sender' || k === 'spender') sender = v;
+                }
+                isRelevant = recipient === address || sender === address;
+              } else if (event.type === 'ident.identity_verified' || event.type === 'ident.role_changed') {
+                const attrs = event.attributes || [];
+                for (const a of attrs) {
+                  const k = a.index ? (a.key || '') : (a.key ? atob(a.key) : '');
+                  const v = a.index ? (a.value || '') : (a.value ? atob(a.value) : '');
+                  if (k === 'address' && v === address) {
+                    isRelevant = true;
+                    break;
+                  }
+                }
+              }
+              if (isRelevant && txs[i]) {
+                const txHash = await this.calculateTxHash(txs[i]);
+                if (txHash && !hashes.includes(txHash)) hashes.unshift(txHash);
+              }
+            }
+          }
+        } catch {
+          /* skip block */
         }
-        const txs = data.result?.txs || [];
-        return txs.map((item: { hash?: string; height?: string; tx_result?: object }) =>
-          this.parseTxEventsToTransaction(item, item.tx_result || {}, address)
-        );
-      };
-
-      const [incoming, outgoing] = await Promise.all([
-        fetchTxSearch(`transfer.recipient='${address}'`),
-        fetchTxSearch(`transfer.sender='${address}'`),
-      ]);
-
-      const byHash = new Map<string, BlockchainTransaction>();
-      for (const tx of [...incoming, ...outgoing]) {
-        if (!byHash.has(tx.hash)) byHash.set(tx.hash, tx);
       }
-      const transactions = Array.from(byHash.values())
-        .sort((a, b) => b.height - a.height)
-        .slice(0, limit);
+    } catch (e) {
+      console.warn('Block scan failed:', (e as Error).message);
+    }
+    return hashes;
+  }
 
-      console.log(`✅ Loaded ${transactions.length} transactions via tx_search`);
-      return transactions;
+  private async calculateTxHash(txBase64: string): Promise<string | null> {
+    try {
+      const txBytes = Uint8Array.from(atob(txBase64), (c) => c.charCodeAt(0));
+      const hashBuffer = await crypto.subtle.digest('SHA-256', txBytes);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+        .toUpperCase();
+    } catch {
+      return null;
+    }
+  }
+
+  // Получение транзакций: REST API (backend tx indexer) или fallback на сканирование блоков
+  async getTransactions(address: string, limit: number = 50, _scanBlocks?: boolean): Promise<BlockchainTransaction[]> {
+    try {
+      const effectiveLimit = Math.min(limit, 100);
+
+      // 1. Пробуем REST API backend (custom tx indexer)
+      try {
+        const url = `${REST_ENDPOINT}/volnix/tx/v1/transactions/${encodeURIComponent(address)}?limit=${effectiveLimit}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          const txs: BlockchainTransaction[] = (data.transactions || []).map(
+            (t: { hash: string; height: number; timestamp: string; from: string; to: string; amount: string; denom: string; status: string; tx_type?: string }) => ({
+              hash: t.hash,
+              height: t.height,
+              timestamp: t.timestamp || new Date().toISOString(),
+              from: t.from,
+              to: t.to,
+              amount: t.amount,
+              denom: t.denom,
+              status: (t.status === 'success' ? 'success' : 'failed') as 'success' | 'failed',
+              tx_type: (t.tx_type as 'transfer' | 'identity_verified' | 'role_changed') || 'transfer',
+            })
+          );
+          if (txs.length > 0 || response.status === 200) {
+            console.log(`✅ Loaded ${txs.length} transactions via REST API`);
+            return txs.slice(0, limit);
+          }
+        }
+      } catch (restErr: any) {
+        console.warn('REST tx API unavailable, falling back to block scan:', restErr?.message);
+      }
+
+      // 2. Fallback: сканирование блоков через RPC
+      await this.initializeClient();
+      if (!this.client) throw new Error('Client not initialized');
+
+      const txHashes = await this.scanBlocksForTransactions(address, 100);
+      for (const hash of txHashes) this.saveTxHash(address, hash);
+      const stored = localStorage.getItem(`volnix_txs_${address}`);
+      const savedHashes: string[] = stored ? JSON.parse(stored) : [];
+      const combined = txHashes.concat(savedHashes);
+      const seen: Record<string, boolean> = {};
+      const hashes: string[] = [];
+      for (let i = 0; i < combined.length; i++) {
+        const h = combined[i];
+        if (!seen[h]) {
+          seen[h] = true;
+          hashes.push(h);
+        }
+      }
+      const transactions: BlockchainTransaction[] = [];
+      for (const hash of hashes.slice(0, limit)) {
+        try {
+          const res = await fetch(`${RPC_ENDPOINT}/tx?hash=0x${hash}`);
+          const data = await res.json();
+          if (data.error || !data.result) continue;
+          const tx = data.result;
+          transactions.push(
+            this.parseTxEventsToTransaction(tx, tx.tx_result || {}, address)
+          );
+        } catch {
+          /* skip */
+        }
+      }
+      transactions.sort((a, b) => b.height - a.height);
+      console.log(`✅ Loaded ${transactions.length} transactions via block scan fallback`);
+      return transactions.slice(0, limit);
     } catch (error: any) {
       console.warn(`Failed to get transactions: ${error.message || error}. Returning empty.`);
       return [];

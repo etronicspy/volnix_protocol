@@ -1,7 +1,9 @@
 package keeper
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -21,6 +23,23 @@ import (
 	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
 )
+
+// deterministicRand returns a deterministic rand.Rand for the given context.
+// Required for consensus: same block must produce same "random" result on all nodes.
+func deterministicRand(ctx sdk.Context, extraSeed ...[]byte) *rand.Rand {
+	h := sha256.New()
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, uint64(ctx.BlockHeight()))
+	h.Write(buf)
+	binary.BigEndian.PutUint64(buf, uint64(ctx.BlockTime().UnixNano()))
+	h.Write(buf)
+	for _, s := range extraSeed {
+		h.Write(s)
+	}
+	var seed int64
+	binary.Read(bytes.NewReader(h.Sum(nil)[:8]), binary.BigEndian, &seed)
+	return rand.New(rand.NewSource(seed))
+}
 
 // LizenzKeeperInterface defines the interface for interacting with lizenz module
 // This allows consensus module to get information about activated LZN and MOA status
@@ -115,8 +134,9 @@ func (k Keeper) SelectBlockProducer(ctx sdk.Context, validators []string) (strin
 		return "", types.ErrNoValidators
 	}
 
-	// Simple random selection for now
-	selectedIndex := rand.Intn(len(validators))
+	// Deterministic random selection (required for consensus)
+	r := deterministicRand(ctx)
+	selectedIndex := r.Intn(len(validators))
 	return validators[selectedIndex], nil
 }
 
@@ -140,7 +160,7 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 				ActivityScore: winnerValidator.ActivityScore,
 				BurnAmount:    auction.WinningBid,
 				BlockHeight:   height,
-				SelectionTime: timestamppb.Now(),
+				SelectionTime: timestamppb.New(ctx.BlockTime()),
 			}
 
 			k.SetBlockCreator(ctx, blockCreator)
@@ -193,8 +213,9 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 	}
 
 	if totalWeight == 0 {
-		// If no weights, select randomly
-		selectedIndex := rand.Intn(len(validators))
+		// If no weights, select randomly (deterministic)
+		r := deterministicRand(ctx)
+		selectedIndex := r.Intn(len(validators))
 		selectedValidator := validators[selectedIndex]
 
 		blockCreator := &consensusv1.BlockCreator{
@@ -203,15 +224,16 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 			ActivityScore: selectedValidator.ActivityScore,
 			BurnAmount:    "0",
 			BlockHeight:   height,
-			SelectionTime: timestamppb.Now(),
+			SelectionTime: timestamppb.New(ctx.BlockTime()),
 		}
 
 		k.SetBlockCreator(ctx, blockCreator)
 		return blockCreator, nil
 	}
 
-	// Weighted random selection
-	randomWeight := rand.Uint64() % totalWeight
+	// Weighted random selection (deterministic)
+	r := deterministicRand(ctx)
+	randomWeight := r.Uint64() % totalWeight
 	currentWeight := uint64(0)
 
 	for i, weight := range weights {
@@ -225,7 +247,7 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 				ActivityScore: selectedValidator.ActivityScore,
 				BurnAmount:    "0",
 				BlockHeight:   height,
-				SelectionTime: timestamppb.Now(),
+				SelectionTime: timestamppb.New(ctx.BlockTime()),
 			}
 
 			k.SetBlockCreator(ctx, blockCreator)
@@ -545,11 +567,12 @@ func (k Keeper) GetConsensusState(ctx sdk.Context) (types.ConsensusState, error)
 	var consensusState types.ConsensusState
 	bz := store.Get(consensusKey)
 	if bz == nil {
-		// Return default consensus state if not exists
+		// Return default consensus state if not exists.
+		// Use ctx.BlockTime() for determinism (required for block sync / replay).
 		return types.ConsensusState{
 			CurrentHeight:    uint64(ctx.BlockHeight()),
 			TotalAntBurned:   "0",
-			LastBlockTime:    timestamppb.Now(),
+			LastBlockTime:    timestamppb.New(ctx.BlockTime()),
 			ActiveValidators: []string{},
 		}, nil
 	}
@@ -980,7 +1003,7 @@ func (k Keeper) CreateBlindAuction(ctx sdk.Context, height uint64) (*consensusv1
 		Reveals:     []*consensusv1.BidReveal{},
 		Winner:      "",
 		WinningBid:   "0",
-		StartTime:   timestamppb.Now(),
+		StartTime:   timestamppb.New(ctx.BlockTime()),
 		EndTime:     nil,
 	}
 
@@ -1026,7 +1049,7 @@ func (k Keeper) CommitBid(ctx sdk.Context, validator, commitHash string, height 
 		Validator:    validator,
 		CommitHash:   commitHash,
 		BlockHeight:  height,
-		CommitTime:   timestamppb.Now(),
+		CommitTime:   timestamppb.New(ctx.BlockTime()),
 	}
 
 	auction.Commits = append(auction.Commits, encryptedBid)
@@ -1306,8 +1329,9 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 		return "", "", fmt.Errorf("total bid amount is zero")
 	}
 
-	// Weighted random selection: chance proportional to bid amount
-	randomWeight := rand.Uint64() % totalBid
+	// Weighted random selection: chance proportional to bid amount (deterministic)
+	r := deterministicRand(ctx, []byte(fmt.Sprintf("auction:%d", height)))
+	randomWeight := r.Uint64() % totalBid
 	currentWeight := uint64(0)
 
 	for i, bidAmount := range bidAmounts {
@@ -1370,7 +1394,7 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 			auction.Winner = winnerValidator
 			auction.WinningBid = winningBid
 			auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE
-			auction.EndTime = timestamppb.Now()
+			auction.EndTime = timestamppb.New(ctx.BlockTime())
 
 			err = k.SetBlindAuction(ctx, auction)
 			if err != nil {
@@ -1434,7 +1458,7 @@ func (k Keeper) SelectAuctionWinner(ctx sdk.Context, height uint64) (string, str
 	auction.Winner = winnerValidator
 	auction.WinningBid = winningBid
 	auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE
-	auction.EndTime = timestamppb.Now()
+	auction.EndTime = timestamppb.New(ctx.BlockTime())
 
 	err = k.SetBlindAuction(ctx, auction)
 	if err != nil {

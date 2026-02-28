@@ -222,11 +222,30 @@ func (w *ABCIWrapper) InitChain(ctx context.Context, req *abci.RequestInitChain)
 }
 
 func (w *ABCIWrapper) PrepareProposal(ctx context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
-	return w.VolnixApp.PrepareProposal(req)
+	// DEBUG: PrepareProposal is only called on the proposer. Log to verify which node creates blocks.
+	w.GetBaseApp().Logger().Info("[CONSENSUS_DEBUG] PrepareProposal called",
+		"height", req.Height, "last_commit_round", req.LocalLastCommit.Round, "proposer_hex", fmt.Sprintf("%X", req.ProposerAddress), "txs_count", len(req.Txs))
+	resp, err := w.VolnixApp.PrepareProposal(req)
+	if err == nil && len(resp.Txs) > 0 {
+		w.GetBaseApp().Logger().Info("[CONSENSUS_DEBUG] PrepareProposal returning txs", "count", len(resp.Txs))
+	}
+	return resp, err
 }
 
 func (w *ABCIWrapper) ProcessProposal(ctx context.Context, req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
-	return w.VolnixApp.ProcessProposal(req)
+	resp, err := w.VolnixApp.ProcessProposal(req)
+	// DEBUG: Log when we process a proposal (called on all nodes when they receive a block)
+	blockHash := "nil"
+	if len(req.Hash) > 0 {
+		blockHash = fmt.Sprintf("%X", req.Hash)
+	}
+	status := "ACCEPT"
+	if resp != nil && resp.Status == abci.ResponseProcessProposal_REJECT {
+		status = "REJECT"
+	}
+	w.GetBaseApp().Logger().Info("[CONSENSUS_DEBUG] ProcessProposal",
+		"height", req.Height, "block_hash", blockHash, "proposer_hex", fmt.Sprintf("%X", req.ProposerAddress), "status", status, "err", err)
+	return resp, err
 }
 
 func (w *ABCIWrapper) ExtendVote(ctx context.Context, req *abci.RequestExtendVote) (*abci.ResponseExtendVote, error) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { History, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { History, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, Shield, UserCheck } from 'lucide-react';
 import { Transaction } from '../types/wallet';
 
 interface TransactionHistoryProps {
@@ -21,9 +21,17 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ transactions })
   };
 
   const getTypeIcon = (type: string) => {
-    return type === 'send' ? 
-      <ArrowUpRight size={20} style={{ color: '#ef4444' }} /> : 
+    if (type === 'identity_verified') return <Shield size={20} style={{ color: '#8b5cf6' }} />;
+    if (type === 'role_changed') return <UserCheck size={20} style={{ color: '#06b6d4' }} />;
+    return type === 'send' ?
+      <ArrowUpRight size={20} style={{ color: '#ef4444' }} /> :
       <ArrowDownLeft size={20} style={{ color: '#10b981' }} />;
+  };
+
+  const getTypeLabel = (tx: Transaction) => {
+    if (tx.type === 'identity_verified') return 'Identity verified';
+    if (tx.type === 'role_changed') return 'Role changed';
+    return tx.type === 'send' ? `Sent ${tx.amount} ${tx.token}` : `Received ${tx.amount} ${tx.token}`;
   };
 
   const formatDate = (timestamp: string) => {
@@ -60,44 +68,48 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ transactions })
               {getTypeIcon(tx.type)}
               <div>
                 <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '4px' }}>
-                  {tx.type === 'send' ? 'Sent' : 'Received'} {tx.amount} {tx.token}
+                  {getTypeLabel(tx)}
                 </div>
-                <div style={{ color: '#6b7280', fontSize: '14px', marginBottom: '2px' }}>
-                  {tx.type === 'send' ? 'To: ' : 'From: '}
-                  <span style={{ fontFamily: 'monospace' }}>
-                    {truncateAddress(tx.type === 'send' ? tx.to : tx.from)}
-                  </span>
-                </div>
+                {(tx.type === 'send' || tx.type === 'receive') && (
+                  <div style={{ color: '#6b7280', fontSize: '14px', marginBottom: '2px' }}>
+                    {tx.type === 'send' ? 'To: ' : 'From: '}
+                    <span style={{ fontFamily: 'monospace' }}>
+                      {truncateAddress(tx.type === 'send' ? tx.to : tx.from)}
+                    </span>
+                  </div>
+                )}
                 <div style={{ color: '#9ca3af', fontSize: '12px' }}>
                   {formatDate(tx.timestamp)}
                 </div>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
                 gap: '8px',
                 marginBottom: '4px'
               }}>
                 {getStatusIcon(tx.status)}
-                <span style={{ 
+                <span style={{
                   fontSize: '14px',
                   fontWeight: '600',
                   textTransform: 'capitalize',
-                  color: tx.status === 'completed' ? '#10b981' : 
-                         tx.status === 'pending' ? '#f59e0b' : '#ef4444'
+                  color: tx.status === 'completed' ? '#10b981' :
+                    tx.status === 'pending' ? '#f59e0b' : '#ef4444'
                 }}>
                   {tx.status}
                 </span>
               </div>
-              <div style={{ 
-                fontSize: '16px', 
-                fontWeight: '600',
-                color: tx.type === 'send' ? '#ef4444' : '#10b981'
-              }}>
-                {tx.type === 'send' ? '-' : '+'}{tx.amount} {tx.token}
-              </div>
+              {(tx.type === 'send' || tx.type === 'receive') && (
+                <div style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: tx.type === 'send' ? '#ef4444' : '#10b981'
+                }}>
+                  {tx.type === 'send' ? '-' : '+'}{tx.amount} {tx.token}
+                </div>
+              )}
             </div>
           </div>
         ))}

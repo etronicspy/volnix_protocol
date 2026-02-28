@@ -2,12 +2,15 @@ import React from 'react';
 import { Coins, TrendingUp, Shield } from 'lucide-react';
 import { Balance as BalanceType, WalletType } from '../types/wallet';
 
+type QuickActionTab = 'staking' | 'market' | 'types';
+
 interface BalanceProps {
   balance: BalanceType;
   walletType?: WalletType;
+  onQuickAction?: (tab: QuickActionTab) => void;
 }
 
-const Balance: React.FC<BalanceProps> = ({ balance, walletType = 'guest' }) => {
+const Balance: React.FC<BalanceProps> = ({ balance, walletType = 'guest', onQuickAction }) => {
   const tokens = [
     {
       symbol: 'WRT',
@@ -35,17 +38,11 @@ const Balance: React.FC<BalanceProps> = ({ balance, walletType = 'guest' }) => {
     }
   ];
 
-  const totalValue = (
-    parseFloat(balance.wrt) * 1.0 + 
-    parseFloat(balance.lzn) * 2.5 + 
-    parseFloat(balance.ant) * 10.0
-  ).toFixed(2);
-
   return (
     <div style={{ width: '100%' }}>
       <div className="balance-card">
-        <div className="balance-amount">${totalValue}</div>
-        <div className="balance-label">Total Portfolio Value</div>
+        <div className="balance-amount">{balance.wrt} WRT</div>
+        <div className="balance-label">Wealth Rights Token</div>
       </div>
 
       <div className="card">
@@ -55,8 +52,8 @@ const Balance: React.FC<BalanceProps> = ({ balance, walletType = 'guest' }) => {
         </h3>
         
         {tokens.map((token) => {
-          // ANT доступен только для citizen и validator (validator включает права citizen)
-          const isAntLocked = token.symbol === 'ANT' && (walletType === 'guest' || parseFloat(token.amount) === 0);
+          // ANT: Guest — locked. Citizen receives from protocol. Validator buys on market (per whitepaper §4.2)
+          const isAntLocked = token.symbol === 'ANT' && walletType === 'guest';
           const isLocked = isAntLocked;
           return (
             <div key={token.symbol} className="transaction-item" style={isLocked ? { opacity: 0.6 } : {}}>
@@ -74,17 +71,9 @@ const Balance: React.FC<BalanceProps> = ({ balance, walletType = 'guest' }) => {
                   </div>
                   <div style={{ color: isLocked ? '#ef4444' : '#9ca3af', fontSize: '12px', marginTop: '4px' }}>
                     {isLocked && token.symbol === 'ANT' 
-                      ? (walletType === 'guest' ? 'Requires Citizen or Validator status to access' : 'No ANT balance')
+                      ? 'Requires Citizen status to access (Validators buy ANT on Market)'
                       : token.description}
                   </div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: '600', color: isLocked ? '#9ca3af' : 'inherit' }}>
-                  ${(parseFloat(token.amount) * (token.symbol === 'WRT' ? 1.0 : token.symbol === 'LZN' ? 2.5 : 10.0)).toFixed(2)}
-                </div>
-                <div style={{ color: '#6b7280', fontSize: '14px' }}>
-                  ${token.symbol === 'WRT' ? '1.00' : token.symbol === 'LZN' ? '2.50' : '10.00'} per token
                 </div>
               </div>
             </div>
@@ -95,18 +84,30 @@ const Balance: React.FC<BalanceProps> = ({ balance, walletType = 'guest' }) => {
       <div className="card">
         <h3 style={{ marginBottom: '16px' }}>Quick Actions</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-          <button className="button" style={{ background: '#10b981' }}>
+          <button
+            className="button"
+            style={{ background: '#10b981' }}
+            onClick={() => onQuickAction?.('staking')}
+          >
             Stake LZN
           </button>
-          <button 
-            className="button" 
-            style={{ background: '#6b7280', opacity: (walletType === 'citizen' || walletType === 'validator') ? 1 : 0.6 }}
+          <button
+            className="button"
+            style={{
+              background: walletType === 'guest' ? '#6b7280' : '#10b981',
+              opacity: walletType === 'guest' ? 0.6 : 1
+            }}
             disabled={walletType === 'guest'}
-            title={walletType === 'guest' ? 'Requires Citizen or Validator status' : 'Claim ANT tokens'}
+            title={walletType === 'guest' ? 'Requires Citizen status' : walletType === 'validator' ? 'Validators buy ANT on Market' : 'Claim ANT tokens from protocol'}
+            onClick={() => walletType !== 'guest' && onQuickAction?.('market')}
           >
-            {walletType === 'guest' ? '🔒 Claim ANT' : 'Claim ANT'}
+            {walletType === 'guest' ? '🔒 Claim ANT' : walletType === 'validator' ? 'Buy ANT (Market)' : 'Claim ANT'}
           </button>
-          <button className="button" style={{ background: '#8b5cf6' }}>
+          <button
+            className="button"
+            style={{ background: '#8b5cf6' }}
+            onClick={() => onQuickAction?.('market')}
+          >
             Swap Tokens
           </button>
         </div>

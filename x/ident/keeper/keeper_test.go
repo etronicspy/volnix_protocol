@@ -438,7 +438,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_InactiveAccounts() {
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, retrieved.Role)
 }
 
-// Test EndBlocker
+// Test EndBlocker - activity is now updated in AnteHandler on tx sign, not in EndBlocker
 func (suite *KeeperTestSuite) TestEndBlocker() {
 	// Set block time to current time
 	currentTime := time.Now()
@@ -457,14 +457,14 @@ func (suite *KeeperTestSuite) TestEndBlocker() {
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.NoError(suite.T(), err)
 
-	// Run EndBlocker
+	// Run EndBlocker (no-op: activity updated in AnteHandler on tx sign)
 	err = suite.keeper.EndBlocker(suite.ctx)
 	require.NoError(suite.T(), err)
 
-	// Verify activity was updated
+	// LastActive unchanged - EndBlocker no longer updates activity
 	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
-	require.True(suite.T(), retrieved.LastActive.AsTime().After(oldTime))
+	require.WithinDuration(suite.T(), oldTime, retrieved.LastActive.AsTime(), time.Second)
 }
 
 // Test Role Migration
@@ -729,12 +729,11 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts() {
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
 }
 
-func (suite *KeeperTestSuite) TestEndBlocker_UpdatesActivity() {
-	// Set block time to current time
+func (suite *KeeperTestSuite) TestEndBlocker_DoesNotUpdateActivity() {
+	// Activity is updated in AnteHandler on tx sign, not in EndBlocker
 	currentTime := time.Now()
 	suite.ctx = suite.ctx.WithBlockTime(currentTime)
 
-	// Create account
 	oldTime := currentTime.Add(-1 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
@@ -748,14 +747,13 @@ func (suite *KeeperTestSuite) TestEndBlocker_UpdatesActivity() {
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.NoError(suite.T(), err)
 
-	// Run EndBlocker
 	err = suite.keeper.EndBlocker(suite.ctx)
 	require.NoError(suite.T(), err)
 
-	// Verify activity was updated
+	// LastActive unchanged - EndBlocker is no-op
 	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
-	require.True(suite.T(), retrieved.LastActive.AsTime().After(oldTime))
+	require.WithinDuration(suite.T(), oldTime, retrieved.LastActive.AsTime(), time.Second)
 }
 
 // Additional tests for better coverage
@@ -1713,18 +1711,15 @@ func (suite *KeeperTestSuite) TestBeginBlocker_GetAllAccountsError() {
 	require.Contains(suite.T(), err.Error(), "failed to get verified accounts")
 }
 
-// TestEndBlocker_GetAllAccountsError tests EndBlocker when GetAllVerifiedAccounts fails
+// TestEndBlocker_GetAllAccountsError - EndBlocker is now no-op, always succeeds
 func (suite *KeeperTestSuite) TestEndBlocker_GetAllAccountsError() {
-	// Corrupt store to cause GetAllVerifiedAccounts to fail
+	// EndBlocker no longer calls GetAllVerifiedAccounts (activity in AnteHandler)
 	store := suite.ctx.KVStore(suite.storeKey)
 	accountStore := prefix.NewStore(store, types.VerifiedAccountKeyPrefix)
-	// Set invalid data
 	accountStore.Set([]byte("invalid"), []byte("invalid data"))
 
-	// Run EndBlocker - should return error
 	err := suite.keeper.EndBlocker(suite.ctx)
-	require.Error(suite.T(), err)
-	require.Contains(suite.T(), err.Error(), "failed to get verified accounts")
+	require.NoError(suite.T(), err)
 }
 
 // TestChangeAccountRole_InvalidRoleChange tests ChangeAccountRole with invalid role change
@@ -2346,16 +2341,16 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ComplexScenario() {
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, active.Role)
 }
 
-// TestEndBlocker_ComplexScenario tests EndBlocker with multiple accounts
+// TestEndBlocker_ComplexScenario - EndBlocker is no-op; activity in AnteHandler
 func (suite *KeeperTestSuite) TestEndBlocker_ComplexScenario() {
-	// Create multiple accounts with valid addresses
+	oldTime := time.Now().Add(-10 * 24 * time.Hour)
 	endBlockerAddrs := []string{mustAddr("0000000000000000000000000000000000000070"), mustAddr("0000000000000000000000000000000000000071"), mustAddr("0000000000000000000000000000000000000072"), mustAddr("0000000000000000000000000000000000000073"), mustAddr("0000000000000000000000000000000000000074")}
 	for i := 0; i < 5; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:          endBlockerAddrs[i],
 			Role:             identv1.Role_ROLE_CITIZEN,
 			VerificationDate: timestamppb.Now(),
-			LastActive:       timestamppb.New(time.Now().Add(-10 * 24 * time.Hour)),
+			LastActive:       timestamppb.New(oldTime),
 			IsActive:         true,
 			IdentityHash:     fmt.Sprintf("hash%d", i),
 		}
@@ -2363,19 +2358,16 @@ func (suite *KeeperTestSuite) TestEndBlocker_ComplexScenario() {
 		require.NoError(suite.T(), err)
 	}
 
-	// Set current block time
-	currentTime := time.Now()
-	suite.ctx = suite.ctx.WithBlockTime(currentTime)
+	suite.ctx = suite.ctx.WithBlockTime(time.Now())
 
-	// Run EndBlocker
 	err := suite.keeper.EndBlocker(suite.ctx)
 	require.NoError(suite.T(), err)
 
-	// Verify all accounts had their activity updated
+	// LastActive unchanged - EndBlocker no longer updates activity
 	for i := 0; i < 5; i++ {
 		account, err := suite.keeper.GetVerifiedAccount(suite.ctx, endBlockerAddrs[i])
 		require.NoError(suite.T(), err)
-		require.WithinDuration(suite.T(), currentTime, account.GetLastActive().AsTime(), time.Second)
+		require.WithinDuration(suite.T(), oldTime, account.GetLastActive().AsTime(), time.Second)
 	}
 }
 

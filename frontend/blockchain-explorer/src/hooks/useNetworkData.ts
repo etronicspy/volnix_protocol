@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   fetchNetworkStatus,
   fetchRecentBlocks,
-  fetchTransactions,
+  fetchTransactionsViaTxSearch,
   fetchValidators,
   fetchConsensusParams,
   checkRestApiHealth
@@ -13,6 +13,7 @@ interface NetworkData {
   status: NetworkStatus | null;
   blocks: Block[];
   transactions: Transaction[];
+  totalTransactionCount: number;
   validators: Validator[];
   consensusParams: ConsensusParams | null;
   restApiAvailable: boolean;
@@ -25,6 +26,7 @@ export function useNetworkData(refreshInterval: number = 30000) {
     status: null,
     blocks: [],
     transactions: [],
+    totalTransactionCount: 0,
     validators: [],
     consensusParams: null,
     restApiAvailable: false,
@@ -42,9 +44,9 @@ export function useNetworkData(refreshInterval: number = 30000) {
       // Fetch network status
       const status = await fetchNetworkStatus();
 
-      // Fetch blocks and transactions
+      // Fetch blocks and transactions (tx_search finds txs in any block)
       const blocks = await fetchRecentBlocks(10);
-      const transactions = await fetchTransactions(20);
+      const { transactions, totalCount } = await fetchTransactionsViaTxSearch(20);
 
       // Fetch validators and consensus params if REST API is available
       let validators: Validator[] = [];
@@ -59,6 +61,7 @@ export function useNetworkData(refreshInterval: number = 30000) {
         status,
         blocks,
         transactions,
+        totalTransactionCount: totalCount,
         validators,
         consensusParams,
         restApiAvailable,

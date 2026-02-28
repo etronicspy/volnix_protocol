@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	sdklog "cosmossdk.io/log"
 	"cosmossdk.io/math"
@@ -182,6 +183,16 @@ func (a *AnteilKeeperAdapterForIdent) GetUserPosition(ctx sdk.Context, user stri
 	return a.keeper.GetUserPosition(ctx, user)
 }
 
+// AccountKeeperAdapterForIdent adapts auth AccountKeeper to ident AccountKeeperInterface
+// Allows ident to check if a blockchain account exists (wallet has conducted transactions)
+type AccountKeeperAdapterForIdent struct {
+	keeper authkeeper.AccountKeeper
+}
+
+func (a *AccountKeeperAdapterForIdent) GetAccount(ctx context.Context, addr sdk.AccAddress) interface{} {
+	return a.keeper.GetAccount(ctx, addr)
+}
+
 // AnteilKeeperAdapterForLizenz adapts anteil keeper to lizenz interface
 // Converts map[string]interface{} to *anteilv1.UserPosition for interface compatibility
 type AnteilKeeperAdapterForLizenz struct {
@@ -335,6 +346,9 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	config.SetBech32PrefixForConsensusNode("volnixvalcons", "volnixvalconspub")
 
 	bapp := baseapp.NewBaseApp("volnix", logger, db, encoding.TxConfig.TxDecoder, baseapp.SetChainID("volnix-1"))
+	// NoOpPrepareProposal: pass through req.Txs as-is for deterministic block construction.
+	// Fixes multi-validator consensus where default handler's mempool ordering caused different block_ids.
+	bapp.SetPrepareProposal(baseapp.NoOpPrepareProposal())
 	if paramStoreDB == nil {
 		paramStoreDB = cosmosdb.NewMemDB()
 	}
@@ -456,6 +470,8 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	// Ident needs anteil keeper for burning ANT on citizen deactivation
 	anteilAdapterForIdent := &AnteilKeeperAdapterForIdent{keeper: anteilKeeper}
 	identKeeper.SetAnteilKeeper(anteilAdapterForIdent)
+	// Ident needs account keeper to recognize blockchain-registered wallets (have conducted transactions)
+	identKeeper.SetAccountKeeper(&AccountKeeperAdapterForIdent{keeper: authKeeper})
 
 	// Standard Cosmos SDK x/upgrade keeper (governance-driven upgrades)
 	upgradeAuthority := authtypes.NewModuleAddress(governancetypes.ModuleName).String()
@@ -579,9 +595,10 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 
 		// Build ValidatorUpdates from active LZN so CometBFT adjusts validator set.
 		// In single-node demo: sum all LZN power and apply to genesis validator.
-		// lz.Validator is bech32 address, not pubkey — we use stored genesis pubkey.
+		// Skip for multi-validator testnet (VOLNIX_SKIP_VALIDATOR_UPDATES=1) to preserve
+		// genesis set and fix consensus divergence.
 		var valUpdates []abci.ValidatorUpdate
-		if app.genesisValidatorPubKey != nil {
+		if app.genesisValidatorPubKey != nil && os.Getenv("VOLNIX_SKIP_VALIDATOR_UPDATES") != "1" {
 			totalPower := int64(0)
 			allLizenz, err := lizenzKeeper.GetAllActivatedLizenz(ctx)
 			if err == nil {
@@ -828,7 +845,7 @@ func (app *VolnixApp) LoadSnapshotChunk(ctx context.Context, req *abci.RequestLo
 	}, nil
 }
 
-// createAnteHandler creates an AnteHandler with rate limiting support
+// createAnteHandler creates an AnteHandler with rate limiting and activity tracking
 func (app *VolnixApp) createAnteHandler() sdk.AnteHandler {
 	return func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		// IMPROVED: Apply rate limiting first (before other validations)
@@ -839,9 +856,44 @@ func (app *VolnixApp) createAnteHandler() sdk.AnteHandler {
 			}
 		}
 
-		// Continue with standard validation
-		return ImprovedAnteHandler(ctx, tx, simulate)
+		// Standard validation
+		newCtx, err := ImprovedAnteHandler(ctx, tx, simulate)
+		if err != nil {
+			return newCtx, err
+		}
+
+		// Update LastActive for signers (per whitepaper: activity = signed tx)
+		// Only in DeliverTx, not CheckTx or simulate
+		if !simulate && !ctx.IsCheckTx() && app.identKeeper != nil {
+			signers := getSignersFromTx(tx)
+			if len(signers) > 0 {
+				if err := app.identKeeper.UpdateActivityForSigners(newCtx, signers); err != nil {
+					ctx.Logger().Error("Failed to update activity for signers", "error", err)
+					// Don't fail the tx
+				}
+			}
+		}
+
+		return newCtx, nil
 	}
+}
+
+// getSignersFromTx extracts unique signer addresses from tx messages
+func getSignersFromTx(tx sdk.Tx) []sdk.AccAddress {
+	seen := make(map[string]bool)
+	var signers []sdk.AccAddress
+	for _, msg := range tx.GetMsgs() {
+		if msgWithSigners, ok := msg.(interface{ GetSigners() []sdk.AccAddress }); ok {
+			for _, addr := range msgWithSigners.GetSigners() {
+				s := addr.String()
+				if !seen[s] {
+					seen[s] = true
+					signers = append(signers, addr)
+				}
+			}
+		}
+	}
+	return signers
 }
 
 // ListSnapshots implements the ABCI interface with context

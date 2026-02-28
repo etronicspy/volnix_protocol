@@ -57,8 +57,9 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 // DefaultParams returns default parameters
 func DefaultParams() Params {
 	return Params{
-		CitizenActivityPeriod:        365 * 24 * time.Hour, // 1 year
-		ValidatorActivityPeriod:      180 * 24 * time.Hour, // 6 months
+		// 10 minutes inactivity: wallet auto-downgrades to guest (testnet/dev)
+		CitizenActivityPeriod:        10 * time.Minute,
+		ValidatorActivityPeriod:      10 * time.Minute,
 		MaxIdentitiesPerAddress:      1,
 		RequireIdentityVerification:  true,
 		DefaultVerificationProvider:  "",

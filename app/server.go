@@ -174,7 +174,7 @@ func (s *VolnixServer) initializeFiles() error {
 	// CosmJS compatibility: ensure CreateEmptyBlocks in config and on disk
 	if s.config != nil {
 		s.config.Consensus.CreateEmptyBlocks = true
-		s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
+		s.config.Consensus.CreateEmptyBlocksInterval = 5 * time.Second
 	}
 
 	// Create genesis file if it doesn't exist

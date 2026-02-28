@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -23,12 +24,19 @@ type AnteilKeeperInterface interface {
 	GetUserPosition(ctx sdk.Context, user string) (interface{}, error)
 }
 
+// AccountKeeperInterface allows ident to check if a blockchain account exists.
+// Кошелёк считается зарегистрированным в блокчейне, если у него есть аккаунт (проведены транзакции).
+type AccountKeeperInterface interface {
+	GetAccount(ctx context.Context, addr sdk.AccAddress) interface{}
+}
+
 type (
 	Keeper struct {
-		cdc        codec.BinaryCodec
-		storeKey   storetypes.StoreKey
-		paramstore paramtypes.Subspace
-		anteilKeeper AnteilKeeperInterface // Optional: for burning ANT on citizen deactivation
+		cdc             codec.BinaryCodec
+		storeKey        storetypes.StoreKey
+		paramstore      paramtypes.Subspace
+		anteilKeeper    AnteilKeeperInterface    // Optional: for burning ANT on citizen deactivation
+		accountKeeper   AccountKeeperInterface   // Optional: to check blockchain account existence
 	}
 )
 
@@ -64,6 +72,24 @@ func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
 // SetAnteilKeeper sets the anteil keeper interface for burning ANT on deactivation
 func (k *Keeper) SetAnteilKeeper(anteilKeeper AnteilKeeperInterface) {
 	k.anteilKeeper = anteilKeeper
+}
+
+// SetAccountKeeper sets the account keeper to check blockchain account existence
+func (k *Keeper) SetAccountKeeper(accountKeeper AccountKeeperInterface) {
+	k.accountKeeper = accountKeeper
+}
+
+// HasBlockchainAccount returns true if the address has a blockchain account (has conducted transactions).
+// reqCtx must be the request context.Context (from msg handler) — auth keeper needs it to unwrap sdk.Context.
+func (k Keeper) HasBlockchainAccount(reqCtx context.Context, address string) bool {
+	if k.accountKeeper == nil {
+		return false
+	}
+	addr, err := sdk.AccAddressFromBech32(address)
+	if err != nil {
+		return false
+	}
+	return k.accountKeeper.GetAccount(reqCtx, addr) != nil
 }
 
 // ReleaseIdentityHash releases the identity hash mapping for a deactivated account
@@ -155,6 +181,20 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 	return nil
 }
 
+// CreateAccountFromVerification creates a verified account from ZKP proof.
+// Used when a blockchain-registered wallet (has conducted transactions) upgrades to Citizen/Validator.
+func (k Keeper) CreateAccountFromVerification(ctx sdk.Context, address, zkpProof, verificationProvider string, desiredRole identv1.Role) error {
+	if err := k.ValidateVerificationRequest(ctx, address, zkpProof, verificationProvider, desiredRole); err != nil {
+		return err
+	}
+	identityHash := fmt.Sprintf("hash-%s", zkpProof[:min(16, len(zkpProof))])
+	if err := k.CheckDuplicateIdentityHash(ctx, identityHash, address); err != nil {
+		return err
+	}
+	account := types.NewVerifiedAccount(address, desiredRole, identityHash)
+	return k.SetVerifiedAccount(ctx, account)
+}
+
 // ========================================
 // BLOCK PROCESSORS - BeginBlocker/EndBlocker Logic
 // ========================================
@@ -176,11 +216,7 @@ func (k Keeper) BeginBlocker(ctx sdk.Context) error {
 
 // EndBlocker processes events at the end of each block
 func (k Keeper) EndBlocker(ctx sdk.Context) error {
-	// Update account activity timestamps
-	if err := k.updateAccountActivity(ctx); err != nil {
-		return fmt.Errorf("failed to update account activity: %w", err)
-	}
-
+	// Activity is updated in AnteHandler when user signs a tx (per whitepaper)
 	return nil
 }
 
@@ -281,25 +317,29 @@ func (k Keeper) processRoleMigrations(ctx sdk.Context) error {
 	return nil
 }
 
-// updateAccountActivity updates activity timestamps for all accounts
-func (k Keeper) updateAccountActivity(ctx sdk.Context) error {
-	allAccounts, err := k.GetAllVerifiedAccounts(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get verified accounts: %w", err)
+// UpdateActivityForSigners updates LastActive for verified accounts that signed the tx.
+// Per whitepaper: activity = signed transaction. Call from AnteHandler on successful tx.
+func (k Keeper) UpdateActivityForSigners(ctx sdk.Context, signers []sdk.AccAddress) error {
+	if len(signers) == 0 {
+		return nil
 	}
-
 	currentTime := ctx.BlockTime()
-
-	for _, account := range allAccounts {
-		// Update last activity timestamp
+	seen := make(map[string]bool)
+	for _, signer := range signers {
+		addr := signer.String()
+		if seen[addr] {
+			continue
+		}
+		seen[addr] = true
+		account, err := k.GetVerifiedAccount(ctx, addr)
+		if err != nil {
+			continue // Not a verified account, skip
+		}
 		account.LastActive = &timestamppb.Timestamp{Seconds: currentTime.Unix()}
-
-		// Update in store
 		if err := k.UpdateVerifiedAccount(ctx, account); err != nil {
-			return fmt.Errorf("failed to update account activity: %w", err)
+			return fmt.Errorf("failed to update account activity for %s: %w", addr, err)
 		}
 	}
-
 	return nil
 }
 

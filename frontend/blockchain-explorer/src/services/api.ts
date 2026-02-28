@@ -70,19 +70,55 @@ export async function fetchRecentBlocks(limit: number = 10): Promise<Block[]> {
   }
 }
 
-// Fetch transactions from blocks
-export async function fetchTransactions(limit: number = 20): Promise<Transaction[]> {
+// Fetch transactions via tx_search (indexed, finds txs in any block)
+export async function fetchTransactionsViaTxSearch(limit: number = 20): Promise<{ transactions: Transaction[]; totalCount: number }> {
   try {
-    const blocks = await fetchRecentBlocks(limit);
+    const params = new URLSearchParams({
+      query: 'tx.height>=1',
+      prove: 'false',
+      page: '1',
+      per_page: String(Math.min(limit, 100)),
+      order_by: 'desc'
+    });
+    const response = await fetch(`${RPC_ENDPOINT}/tx_search?${params}`);
+    const data = await response.json();
+    if (data.error) {
+      console.warn('tx_search failed, falling back to block scan:', data.error);
+      return fetchTransactionsFromBlocks(limit);
+    }
+    const result = data.result || {};
+    const txItems = result.txs || [];
     const transactions: Transaction[] = [];
+    for (const item of txItems) {
+      const height = parseInt(item.height || '0', 10);
+      const block = height > 0 ? await fetchBlock(height) : null;
+      transactions.push({
+        hash: item.hash || '',
+        height,
+        time: block?.block?.header?.time || new Date().toISOString(),
+        blockHash: block?.block_id?.hash || ''
+      });
+    }
+    const totalCount = parseInt(result.total_count || '0', 10);
+    return { transactions, totalCount };
+  } catch (error) {
+    console.error('Error fetching transactions via tx_search:', error);
+    return fetchTransactionsFromBlocks(limit);
+  }
+}
 
+// Fallback: fetch transactions from recent blocks only
+async function fetchTransactionsFromBlocks(limit: number): Promise<{ transactions: Transaction[]; totalCount: number }> {
+  try {
+    const blocks = await fetchRecentBlocks(50);
+    const transactions: Transaction[] = [];
     for (const block of blocks) {
       if (block.txs > 0) {
         const blockData = await fetchBlock(block.height);
-        if (blockData && blockData.block.data.txs) {
-          blockData.block.data.txs.forEach((tx: any, index: number) => {
+        if (blockData?.block?.data?.txs) {
+          blockData.block.data.txs.forEach((_: any, index: number) => {
             transactions.push({
-              hash: tx.hash || `block-${block.height}-tx-${index}`,
+              hash: `block-${block.height}-tx-${index}`,
               height: block.height,
               time: block.time,
               blockHash: block.hash
@@ -91,12 +127,17 @@ export async function fetchTransactions(limit: number = 20): Promise<Transaction
         }
       }
     }
-
-    return transactions.slice(0, limit);
-  } catch (error) {
-    console.error('Error fetching transactions:', error);
-    return [];
+    const totalTxs = blocks.reduce((s, b) => s + b.txs, 0);
+    return { transactions: transactions.slice(0, limit), totalCount: totalTxs };
+  } catch {
+    return { transactions: [], totalCount: 0 };
   }
+}
+
+// Legacy: fetch transactions from blocks (for backward compatibility)
+export async function fetchTransactions(limit: number = 20): Promise<Transaction[]> {
+  const { transactions } = await fetchTransactionsViaTxSearch(limit);
+  return transactions;
 }
 
 // Fetch validators from REST API

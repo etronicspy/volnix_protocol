@@ -61,6 +61,10 @@ func (s *Server) SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/volnix/anteil/v1/params", s.anteilParamsHandler)
 	mux.HandleFunc("/volnix/anteil/v1/orders", s.anteilOrdersHandler)
 	mux.HandleFunc("/volnix/anteil/v1/auctions", s.anteilAuctionsHandler)
+	mux.HandleFunc("/volnix/anteil/v1/user_position/", s.anteilUserPositionHandler)
+
+	// Tx indexer (custom tx search via block scan)
+	mux.HandleFunc("/volnix/tx/v1/transactions/", s.txTransactionsHandler)
 }
 
 // setCORSHeaders sets CORS headers for cross-origin requests

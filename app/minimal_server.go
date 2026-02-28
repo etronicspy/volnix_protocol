@@ -10,6 +10,7 @@ import (
 
 	"cosmossdk.io/log"
 	cosmosdb "github.com/cosmos/cosmos-db"
+	"github.com/spf13/viper"
 
 	cmtcfg "github.com/cometbft/cometbft/config"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
@@ -56,7 +57,7 @@ func NewMinimalCometBFTServer(homeDir string, logger log.Logger) (*MinimalVolnix
 	config.Consensus.TimeoutPrecommit = 1 * time.Second
 	config.Consensus.TimeoutCommit = 5 * time.Second
 	config.Consensus.CreateEmptyBlocks = true
-	config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
+	config.Consensus.CreateEmptyBlocksInterval = 5 * time.Second // Slower empty blocks to reduce block growth
 
 	// Configure P2P
 	config.P2P.ListenAddress = "tcp://0.0.0.0:26656"
@@ -163,10 +164,18 @@ func (s *MinimalVolnixServer) Start(ctx context.Context) error {
 	s.logger.Info("   💾 Database: GoLevelDB")
 	s.logger.Info("   🏗️  Framework: Minimal Cosmos SDK + CometBFT")
 
+	grpcPort := 9090
+	if p := os.Getenv("VOLNIX_GRPC_PORT"); p != "" {
+		if n, err := fmt.Sscanf(p, "%d", &grpcPort); err == nil && n == 1 && grpcPort > 0 {
+			// use parsed port
+		} else {
+			grpcPort = 9090
+		}
+	}
 	s.logger.Info("🌐 Network endpoints:")
 	s.logger.Info("   🔗 RPC: " + s.config.RPC.ListenAddress)
 	s.logger.Info("   📡 P2P: " + s.config.P2P.ListenAddress)
-	s.logger.Info("   📡 gRPC: tcp://0.0.0.0:9090")
+	s.logger.Info("   📡 gRPC: tcp://0.0.0.0:" + fmt.Sprintf("%d", grpcPort))
 
 	// Start CometBFT node first (loads app state via InitChain/Info)
 	s.logger.Info("⚡ Starting CometBFT consensus...")
@@ -174,8 +183,8 @@ func (s *MinimalVolnixServer) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start CometBFT node: %w", err)
 	}
 
-	// Start gRPC server on 9090 for REST API / backend clients
-	if err := s.app.StartGRPCServer(ctx, 9090); err != nil {
+	// Start gRPC server for REST API / backend clients
+	if err := s.app.StartGRPCServer(ctx, grpcPort); err != nil {
 		s.logger.Error("Failed to start gRPC server", "error", err)
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
@@ -309,7 +318,7 @@ func (s *MinimalVolnixServer) initializeFiles() error {
 
 	// Re-apply CreateEmptyBlocks so config file and memory stay in sync
 	s.config.Consensus.CreateEmptyBlocks = true
-	s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
+	s.config.Consensus.CreateEmptyBlocksInterval = 5 * time.Second
 
 	// Generate or load validator key/state (single source of truth)
 	privValKeyFile := filepath.Join(configDir, "priv_validator_key.json")
@@ -341,8 +350,35 @@ func (s *MinimalVolnixServer) initializeFiles() error {
 		if err := s.createConfigFile(configFile); err != nil {
 			return fmt.Errorf("failed to create config file: %w", err)
 		}
+	} else {
+		// Load config from file (standard behavior for Cosmos/CometBFT nodes)
+		if err := s.loadConfigFromFile(configFile); err != nil {
+			return fmt.Errorf("failed to load config from file: %w", err)
+		}
 	}
 
+	return nil
+}
+
+// loadConfigFromFile loads CometBFT config from config.toml and merges into s.config.
+func (s *MinimalVolnixServer) loadConfigFromFile(configFile string) error {
+	v := viper.New()
+	v.SetConfigFile(configFile)
+	v.SetConfigType("toml")
+	if err := v.ReadInConfig(); err != nil {
+		return fmt.Errorf("reading config file: %w", err)
+	}
+	if err := v.Unmarshal(s.config); err != nil {
+		return fmt.Errorf("unmarshaling config: %w", err)
+	}
+	// Ensure RootDir is set (paths in config are relative to home)
+	s.config.SetRoot(s.homeDir)
+	// CosmJS compatibility: always enforce CreateEmptyBlocks
+	s.config.Consensus.CreateEmptyBlocks = true
+	s.config.Consensus.CreateEmptyBlocksInterval = 5 * time.Second
+	if err := s.config.ValidateBasic(); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
+	}
 	return nil
 }
 

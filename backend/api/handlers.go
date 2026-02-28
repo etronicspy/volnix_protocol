@@ -311,3 +311,32 @@ func (s *Server) anteilAuctionsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+func (s *Server) anteilUserPositionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		s.setCORSHeaders(w)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	s.setCORSHeaders(w)
+	if s.anteilClient == nil {
+		http.Error(w, "Anteil service not available", http.StatusServiceUnavailable)
+		return
+	}
+	// Extract owner from URL path: /volnix/anteil/v1/user_position/{owner}
+	owner := r.URL.Path[len("/volnix/anteil/v1/user_position/"):]
+	if owner == "" {
+		http.Error(w, "Owner address is required", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	resp, err := s.anteilClient.UserPosition(ctx, &anteilv1.QueryUserPositionRequest{
+		Owner: owner,
+	})
+	if err != nil {
+		s.handleError(w, err, "Failed to get user position")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}

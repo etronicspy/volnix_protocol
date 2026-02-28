@@ -8,7 +8,7 @@ alwaysApply: true
 CosmJS fails with "must provide a non-empty value" when connecting to node. Root cause: CometBFT returns empty `sync_info` fields when no blocks exist, and CosmJS cannot decode empty protobuf strings.
 
 ## Solution (MANDATORY)
-1. Always configure CreateEmptyBlocks: `config.Consensus.CreateEmptyBlocks = true`, `CreateEmptyBlocksInterval = 0`
+1. Always configure CreateEmptyBlocks: `config.Consensus.CreateEmptyBlocks = true`. Use `CreateEmptyBlocksInterval = 5 * time.Second` for testnet (reduces block growth); `0` only if CosmJS fails on first connect.
 2. Always reset `priv_validator_state.json` on startup (not just when file exists): `{"height":"0","round":0,"step":0}`
 3. Always re-apply settings before writing config file to ensure they're in file and memory
 4. Verify blocks created immediately: Check `/status` endpoint - `latest_block_height` > 0 within seconds, `latest_block_hash` not empty

@@ -1423,10 +1423,9 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "10000000", position.AntBalance, "Active citizen should receive ANT")
 
-	// UPDATED: Verify validator ALSO received ANT (validators have all citizen rights)
-	validatorPosition, err := suite.keeper.GetUserPosition(suite.ctx, addrValidator)
-	require.NoError(suite.T(), err, "Validator should have position - validators have all citizen rights")
-	require.Equal(suite.T(), "10000000", validatorPosition.AntBalance, "Active validator should receive ANT")
+	// Per whitepaper §4.2: Validators buy ANT on market, they do not receive protocol distribution
+	_, err = suite.keeper.GetUserPosition(suite.ctx, addrValidator)
+	require.Error(suite.T(), err, "Validator should not have position - validators buy ANT on market")
 
 	// Verify guest did not receive ANT
 	_, err = suite.keeper.GetUserPosition(suite.ctx, addrGuest)
@@ -1436,14 +1435,13 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 	_, err = suite.keeper.GetUserPosition(suite.ctx, addrInactive)
 	require.Error(suite.T(), err, "Inactive citizen should not have position")
 
-	// Check events - should have 2 ant_distributed events (citizen + validator)
+	// Check events - should have 1 ant_distributed event (citizen only)
 	events := suite.ctx.EventManager().Events()
 	antDistributedCount := 0
 	recipientAddresses := []string{}
 	for _, event := range events {
 		if event.Type == "anteil.ant_distributed" {
 			antDistributedCount++
-			// Collect recipient addresses
 			for _, attr := range event.Attributes {
 				if string(attr.Key) == "citizen" {
 					recipientAddresses = append(recipientAddresses, string(attr.Value))
@@ -1451,9 +1449,9 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 			}
 		}
 	}
-	require.Equal(suite.T(), 2, antDistributedCount, "Should have exactly 2 ANT distribution events (citizen + validator)")
+	require.Equal(suite.T(), 1, antDistributedCount, "Should have exactly 1 ANT distribution event (citizen only)")
 	require.Contains(suite.T(), recipientAddresses, addrCitizen, "Citizen should receive ANT")
-	require.Contains(suite.T(), recipientAddresses, addrValidator, "Validator should receive ANT")
+	require.NotContains(suite.T(), recipientAddresses, addrValidator, "Validator should NOT receive ANT from protocol")
 }
 
 // Test BurnAntFromUser

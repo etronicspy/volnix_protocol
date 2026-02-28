@@ -146,10 +146,11 @@ func DefaultParams() Params {
 		MaxSlippage:           "0.05",  // 5%
 		MinLiquidityThreshold: 1000000, // 1 ANT in micro units
 		
-		// Citizen ANT distribution parameters (default: 10 ANT per day, 1000 ANT limit, 24h period)
+		// Citizen ANT distribution parameters (default: 10 ANT per day, 1000 ANT limit)
 		CitizenAntRewardRate:       "10000000",        // 10 ANT in micro units (10 * 1,000,000)
 		CitizenAntAccumulationLimit: "1000000000",     // 1000 ANT in micro units (1000 * 1,000,000)
-		CitizenAntDistributionPeriod: 24 * time.Hour, // 24 hours
+		// TEMPORARY: 1 minute for testnet/dev. Production should use 24 * time.Hour per whitepaper.
+		CitizenAntDistributionPeriod: 1 * time.Minute,
 		
 		// Market making parameters (default: 1% spread, 1000 ANT order size)
 		MarketMakingBuyDiscount: "0.99",  // 1% below market price

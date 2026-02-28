@@ -56,3 +56,12 @@ func (s QueryServer) Auctions(ctx context.Context, req *anteilv1.QueryAuctionsRe
 	}
 	return &anteilv1.QueryAuctionsResponse{Auctions: auctions, Pagination: nil}, nil
 }
+
+func (s QueryServer) UserPosition(ctx context.Context, req *anteilv1.QueryUserPositionRequest) (*anteilv1.QueryUserPositionResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	position, err := s.k.GetUserPosition(sdkCtx, req.Owner)
+	if err != nil {
+		return nil, err
+	}
+	return &anteilv1.QueryUserPositionResponse{Position: position}, nil
+}

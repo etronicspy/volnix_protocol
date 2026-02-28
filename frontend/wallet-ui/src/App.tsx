@@ -8,7 +8,7 @@ import WalletTypes from './components/WalletTypes';
 import NetworkStaking from './components/NetworkStaking';
 import ValidatorDashboard from './components/ValidatorDashboard';
 import AntMarket from './components/AntMarket';
-import { WalletState, WalletType, ValidatorInfo } from './types/wallet';
+import { WalletState, WalletType, ValidatorInfo, Transaction } from './types/wallet';
 import { AntMarketOrder } from './types/wallet';
 import { blockchainService } from './services/blockchainService';
 
@@ -141,15 +141,22 @@ function App() {
       // Конвертируем транзакции в формат приложения
       const transactions = (blockchainTxs || []).map(tx => {
         if (!tx) return null;
-        
+
+        let type: Transaction['type'] = tx.from === address ? 'send' : 'receive';
+        if (tx.tx_type === 'identity_verified') type = 'identity_verified';
+        else if (tx.tx_type === 'role_changed') type = 'role_changed';
+
         const amountValue = parseFloat(tx.amount || '0') || 0;
         const amountInTokens = amountValue > 0 ? (amountValue / 1_000_000).toFixed(6) : '0';
-        
+
+        let token = tx.denom === 'uwrt' ? 'WRT' : tx.denom === 'ulzn' ? 'LZN' : 'ANT';
+        if (tx.tx_type === 'identity_verified' || tx.tx_type === 'role_changed') token = '';
+
         return {
           id: tx.hash || `tx_${Date.now()}_${Math.random()}`,
-          type: (tx.from === address ? 'send' : 'receive') as 'send' | 'receive',
+          type,
           amount: amountInTokens,
-          token: tx.denom === 'uwrt' ? 'WRT' : tx.denom === 'ulzn' ? 'LZN' : 'ANT',
+          token,
           from: tx.from || address,
           to: tx.to || address,
           timestamp: tx.timestamp || new Date().toISOString(),
@@ -254,19 +261,11 @@ function App() {
     setError('');
 
     try {
-      // Отправляем реальную транзакцию изменения роли на блокчейн
       const txHash = await blockchainService.changeRole(walletState.address, newType);
-      
       console.log('✅ Role change transaction sent to blockchain:', txHash);
-      
-      // Ждем немного для включения транзакции в блок
       await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Перезагружаем данные с блокчейна для синхронизации
       await loadWalletData(walletState.address);
-      
       setError('');
-      console.log('✅ Role change completed and data reloaded from blockchain');
     } catch (err: any) {
       setError(err.message || 'Failed to change wallet type');
       console.error('Error changing wallet type:', err);
@@ -530,7 +529,13 @@ function App() {
           </nav>
 
           <div className="grid">
-            {activeTab === 'wallet' && <Balance balance={walletState.balance} walletType={walletState.walletType} />}
+            {activeTab === 'wallet' && (
+              <Balance
+                balance={walletState.balance}
+                walletType={walletState.walletType}
+                onQuickAction={(tab) => setActiveTab(tab)}
+              />
+            )}
             {activeTab === 'send' && <SendTokens onSend={sendTokens} balance={walletState.balance} />}
             {activeTab === 'history' && <TransactionHistory transactions={walletState.transactions} />}
             {activeTab === 'types' && <WalletTypes currentType={walletState.walletType} onUpgrade={upgradeWalletType} />}

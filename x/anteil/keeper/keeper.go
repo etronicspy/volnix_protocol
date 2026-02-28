@@ -851,8 +851,8 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 		return fmt.Errorf("invalid citizen ANT accumulation limit: %w", err)
 	}
 
-	// OPTIMIZED: Filter citizens and validators and distribute ANT
-	// According to whitepaper: Validators have all Citizen rights, including receiving ANT
+	// According to whitepaper §4.2: "ANT начисляется Гражданам" — only Citizens receive ANT from protocol.
+	// Validators buy ANT on the internal market; they do not receive protocol distribution.
 	distributedCount := 0
 	
 	// OPTIMIZATION: Cache timestamp to avoid repeated allocations
@@ -863,9 +863,8 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 	
 	// OPTIMIZATION: Batch process positions to reduce store operations
 	for _, account := range allAccounts {
-		// Only process active citizens and validators
-		// Validators have all citizen rights per protocol design
-		if (account.Role != identv1.Role_ROLE_CITIZEN && account.Role != identv1.Role_ROLE_VALIDATOR) || !account.IsActive {
+		// Only process active citizens — validators buy ANT on market, per whitepaper
+		if account.Role != identv1.Role_ROLE_CITIZEN || !account.IsActive {
 			continue
 		}
 

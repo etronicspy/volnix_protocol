@@ -55,11 +55,10 @@ const WalletTypes: React.FC<WalletTypesProps> = ({ currentType, onUpgrade }) => 
       color: '#f59e0b',
       description: 'Network validator with consensus rights',
       features: [
-        'All Citizen features',
         'Activate LZN tokens for staking',
         'Participate in network consensus',
         'Earn base emission rewards',
-        'Buy ANT rights for consensus participation'
+        'Buy ANT rights on internal market for consensus'
       ],
       limitations: [
         'Maximum 33% LZN activation per wallet',

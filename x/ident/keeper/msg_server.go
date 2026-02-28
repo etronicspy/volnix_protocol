@@ -66,9 +66,19 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 		return nil, err
 	}
 
+	verificationId := fmt.Sprintf("verification-%s", req.Address)
+	sdkCtx.EventManager().EmitEvent(
+		sdk.NewEvent("ident.identity_verified",
+			sdk.NewAttribute("address", req.Address),
+			sdk.NewAttribute("role", req.DesiredRole.String()),
+			sdk.NewAttribute("verification_id", verificationId),
+			sdk.NewAttribute("identity_hash", identityHash),
+		),
+	)
+
 	return &identv1.MsgVerifyIdentityResponse{
 		Success:        true,
-		VerificationId: fmt.Sprintf("verification-%s", req.Address),
+		VerificationId: verificationId,
 		IdentityHash:   identityHash,
 	}, nil
 }
@@ -151,24 +161,57 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 	// Get current account to verify it exists
 	account, err := s.k.GetVerifiedAccount(sdkCtx, req.Address)
 	if err != nil {
+		// Кошелёк зарегистрирован в блокчейне (проведены транзакции), но нет записи в ident.
+		// Создаём верифицированный аккаунт при апгрейде в Citizen/Validator.
+		// reqCtx (not sdkCtx) is required: auth keeper's GetAccount expects request context.
+		if (req.NewRole == identv1.Role_ROLE_CITIZEN || req.NewRole == identv1.Role_ROLE_VALIDATOR) &&
+			s.k.HasBlockchainAccount(ctx, req.Address) {
+			if createErr := s.k.CreateAccountFromVerification(sdkCtx, req.Address, req.ZkpProof, "", req.NewRole); createErr != nil {
+				return nil, fmt.Errorf("failed to create verified account: %w", createErr)
+			}
+			changeHash := fmt.Sprintf("change-%s-%d", req.Address, req.NewRole)
+			sdkCtx.EventManager().EmitEvent(
+				sdk.NewEvent("ident.role_changed",
+					sdk.NewAttribute("address", req.Address),
+					sdk.NewAttribute("old_role", identv1.Role_ROLE_GUEST.String()),
+					sdk.NewAttribute("new_role", req.NewRole.String()),
+					sdk.NewAttribute("change_hash", changeHash),
+				),
+			)
+			return &identv1.MsgChangeRoleResponse{
+				Success:    true,
+				ChangeHash: changeHash,
+			}, nil
+		}
 		return nil, fmt.Errorf("account not found: %w", err)
 	}
-	
+
 	// SECURITY: Validate ZKP proof for the role change
 	// This prevents unauthorized role escalation attacks
 	if err := s.k.ValidateRoleChangeProof(sdkCtx, req.Address, account.IdentityHash, req.ZkpProof, req.NewRole); err != nil {
 		return nil, fmt.Errorf("invalid ZKP proof for role change: %w", err)
 	}
 
+	oldRole := account.Role
 	// Change account role
 	err = s.k.ChangeAccountRole(sdkCtx, req.Address, req.NewRole)
 	if err != nil {
 		return nil, err
 	}
 
+	changeHash := fmt.Sprintf("change-%s-%d", req.Address, req.NewRole)
+	sdkCtx.EventManager().EmitEvent(
+		sdk.NewEvent("ident.role_changed",
+			sdk.NewAttribute("address", req.Address),
+			sdk.NewAttribute("old_role", oldRole.String()),
+			sdk.NewAttribute("new_role", req.NewRole.String()),
+			sdk.NewAttribute("change_hash", changeHash),
+		),
+	)
+
 	return &identv1.MsgChangeRoleResponse{
 		Success:    true,
-		ChangeHash: fmt.Sprintf("change-%s-%d", req.Address, req.NewRole),
+		ChangeHash: changeHash,
 	}, nil
 }
 
