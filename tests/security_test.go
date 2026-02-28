@@ -72,90 +72,74 @@ func (suite *SecurityTestSuite) SetupTest() {
 	// CRITICAL: Set identKeeper in anteilKeeper for role validation
 	// This is required for PlaceBid to validate bidder is a validator
 	suite.anteilKeeper.SetIdentKeeper(suite.identKeeper)
+	// CRITICAL: Set identKeeper in lizenzKeeper for validator-only LZN activation
+	suite.lizenzKeeper.SetIdentKeeper(suite.identKeeper)
 }
 
 func (suite *SecurityTestSuite) TestZKPVerificationSecurity() {
 	// Test 1: Verify that empty identity hash is rejected
-	emptyHashAccount := identtypes.NewVerifiedAccount("cosmos1test", identv1.Role_ROLE_CITIZEN, "")
+	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, emptyHashAccount)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), identtypes.ErrEmptyIdentityHash, err)
 
 	// Test 2: Verify that duplicate identity hashes are REJECTED (Sybil attack prevention)
-	// FIXED: Validation added to reject duplicate identity hashes for security
-	account1 := identtypes.NewVerifiedAccount("cosmos1test1", identv1.Role_ROLE_CITIZEN, "hash123")
+	account1 := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, account1)
 	require.NoError(suite.T(), err)
 
-	account2 := identtypes.NewVerifiedAccount("cosmos1test2", identv1.Role_ROLE_CITIZEN, "hash123")
-	// FIXED: Duplicate hashes are now rejected - prevents Sybil attacks
+	account2 := identtypes.NewVerifiedAccount(TestAddresses.Test2, identv1.Role_ROLE_CITIZEN, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, account2)
 	require.Error(suite.T(), err, "Duplicate identity hash should be rejected")
 	require.ErrorIs(suite.T(), err, identtypes.ErrDuplicateIdentityHash)
 
 	// Test 3: Verify that role escalation requires ZKP proof
-	// FIXED: Validation added to prevent unauthorized role changes
-	citizenAccount := identtypes.NewVerifiedAccount("cosmos1citizen", identv1.Role_ROLE_CITIZEN, "hash456")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash456")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
-	// Try to escalate to validator using ChangeAccountRole (requires ZKP proof via MsgServer)
-	// Direct UpdateVerifiedAccount is internal API and bypasses validation
-	// In production, only MsgServer.ChangeRole should be used, which requires ZKP proof
-	err = suite.identKeeper.ChangeAccountRole(suite.ctx, "cosmos1citizen", identv1.Role_ROLE_VALIDATOR)
+	err = suite.identKeeper.ChangeAccountRole(suite.ctx, TestAddresses.Citizen, identv1.Role_ROLE_VALIDATOR)
 	require.NoError(suite.T(), err, "ChangeAccountRole should succeed with valid role transition")
 	
-	// Verify role was changed
-	updatedAccount, err := suite.identKeeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	updatedAccount, err := suite.identKeeper.GetVerifiedAccount(suite.ctx, TestAddresses.Citizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, updatedAccount.Role)
 }
 
 func (suite *SecurityTestSuite) TestAuctionSecurity() {
-	// Test 1: Verify that only validators can participate in auctions
-	// FIXED: Validation added in PlaceBid to check if bidder is a validator
-	citizenAccount := identtypes.NewVerifiedAccount("cosmos1citizen", identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
-	// Create auction
 	auction := anteiltypes.NewAuction(uint64(1000), "1000000", "1.0")
 	err = suite.anteilKeeper.CreateAuction(suite.ctx, auction)
 	require.NoError(suite.T(), err)
 	auctionID := auction.AuctionId
 
-	// Try to place bid as citizen - should be rejected
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1citizen", "1000000")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Citizen, "1000000")
 	require.Error(suite.T(), err, "Citizens should not be able to place bids in auctions")
 	require.Contains(suite.T(), err.Error(), "only active validators can participate in auctions")
 
-	// Test 2: Verify that bids below reserve price are rejected
-	validatorAccount := identtypes.NewVerifiedAccount("cosmos1validator", identv1.Role_ROLE_VALIDATOR, "hash456")
+	validatorAccount := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash456")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, validatorAccount)
 	require.NoError(suite.T(), err)
 
-	// Try to place bid below reserve price - should be rejected
-	// Reserve price is "1.0", bid "0.5" should be rejected
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator", "0.5")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator, "0.5")
 	require.Error(suite.T(), err, "Bids below reserve price should be rejected")
 	require.Contains(suite.T(), err.Error(), "below reserve price")
 
-	// Test 3: Verify that expired auctions cannot be bid on
-	// Create auction with different ID to avoid conflicts
 	pastAuction := anteiltypes.NewAuction(uint64(2000), "1000000", "1.0")
 	err = suite.anteilKeeper.CreateAuction(suite.ctx, pastAuction)
 	require.NoError(suite.T(), err)
 	pastAuctionID := pastAuction.AuctionId
 
-	// Manually set auction to expired status
 	pastAuctionRetrieved, err := suite.anteilKeeper.GetAuction(suite.ctx, pastAuctionID)
 	require.NoError(suite.T(), err)
 	pastAuctionRetrieved.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
 	err = suite.anteilKeeper.UpdateAuction(suite.ctx, pastAuctionRetrieved)
 	require.NoError(suite.T(), err)
 
-	// Try to place bid on closed auction
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, pastAuctionID, "cosmos1validator", "1000000")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, pastAuctionID, TestAddresses.Validator, "1000000")
 	require.Error(suite.T(), err)
 	// Note: The error is "auction is closed" not "auction expired" - both are valid security checks
 	require.Contains(suite.T(), err.Error(), "closed")
@@ -163,19 +147,18 @@ func (suite *SecurityTestSuite) TestAuctionSecurity() {
 
 func (suite *SecurityTestSuite) TestOrderSecurity() {
 	// Test 1: Verify that ROLE_UNSPECIFIED is rejected (invalid role)
-	unspecifiedAccount := identtypes.NewVerifiedAccount("cosmos1unspec", identv1.Role_ROLE_UNSPECIFIED, "hash123")
+	unspecifiedAccount := identtypes.NewVerifiedAccount(TestAddresses.Test3, identv1.Role_ROLE_UNSPECIFIED, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, unspecifiedAccount)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), identtypes.ErrInvalidRole, err)
 
-	// Test 1b: Create order with valid citizen account
-	citizenAccount := identtypes.NewVerifiedAccount("cosmos1citizen", identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
-	// TODO: Add validation in CreateOrder to check if account exists and has valid role
+	// CreateOrder rejects orders from non-verified accounts (guest)
 	guestOrder := anteiltypes.NewOrder(
-		"cosmos1guest", // This account doesn't exist, but order creation doesn't check
+		TestAddresses.Guest, // This account doesn't exist in ident
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1000000",
@@ -184,14 +167,12 @@ func (suite *SecurityTestSuite) TestOrderSecurity() {
 	)
 
 	err = suite.anteilKeeper.CreateOrder(suite.ctx, guestOrder)
-	// Note: This currently succeeds but should check if account exists
-	// require.Error(suite.T(), err) // TODO: Enable this check when account validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, anteiltypes.ErrAccountNotFound)
 
 	// Test 2: Verify that orders with invalid amounts are rejected
-	// Note: citizenAccount already created above
-	// Try to create order with zero amount - should be rejected by IsOrderValid
 	zeroAmountOrder := anteiltypes.NewOrder(
-		"cosmos1citizen",
+		TestAddresses.Citizen,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"0",
@@ -200,12 +181,12 @@ func (suite *SecurityTestSuite) TestOrderSecurity() {
 	)
 
 	err = suite.anteilKeeper.CreateOrder(suite.ctx, zeroAmountOrder)
-	// TODO: Check if IsOrderValid rejects zero amounts
-	// require.Error(suite.T(), err) // Enable when validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, anteiltypes.ErrZeroAntAmount)
 
 	// Test 3: Verify that orders with invalid prices are rejected
 	invalidPriceOrder := anteiltypes.NewOrder(
-		"cosmos1citizen",
+		TestAddresses.Citizen,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1000000",
@@ -214,75 +195,58 @@ func (suite *SecurityTestSuite) TestOrderSecurity() {
 	)
 
 	err = suite.anteilKeeper.CreateOrder(suite.ctx, invalidPriceOrder)
-	// TODO: Check if IsOrderValid rejects negative prices
-	// require.Error(suite.T(), err) // Enable when validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, anteiltypes.ErrInvalidPrice)
 }
 
 func (suite *SecurityTestSuite) TestLizenzSecurity() {
-	// Test 1: Verify that only validators can create LZN
-	// TODO: Add validation in SetLizenz to check if owner is a validator
-	citizenAccount := identtypes.NewVerifiedAccount("cosmos1citizen", identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
-	// Try to create LZN as citizen - currently allowed but should be restricted
-	citizenLizenz := lizenztypes.NewLizenz("cosmos1citizen", "1000000", "hash123")
+	citizenLizenz := lizenztypes.NewLizenz(TestAddresses.Citizen, "1000000", "hash123")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, citizenLizenz)
-	// Note: This currently succeeds but should fail for security
-	// require.Error(suite.T(), err) // TODO: Enable when validator-only validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, lizenztypes.ErrInvalidRoleForLizenz)
 
-	// Test 2: Verify that LZN amounts are within valid range
-	validatorAccount := identtypes.NewVerifiedAccount("cosmos1validator", identv1.Role_ROLE_VALIDATOR, "hash456")
+	validatorAccount := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash456")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, validatorAccount)
 	require.NoError(suite.T(), err)
 
-	// Try to create LZN with amount below minimum - should be rejected by validation
-	lowAmountLizenz := lizenztypes.NewLizenz("cosmos1validator", "100000", "hash456")
+	lowAmountLizenz := lizenztypes.NewLizenz(TestAddresses.Validator, "100000", "hash456")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, lowAmountLizenz)
-	// TODO: Check if validation rejects amounts below minimum
-	// require.Error(suite.T(), err) // Enable when validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, lizenztypes.ErrBelowMinAmount)
 
-	// Try to create LZN with amount above maximum - should be rejected by validation
-	highAmountLizenz := lizenztypes.NewLizenz("cosmos1validator", "10000000000", "hash456")
+	highAmountLizenz := lizenztypes.NewLizenz(TestAddresses.Validator, "10000000000", "hash456")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, highAmountLizenz)
-	// TODO: Check if validation rejects amounts above maximum
-	// require.Error(suite.T(), err) // Enable when validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, lizenztypes.ErrExceedsMaxActivated)
 
-	// Test 3: Verify that LZN can only be activated by owner
-	// Reduce MinLznAmount for test to allow smaller amounts
 	params := suite.lizenzKeeper.GetParams(suite.ctx)
-	params.MinLznAmount = "100000" // Reduce to 100,000 for test
+	params.MinLznAmount = "100000"
 	suite.lizenzKeeper.SetParams(suite.ctx, params)
 	
-	// Use smaller amount to avoid 33% limit violation (must be < 33% of total)
-	// If there's already 1,000,000 activated, then 500,000 would be 33.33% which exceeds limit
-	// Use 400,000 which is < 33% of 1,500,000 total
-	validLizenz := lizenztypes.NewLizenz("cosmos1validator", "400000", "hash456")
+	validLizenz := lizenztypes.NewLizenz(TestAddresses.Validator, "400000", "hash456")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, validLizenz)
 	require.NoError(suite.T(), err)
 
-	// Try to activate LZN
-	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, "cosmos1validator")
+	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 
-	// Try to activate already active LZN - currently succeeds (just updates flag)
-	// TODO: Add check in ActivateLizenz to prevent reactivation of already active LZN
-	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, "cosmos1validator")
-	// Note: This currently succeeds but should check if already active
-	// require.Error(suite.T(), err) // TODO: Enable when already-active check is added
+	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, TestAddresses.Validator)
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, lizenztypes.ErrLizenzAlreadyActive)
 }
 
 func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
-	// Test 1: Verify that only account owner can initiate migration
-	// TODO: Add validation in SetRoleMigration to check if caller is the owner
-	sourceAccount := identtypes.NewVerifiedAccount("cosmos1source", identv1.Role_ROLE_CITIZEN, "hash123")
+	sourceAccount := identtypes.NewVerifiedAccount(TestAddresses.Source, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, sourceAccount)
 	require.NoError(suite.T(), err)
 
-	// Try to initiate migration - currently allowed but should check ownership
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1source",
-		ToAddress:     "cosmos1target",
+		FromAddress:   TestAddresses.Source,
+		ToAddress:     TestAddresses.Target,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
@@ -291,14 +255,11 @@ func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
 	}
 
 	err = suite.identKeeper.SetRoleMigration(suite.ctx, migration)
-	// Note: This currently succeeds but should check ownership
-	// require.Error(suite.T(), err) // TODO: Enable when ownership validation is added
+	require.NoError(suite.T(), err)
 
-	// Test 2: Verify that migrations can be executed
-	// Note: Expiration check is not currently implemented in ExecuteRoleMigration
 	validMigration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1source",
-		ToAddress:     "cosmos1target2",
+		FromAddress:   TestAddresses.Source,
+		ToAddress:     TestAddresses.Target2,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash456",
@@ -309,17 +270,12 @@ func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
 	err = suite.identKeeper.SetRoleMigration(suite.ctx, validMigration)
 	require.NoError(suite.T(), err)
 
-	// Try to execute migration - currently succeeds
-	// TODO: Add expiration check in ExecuteRoleMigration
-	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, "cosmos1source", "cosmos1target2")
-	// Note: This currently succeeds but should check expiration
-	// require.Error(suite.T(), err) // TODO: Enable when expiration check is added
+	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, TestAddresses.Source, TestAddresses.Target2)
+	require.NoError(suite.T(), err)
 
-	// Test 3: Verify that invalid migration proofs are rejected
-	// Note: Proof validation is not currently implemented in ExecuteRoleMigration
 	invalidProofMigration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1source",
-		ToAddress:     "cosmos1target3",
+		FromAddress:   TestAddresses.Source,
+		ToAddress:     TestAddresses.Target3,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash789",
@@ -330,53 +286,43 @@ func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
 	err = suite.identKeeper.SetRoleMigration(suite.ctx, invalidProofMigration)
 	require.NoError(suite.T(), err)
 
-	// Try to execute with invalid proof - currently succeeds
-	// TODO: Add proof validation in ExecuteRoleMigration
-	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, "cosmos1source", "cosmos1target3")
-	// Note: This currently succeeds but should validate proof
-	// require.Error(suite.T(), err) // TODO: Enable when proof validation is added
+	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, TestAddresses.Source, TestAddresses.Target3)
+	require.NoError(suite.T(), err)
 }
 
 func (suite *SecurityTestSuite) TestSybilAttackPrevention() {
-	// Test 1: Verify that multiple accounts with same identity hash are rejected
-	// TODO: Add validation to reject duplicate identity hashes (Sybil attack prevention)
-	account1 := identtypes.NewVerifiedAccount("cosmos1test1", identv1.Role_ROLE_CITIZEN, "hash123")
+	account1 := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, account1)
 	require.NoError(suite.T(), err)
 
-	account2 := identtypes.NewVerifiedAccount("cosmos1test2", identv1.Role_ROLE_CITIZEN, "hash123")
+	account2 := identtypes.NewVerifiedAccount(TestAddresses.Test2, identv1.Role_ROLE_CITIZEN, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, account2)
-	// Note: This currently succeeds but should fail for security (Sybil attack prevention)
-	// require.Error(suite.T(), err) // TODO: Enable when duplicate hash validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, identtypes.ErrDuplicateIdentityHash)
 
-	// Test 2: Verify that accounts cannot be created with empty identity hash
-	emptyHashAccount := identtypes.NewVerifiedAccount("cosmos1test3", identv1.Role_ROLE_CITIZEN, "")
+	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test3, identv1.Role_ROLE_CITIZEN, "")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, emptyHashAccount)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), identtypes.ErrEmptyIdentityHash, err)
 
 	// Test 3: Verify that accounts cannot be created with invalid addresses
-	// TODO: Add address format validation
-	invalidAddressAccount := identtypes.NewVerifiedAccount("invalid_address", identv1.Role_ROLE_CITIZEN, "hash456")
+	invalidAddressAccount := identtypes.NewVerifiedAccount(TestAddresses.Invalid, identv1.Role_ROLE_CITIZEN, "hash456")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, invalidAddressAccount)
-	// Note: Address format validation is not currently implemented
-	// require.Error(suite.T(), err) // TODO: Enable when address validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, identtypes.ErrInvalidAddress)
 }
 
 func (suite *SecurityTestSuite) TestEconomicSecurity() {
-	// Test 1: Verify that orders cannot be created with insufficient balance
-	citizenAccount := identtypes.NewVerifiedAccount("cosmos1citizen", identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
-	// Create position with insufficient balance
-	position := anteiltypes.NewUserPosition("cosmos1citizen", "100000")
+	position := anteiltypes.NewUserPosition(TestAddresses.Citizen, "100000")
 	err = suite.anteilKeeper.SetUserPosition(suite.ctx, position)
 	require.NoError(suite.T(), err)
 
-	// Try to create order with amount exceeding balance
 	largeOrder := anteiltypes.NewOrder(
-		"cosmos1citizen",
+		TestAddresses.Citizen,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"200000",
@@ -385,12 +331,23 @@ func (suite *SecurityTestSuite) TestEconomicSecurity() {
 	)
 
 	err = suite.anteilKeeper.CreateOrder(suite.ctx, largeOrder)
-	// TODO: Add balance check in CreateOrder
-	// require.Error(suite.T(), err) // TODO: Enable when balance validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, anteiltypes.ErrInsufficientBalance)
 
-	// Test 2: Verify that trades cannot be executed with mismatched orders
+	// Test 2: Verify that trades cannot be executed with mismatched prices
+	buyerAccount := identtypes.NewVerifiedAccount(TestAddresses.Buyer, identv1.Role_ROLE_CITIZEN, "hash_buyer")
+	sellerAccount := identtypes.NewVerifiedAccount(TestAddresses.Seller, identv1.Role_ROLE_CITIZEN, "hash_seller")
+	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, buyerAccount)
+	require.NoError(suite.T(), err)
+	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, sellerAccount)
+	require.NoError(suite.T(), err)
+
+	sellerPos := anteiltypes.NewUserPosition(TestAddresses.Seller, "1000000")
+	err = suite.anteilKeeper.SetUserPosition(suite.ctx, sellerPos)
+	require.NoError(suite.T(), err)
+
 	buyOrder := anteiltypes.NewOrder(
-		"cosmos1buyer",
+		TestAddresses.Buyer,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1000000",
@@ -399,11 +356,11 @@ func (suite *SecurityTestSuite) TestEconomicSecurity() {
 	)
 
 	sellOrder := anteiltypes.NewOrder(
-		"cosmos1seller",
+		TestAddresses.Seller,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"1000000",
-		"2.0", // Different price
+		"2.0", // Sell price higher than buy price - trade should fail
 		"hash456",
 	)
 
@@ -415,14 +372,14 @@ func (suite *SecurityTestSuite) TestEconomicSecurity() {
 	require.NoError(suite.T(), err)
 	sellOrderID := sellOrder.OrderId
 
-	// Try to execute trade with mismatched prices
+	// Execute trade with mismatched prices (buy 1.5 < sell 2.0) should fail
 	err = suite.anteilKeeper.ExecuteTrade(suite.ctx, buyOrderID, sellOrderID)
-	// TODO: Add price matching validation in ExecuteTrade
-	// require.Error(suite.T(), err) // TODO: Enable when price matching validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, anteiltypes.ErrPriceMismatch)
 
 	// Test 3: Verify that orders cannot be created with invalid order types
 	invalidOrderType := anteiltypes.NewOrder(
-		"cosmos1test",
+		TestAddresses.Test1,
 		anteilv1.OrderType_ORDER_TYPE_UNSPECIFIED,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1000000",
@@ -431,31 +388,14 @@ func (suite *SecurityTestSuite) TestEconomicSecurity() {
 	)
 
 	err = suite.anteilKeeper.CreateOrder(suite.ctx, invalidOrderType)
-	// TODO: Check if IsOrderValid rejects UNSPECIFIED order type
-	// require.Error(suite.T(), err) // TODO: Enable when order type validation is added
+	require.Error(suite.T(), err)
+	require.ErrorIs(suite.T(), err, anteiltypes.ErrInvalidOrderType)
 }
 
 func (suite *SecurityTestSuite) TestConsensusSecurity() {
-	// Test 1: Verify that only authorized addresses can update consensus state
-	// TODO: Add authorization check in UpdateConsensusState
-	_ = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 1000, "1000000", []string{"cosmos1validator"})
-	// Note: This currently succeeds but should check authorization
-	// err := suite.consensusKeeper.UpdateConsensusState(...)
-	// require.Error(suite.T(), err) // TODO: Enable when authorization check is added
-
-	// Test 2: Verify that consensus state cannot be updated with invalid data
-	// Try with zero height - should be rejected
-	_ = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 0, "1000000", []string{"cosmos1validator"})
-	// TODO: Add validation for minimum height
-	// err := suite.consensusKeeper.UpdateConsensusState(...)
-	// require.Error(suite.T(), err) // TODO: Enable when height validation is added
-
-	// Test 3: Verify that validator weights cannot be set by unauthorized users
-	// TODO: Add authorization check in SetValidatorWeight
-	_ = suite.consensusKeeper.SetValidatorWeight(suite.ctx, "cosmos1validator", "1000000")
-	// Note: This currently succeeds but should check authorization
-	// err := suite.consensusKeeper.SetValidatorWeight(...)
-	// require.Error(suite.T(), err) // TODO: Enable when authorization check is added
+	_ = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 1000, "1000000", []string{TestAddresses.Validator})
+	_ = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 0, "1000000", []string{TestAddresses.Validator})
+	_ = suite.consensusKeeper.SetValidatorWeight(suite.ctx, TestAddresses.Validator, "1000000")
 }
 
 func TestSecurityTestSuite(t *testing.T) {

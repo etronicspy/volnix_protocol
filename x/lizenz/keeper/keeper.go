@@ -483,6 +483,11 @@ func (k Keeper) ActivateLizenz(ctx sdk.Context, validator string) error {
 		return err
 	}
 
+	// Prevent reactivation of already active LZN
+	if lizenz.IsEligibleForRewards {
+		return types.ErrLizenzAlreadyActive
+	}
+
 	// Update status to active
 	lizenz.IsEligibleForRewards = true
 	return k.UpdateActivatedLizenz(ctx, lizenz)

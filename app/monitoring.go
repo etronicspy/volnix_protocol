@@ -10,6 +10,7 @@ import (
 	"cosmossdk.io/log"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	anteilkeeper "github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
 )
 
 // MonitoringService provides monitoring and metrics for Volnix Protocol
@@ -178,6 +179,19 @@ func (ms *MonitoringService) getConsensusMetrics() map[string]interface{} {
 	}
 	metrics["active_validators"] = activeCount
 
+	// Total burned tokens from consensus state
+	if state, err := ms.app.consensusKeeper.GetConsensusState(ctx); err == nil {
+		metrics["total_burned_tokens"] = state.TotalAntBurned
+	}
+
+	// Halving info
+	if halvingInfo, err := ms.app.consensusKeeper.GetHalvingInfo(ctx); err == nil {
+		metrics["next_halving_height"] = halvingInfo.NextHalvingHeight
+		if halvingInfo.HalvingInterval > 0 {
+			metrics["halving_count"] = halvingInfo.LastHalvingHeight / halvingInfo.HalvingInterval
+		}
+	}
+
 	return metrics
 }
 
@@ -225,6 +239,26 @@ func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 	trades, err := ms.app.anteilKeeper.GetAllTrades(ctx)
 	if err == nil {
 		metrics["completed_orders"] = len(trades)
+
+		// volume_24h: sum total_value for trades with executed_at in last 24h
+		cutoff := ctx.BlockTime().Add(-24 * time.Hour)
+		var vol24h int64
+		for _, t := range trades {
+			if t.ExecutedAt != nil && t.ExecutedAt.AsTime().After(cutoff) {
+				var v int64
+				if _, err := fmt.Sscanf(t.TotalValue, "%d", &v); err == nil {
+					vol24h += v
+				}
+			}
+		}
+		metrics["volume_24h"] = vol24h
+	}
+
+	// Total volume and average price from economic engine
+	engine := anteilkeeper.NewEconomicEngine(ms.app.anteilKeeper)
+	if marketMetrics, err := engine.CalculateMarketMetrics(ctx); err == nil {
+		metrics["total_volume"] = marketMetrics.TotalVolume.String()
+		metrics["avg_price"] = marketMetrics.AveragePrice.String()
 	}
 
 	return metrics

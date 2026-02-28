@@ -1,11 +1,17 @@
 package app
 
 import (
+	"fmt"
+
+	txsigning "cosmossdk.io/x/tx/signing"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+	authcodec "github.com/cosmos/cosmos-sdk/x/auth/codec"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
+	"google.golang.org/protobuf/reflect/protoregistry"
 
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -34,11 +40,21 @@ type TxConfig struct {
 // MakeEncodingConfig creates an EncodingConfig with real protobuf tx codec
 // and all module message types registered.
 func MakeEncodingConfig() EncodingConfig {
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	interfaceRegistry, err := codectypes.NewInterfaceRegistryWithOptions(codectypes.InterfaceRegistryOptions{
+		ProtoFiles: protoregistry.GlobalFiles,
+		SigningOptions: txsigning.Options{
+			AddressCodec:          authcodec.NewBech32Codec("volnix"),
+			ValidatorAddressCodec: authcodec.NewBech32Codec("volnixvaloper"),
+		},
+	})
+	if err != nil {
+		panic(fmt.Errorf("failed to create interface registry: %w", err))
+	}
 	protoCodec := codec.NewProtoCodec(interfaceRegistry)
 	legacyAmino := codec.NewLegacyAmino()
 
 	// Register standard SDK types
+	cryptocodec.RegisterInterfaces(interfaceRegistry)
 	authtypes.RegisterInterfaces(interfaceRegistry)
 	banktypes.RegisterInterfaces(interfaceRegistry)
 

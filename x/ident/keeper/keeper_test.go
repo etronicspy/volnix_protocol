@@ -32,9 +32,47 @@ type KeeperTestSuite struct {
 	cdc        codec.BinaryCodec
 	storeKey   storetypes.StoreKey
 	paramStore paramtypes.Subspace
+
+	addrTest, addrTest2, addrTest1, addrCitizen, addrValidator, addrValidator1, addrValidator2, addrCitizen2, addrGuest string
+	addrFrom, addrTo, addrNotFound, addrSource, addrTarget, addrNonexistent string
+	addrNew, addrNew2, addrNew3, addrNew4, addrActive, addrInactive string
+}
+
+func mustAddr(hex string) string {
+	a, err := sdk.AccAddressFromHexUnsafe(hex)
+	if err != nil {
+		panic(err)
+	}
+	return a.String()
 }
 
 func (suite *KeeperTestSuite) SetupTest() {
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
+	suite.addrTest = mustAddr("0000000000000000000000000000000000000001")
+	suite.addrTest2 = mustAddr("0000000000000000000000000000000000000002")
+	suite.addrTest1 = mustAddr("0000000000000000000000000000000000000006")
+	suite.addrCitizen = mustAddr("0000000000000000000000000000000000000003")
+	suite.addrValidator = mustAddr("0000000000000000000000000000000000000004")
+	suite.addrGuest = mustAddr("0000000000000000000000000000000000000005")
+	suite.addrFrom = mustAddr("0000000000000000000000000000000000000007")
+	suite.addrTo = mustAddr("0000000000000000000000000000000000000008")
+	suite.addrNotFound = mustAddr("0000000000000000000000000000000000000009")
+	suite.addrSource = mustAddr("0000000000000000000000000000000000000020")
+	suite.addrTarget = mustAddr("0000000000000000000000000000000000000021")
+	suite.addrNonexistent = mustAddr("0000000000000000000000000000000000000022")
+	suite.addrValidator1 = mustAddr("0000000000000000000000000000000000000023")
+	suite.addrValidator2 = mustAddr("0000000000000000000000000000000000000024")
+	suite.addrCitizen2 = mustAddr("0000000000000000000000000000000000000025")
+	suite.addrNew = mustAddr("0000000000000000000000000000000000000050")
+	suite.addrNew2 = mustAddr("0000000000000000000000000000000000000051")
+	suite.addrNew3 = mustAddr("0000000000000000000000000000000000000052")
+	suite.addrNew4 = mustAddr("0000000000000000000000000000000000000053")
+	suite.addrActive = mustAddr("0000000000000000000000000000000000000060")
+	suite.addrInactive = mustAddr("0000000000000000000000000000000000000061")
+
 	// Create codec
 	interfaceRegistry := cdctypes.NewInterfaceRegistry()
 	std.RegisterInterfaces(interfaceRegistry)
@@ -68,7 +106,7 @@ func TestKeeperTestSuite(t *testing.T) {
 // Test SetVerifiedAccount
 func (suite *KeeperTestSuite) TestSetVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
@@ -80,8 +118,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount() {
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.NoError(suite.T(), err)
 
-	// Verify account was stored
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), account.Address, retrieved.Address)
 	require.Equal(suite.T(), account.Role, retrieved.Role)
@@ -90,7 +127,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount() {
 
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_Duplicate() {
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
@@ -125,7 +162,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
 
 	// Empty identity hash
 	account = &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -141,7 +178,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
 // Test GetVerifiedAccount
 func (suite *KeeperTestSuite) TestGetVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
@@ -153,14 +190,14 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount() {
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.NoError(suite.T(), err)
 
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), retrieved)
 	require.Equal(suite.T(), account.Address, retrieved.Address)
 }
 
 func (suite *KeeperTestSuite) TestGetVerifiedAccount_NotFound() {
-	_, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1notfound")
+	_, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrNotFound)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAccountNotFound, err)
 }
@@ -168,7 +205,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_NotFound() {
 // Test UpdateVerifiedAccount
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
@@ -186,14 +223,14 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount() {
 	require.NoError(suite.T(), err)
 
 	// Verify update
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.False(suite.T(), retrieved.IsActive)
 }
 
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_NotFound() {
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1notfound",
+		Address:          suite.addrNotFound,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -209,7 +246,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_NotFound() {
 // Test DeleteVerifiedAccount
 func (suite *KeeperTestSuite) TestDeleteVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
@@ -222,26 +259,33 @@ func (suite *KeeperTestSuite) TestDeleteVerifiedAccount() {
 	require.NoError(suite.T(), err)
 
 	// Delete account
-	err = suite.keeper.DeleteVerifiedAccount(suite.ctx, "cosmos1test")
+	err = suite.keeper.DeleteVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 
 	// Verify deletion
-	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAccountNotFound, err)
 }
 
 // Test GetAllVerifiedAccounts
 func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts() {
-	// Create multiple accounts
+	// Create multiple accounts with valid addresses
+	addrs := []string{
+		mustAddr("000000000000000000000000000000000000000a"),
+		mustAddr("000000000000000000000000000000000000000b"),
+		mustAddr("000000000000000000000000000000000000000c"),
+		mustAddr("000000000000000000000000000000000000000d"),
+		mustAddr("000000000000000000000000000000000000000e"),
+	}
 	for i := range 5 {
 		account := &identv1.VerifiedAccount{
-			Address:          "cosmos1test" + string(rune(i)),
+			Address:          addrs[i],
 			Role:             identv1.Role_ROLE_CITIZEN,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
 			IsActive:         true,
-			IdentityHash:     "hash" + string(rune(i)),
+			IdentityHash:     "hash" + string(rune('0'+i)),
 		}
 		err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 		require.NoError(suite.T(), err)
@@ -254,29 +298,31 @@ func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts() {
 
 // Test GetVerifiedAccountsByRole
 func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole() {
-	// Create citizens
+	// Create citizens with valid addresses
+	citizenAddrs := []string{mustAddr("000000000000000000000000000000000000001a"), mustAddr("000000000000000000000000000000000000001b"), mustAddr("000000000000000000000000000000000000001c")}
 	for i := range 3 {
 		account := &identv1.VerifiedAccount{
-			Address:          "cosmos1citizen" + string(rune(i)),
+			Address:          citizenAddrs[i],
 			Role:             identv1.Role_ROLE_CITIZEN,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
 			IsActive:         true,
-			IdentityHash:     "hash_citizen" + string(rune(i)),
+			IdentityHash:     "hash_citizen" + string(rune('0'+i)),
 		}
 		err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 		require.NoError(suite.T(), err)
 	}
 
-	// Create validators
+	// Create validators with valid addresses
+	validatorAddrs := []string{mustAddr("000000000000000000000000000000000000001d"), mustAddr("000000000000000000000000000000000000001e")}
 	for i := range 2 {
 		account := &identv1.VerifiedAccount{
-			Address:          "cosmos1validator" + string(rune(i)),
+			Address:          validatorAddrs[i],
 			Role:             identv1.Role_ROLE_VALIDATOR,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
 			IsActive:         true,
-			IdentityHash:     "hash_validator" + string(rune(i)),
+			IdentityHash:     "hash_validator" + string(rune('0'+i)),
 		}
 		err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 		require.NoError(suite.T(), err)
@@ -296,7 +342,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole() {
 // Test ChangeAccountRole
 func (suite *KeeperTestSuite) TestChangeAccountRole() {
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -308,18 +354,18 @@ func (suite *KeeperTestSuite) TestChangeAccountRole() {
 	require.NoError(suite.T(), err)
 
 	// Change role
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1test", identv1.Role_ROLE_VALIDATOR)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrTest, identv1.Role_ROLE_VALIDATOR)
 	require.NoError(suite.T(), err)
 
 	// Verify role change
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, retrieved.Role)
 }
 
 func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRole() {
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -331,7 +377,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRole() {
 	require.NoError(suite.T(), err)
 
 	// Try to change to invalid role
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1test", identv1.Role_ROLE_UNSPECIFIED)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrTest, identv1.Role_ROLE_UNSPECIFIED)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrInvalidRole, err)
 }
@@ -339,7 +385,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRole() {
 // Test UpdateAccountActivity
 func (suite *KeeperTestSuite) TestUpdateAccountActivity() {
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(time.Now().Add(-24 * time.Hour)),
@@ -353,11 +399,11 @@ func (suite *KeeperTestSuite) TestUpdateAccountActivity() {
 	oldTime := account.LastActive.AsTime()
 
 	// Update activity
-	err = suite.keeper.UpdateAccountActivity(suite.ctx, "cosmos1test")
+	err = suite.keeper.UpdateAccountActivity(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 
 	// Verify activity was updated
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.LastActive.AsTime().After(oldTime))
 }
@@ -371,7 +417,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_InactiveAccounts() {
 	// Create account with old last active time (older than 1 year for citizens)
 	oldTime := currentTime.Add(-400 * 24 * time.Hour) // 400 days ago
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -387,7 +433,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_InactiveAccounts() {
 	require.NoError(suite.T(), err)
 
 	// Verify account was downgraded to guest
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, retrieved.Role)
 }
@@ -400,7 +446,7 @@ func (suite *KeeperTestSuite) TestEndBlocker() {
 
 	oldTime := currentTime.Add(-1 * time.Hour)
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -416,7 +462,7 @@ func (suite *KeeperTestSuite) TestEndBlocker() {
 	require.NoError(suite.T(), err)
 
 	// Verify activity was updated
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.LastActive.AsTime().After(oldTime))
 }
@@ -424,8 +470,8 @@ func (suite *KeeperTestSuite) TestEndBlocker() {
 // Test Role Migration
 func (suite *KeeperTestSuite) TestSetRoleMigration() {
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
@@ -437,7 +483,7 @@ func (suite *KeeperTestSuite) TestSetRoleMigration() {
 	require.NoError(suite.T(), err)
 
 	// Verify migration was stored
-	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), migration.FromAddress, retrieved.FromAddress)
 	require.Equal(suite.T(), migration.ToAddress, retrieved.ToAddress)
@@ -446,7 +492,7 @@ func (suite *KeeperTestSuite) TestSetRoleMigration() {
 func (suite *KeeperTestSuite) TestExecuteRoleMigration() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1from",
+		Address:          suite.addrFrom,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -459,8 +505,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration() {
 
 	// Create migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -472,23 +518,23 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration() {
 	require.NoError(suite.T(), err)
 
 	// Execute migration
-	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.NoError(suite.T(), err)
 
 	// Verify source account is deactivated
-	sourceRetrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1from")
+	sourceRetrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrFrom)
 	require.NoError(suite.T(), err)
 	require.False(suite.T(), sourceRetrieved.IsActive)
 
 	// Verify target account was created
-	targetRetrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1to")
+	targetRetrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTo)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), "cosmos1to", targetRetrieved.Address)
+	require.Equal(suite.T(), suite.addrTo, targetRetrieved.Address)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, targetRetrieved.Role)
 	require.True(suite.T(), targetRetrieved.IsActive)
 
 	// Verify migration is marked as completed
-	migrationRetrieved, err := suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	migrationRetrieved, err := suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), migrationRetrieved.IsCompleted)
 }
@@ -496,8 +542,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration() {
 func (suite *KeeperTestSuite) TestExecuteRoleMigration_AlreadyCompleted() {
 	// Create completed migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -509,22 +555,24 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_AlreadyCompleted() {
 	require.NoError(suite.T(), err)
 
 	// Try to execute completed migration
-	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrInvalidMigrationStatus, err)
 }
 
 // Test GetAllRoleMigrations
 func (suite *KeeperTestSuite) TestGetAllRoleMigrations() {
-	// Create multiple migrations
+	// Create multiple migrations with valid addresses
+	migFrom := []string{mustAddr("0000000000000000000000000000000000000030"), mustAddr("0000000000000000000000000000000000000031"), mustAddr("0000000000000000000000000000000000000032")}
+	migTo := []string{mustAddr("0000000000000000000000000000000000000033"), mustAddr("0000000000000000000000000000000000000034"), mustAddr("0000000000000000000000000000000000000035")}
 	for i := range 3 {
 		migration := &identv1.RoleMigration{
-			FromAddress:   "cosmos1from" + string(rune(i)),
-			ToAddress:     "cosmos1to" + string(rune(i)),
+			FromAddress:   migFrom[i],
+			ToAddress:     migTo[i],
 			FromRole:      identv1.Role_ROLE_CITIZEN,
 			ToRole:        identv1.Role_ROLE_VALIDATOR,
-			MigrationHash: "hash" + string(rune(i)),
-			ZkpProof:      "proof" + string(rune(i)),
+			MigrationHash: "hash" + string(rune('0'+i)),
+			ZkpProof:      "proof" + string(rune('0'+i)),
 			IsCompleted:   false,
 		}
 		err := suite.keeper.SetRoleMigration(suite.ctx, migration)
@@ -557,7 +605,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_ExceedsLimit() {
 
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test1",
+		Address:          suite.addrTest1,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -570,7 +618,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_ExceedsLimit() {
 
 	// Try to create second account (should fail)
 	account2 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test2",
+		Address:          suite.addrTest2,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -585,7 +633,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_ExceedsLimit() {
 
 func (suite *KeeperTestSuite) TestChangeAccountRole_SameRole() {
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -597,29 +645,29 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_SameRole() {
 	require.NoError(suite.T(), err)
 
 	// Change to same role (should succeed)
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1test", identv1.Role_ROLE_CITIZEN)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrTest, identv1.Role_ROLE_CITIZEN)
 	require.NoError(suite.T(), err)
 
 	// Verify role unchanged
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
 }
 
 func (suite *KeeperTestSuite) TestChangeAccountRole_NotFound() {
-	err := suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1notfound", identv1.Role_ROLE_VALIDATOR)
+	err := suite.keeper.ChangeAccountRole(suite.ctx, suite.addrNotFound, identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAccountNotFound, err)
 }
 
 func (suite *KeeperTestSuite) TestUpdateAccountActivity_NotFound() {
-	err := suite.keeper.UpdateAccountActivity(suite.ctx, "cosmos1notfound")
+	err := suite.keeper.UpdateAccountActivity(suite.ctx, suite.addrNotFound)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAccountNotFound, err)
 }
 
 func (suite *KeeperTestSuite) TestGetRoleMigration_NotFound() {
-	_, err := suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	_, err := suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrRoleMigrationNotFound, err)
 }
@@ -627,8 +675,8 @@ func (suite *KeeperTestSuite) TestGetRoleMigration_NotFound() {
 func (suite *KeeperTestSuite) TestExecuteRoleMigration_SourceNotFound() {
 	// Create migration without source account
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1notfound",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrNotFound,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -640,7 +688,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SourceNotFound() {
 	require.NoError(suite.T(), err)
 
 	// Try to execute migration
-	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1notfound", "cosmos1to")
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrNotFound, suite.addrTo)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAccountNotFound, err)
 }
@@ -652,7 +700,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole_Empty() {
 }
 
 func (suite *KeeperTestSuite) TestDeleteVerifiedAccount_NotFound() {
-	err := suite.keeper.DeleteVerifiedAccount(suite.ctx, "cosmos1notfound")
+	err := suite.keeper.DeleteVerifiedAccount(suite.ctx, suite.addrNotFound)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAccountNotFound, err)
 }
@@ -660,7 +708,7 @@ func (suite *KeeperTestSuite) TestDeleteVerifiedAccount_NotFound() {
 func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts() {
 	// Create account with recent activity
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -676,7 +724,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts() {
 	require.NoError(suite.T(), err)
 
 	// Verify account role unchanged (still active)
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
 }
@@ -689,7 +737,7 @@ func (suite *KeeperTestSuite) TestEndBlocker_UpdatesActivity() {
 	// Create account
 	oldTime := currentTime.Add(-1 * time.Hour)
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -705,7 +753,7 @@ func (suite *KeeperTestSuite) TestEndBlocker_UpdatesActivity() {
 	require.NoError(suite.T(), err)
 
 	// Verify activity was updated
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.LastActive.AsTime().After(oldTime))
 }
@@ -735,7 +783,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts_NoChange() {
 
 	// Create account with recent activity
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -751,7 +799,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts_NoChange() {
 	require.NoError(suite.T(), err)
 
 	// Verify account role unchanged
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
 }
@@ -769,7 +817,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
 	// Create validator with old activity (older than activity period)
 	oldTime := currentTime.Add(-70 * 24 * time.Hour) // 70 days ago (older than 60 days)
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1validator",
+		Address:          suite.addrValidator,
 		Role:             identv1.Role_ROLE_VALIDATOR,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -785,7 +833,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
 	require.NoError(suite.T(), err)
 
 	// Verify validator was downgraded
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrValidator)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, retrieved.Role)
 }
@@ -798,7 +846,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_ExceedsLimit() {
 
 	// Create one validator
 	account1 := &identv1.VerifiedAccount{
-		Address:          "cosmos1validator1",
+		Address:          suite.addrValidator1,
 		Role:             identv1.Role_ROLE_VALIDATOR,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -811,7 +859,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_ExceedsLimit() {
 
 	// Create citizen and try to change to validator (should fail due to limit)
 	account2 := &identv1.VerifiedAccount{
-		Address:          "cosmos1citizen",
+		Address:          suite.addrCitizen,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -823,7 +871,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_ExceedsLimit() {
 	require.NoError(suite.T(), err)
 
 	// Try to change citizen to validator (should fail)
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen", identv1.Role_ROLE_VALIDATOR)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrCitizen, identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "account limit exceeded")
 }
@@ -842,8 +890,8 @@ func (suite *KeeperTestSuite) TestGetAllRoleMigrations_Empty() {
 
 func (suite *KeeperTestSuite) TestSetRoleMigration_Update() {
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
@@ -860,7 +908,7 @@ func (suite *KeeperTestSuite) TestSetRoleMigration_Update() {
 	require.NoError(suite.T(), err)
 
 	// Verify update
-	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.IsCompleted)
 }
@@ -868,7 +916,7 @@ func (suite *KeeperTestSuite) TestSetRoleMigration_Update() {
 func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1from",
+		Address:          suite.addrFrom,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -881,7 +929,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
 
 	// Create target account (already exists)
 	targetAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1to",
+		Address:          suite.addrTo,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -894,8 +942,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
 
 	// Create migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -907,7 +955,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
 	require.NoError(suite.T(), err)
 
 	// Try to execute migration (should fail because target exists)
-	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
 }
 
@@ -951,7 +999,7 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_BurnsAntOnCitizenDeactiva
 	// Create citizen with old last activity (2 hours ago - inactive)
 	oldTime := time.Now().Add(-2 * time.Hour)
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1citizen",
+		Address:              suite.addrCitizen,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.New(oldTime),
 		LastActive:           timestamppb.New(oldTime),
@@ -972,10 +1020,10 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_BurnsAntOnCitizenDeactiva
 	require.NoError(suite.T(), err)
 
 	// Verify ANT was burned
-	require.Contains(suite.T(), mockAnteilKeeper.GetBurnedUsers(), "cosmos1citizen", "ANT should be burned for inactive citizen")
+	require.Contains(suite.T(), mockAnteilKeeper.GetBurnedUsers(), suite.addrCitizen, "ANT should be burned for inactive citizen")
 
 	// Verify account was deactivated (role changed to GUEST)
-	updatedAccount, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	updatedAccount, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updatedAccount.Role, "Citizen should be downgraded to GUEST")
 
@@ -988,7 +1036,7 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_BurnsAntOnCitizenDeactiva
 			// Verify attributes
 			for _, attr := range event.Attributes {
 				if string(attr.Key) == "citizen" {
-					require.Equal(suite.T(), "cosmos1citizen", string(attr.Value))
+					require.Equal(suite.T(), suite.addrCitizen, string(attr.Value))
 				}
 				if string(attr.Key) == "reason" {
 					require.Equal(suite.T(), "inactivity", string(attr.Value))
@@ -1003,7 +1051,7 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_BurnsAntOnCitizenDeactiva
 func (suite *KeeperTestSuite) TestReleaseIdentityHash() {
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1citizen",
+		Address:              suite.addrCitizen,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
@@ -1021,14 +1069,14 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash() {
 	require.True(suite.T(), store.Has(identityHashKey), "Identity hash key should exist")
 
 	// Release identity hash
-	err = suite.keeper.ReleaseIdentityHash(suite.ctx, "cosmos1citizen")
+	err = suite.keeper.ReleaseIdentityHash(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 
 	// Verify identity hash mapping is removed
 	require.False(suite.T(), store.Has(identityHashKey), "Identity hash key should be removed")
 
 	// Verify account still exists (only mapping is removed)
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), account.Address, retrieved.Address)
 
@@ -1041,7 +1089,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash() {
 			// Verify attributes
 			for _, attr := range event.Attributes {
 				if string(attr.Key) == "address" {
-					require.Equal(suite.T(), "cosmos1citizen", string(attr.Value))
+					require.Equal(suite.T(), suite.addrCitizen, string(attr.Value))
 				}
 				if string(attr.Key) == "identity_hash" {
 					require.Equal(suite.T(), "hash123", string(attr.Value))
@@ -1057,7 +1105,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash() {
 
 func (suite *KeeperTestSuite) TestReleaseIdentityHash_NoAccount() {
 	// Try to release identity hash for non-existent account
-	err := suite.keeper.ReleaseIdentityHash(suite.ctx, "cosmos1nonexistent")
+	err := suite.keeper.ReleaseIdentityHash(suite.ctx, suite.addrNonexistent)
 	require.NoError(suite.T(), err) // Should not error, just return nil
 }
 
@@ -1071,7 +1119,7 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_ReleasesIdentityHashOnDea
 	// Create citizen with old last activity (2 hours ago - inactive)
 	oldTime := time.Now().Add(-2 * time.Hour)
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1citizen",
+		Address:              suite.addrCitizen,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		VerificationDate:     timestamppb.New(oldTime),
 		LastActive:           timestamppb.New(oldTime),
@@ -1100,7 +1148,7 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_ReleasesIdentityHashOnDea
 	require.False(suite.T(), store.Has(identityHashKey), "Identity hash key should be removed after deactivation")
 
 	// Verify account was deactivated (role changed to GUEST)
-	updatedAccount, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	updatedAccount, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updatedAccount.Role, "Citizen should be downgraded to GUEST")
 
@@ -1113,7 +1161,7 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_ReleasesIdentityHashOnDea
 			// Verify attributes
 			for _, attr := range event.Attributes {
 				if string(attr.Key) == "address" {
-					require.Equal(suite.T(), "cosmos1citizen", string(attr.Value))
+					require.Equal(suite.T(), suite.addrCitizen, string(attr.Value))
 				}
 				if string(attr.Key) == "identity_hash" {
 					require.Equal(suite.T(), "hash123", string(attr.Value))
@@ -1131,7 +1179,7 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_ReleasesIdentityHashOnDea
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_WithIdentityHashChange() {
 	// Create initial account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		IsActive:         true,
 		IdentityHash:     "hash1",
@@ -1146,7 +1194,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_WithIdentityHashChange()
 	require.NoError(suite.T(), err)
 
 	// Verify update
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "hash2", updated.IdentityHash)
 
@@ -1162,7 +1210,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_WithIdentityHashChange()
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_DuplicateIdentityHash() {
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test1",
+		Address:          suite.addrTest1,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		IsActive:         true,
 		IdentityHash:     "hash1",
@@ -1173,7 +1221,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_DuplicateIdentityHash() 
 
 	// Create second account
 	account2 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test2",
+		Address:          suite.addrTest2,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		IsActive:         true,
 		IdentityHash:     "hash2",
@@ -1191,7 +1239,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_DuplicateIdentityHash() 
 
 // TestCheckDuplicateIdentityHash_NoDuplicate tests CheckDuplicateIdentityHash when no duplicate exists
 func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_NoDuplicate() {
-	err := suite.keeper.CheckDuplicateIdentityHash(suite.ctx, "hash1", "cosmos1test")
+	err := suite.keeper.CheckDuplicateIdentityHash(suite.ctx, "hash1", suite.addrTest)
 	require.NoError(suite.T(), err)
 }
 
@@ -1199,7 +1247,7 @@ func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_NoDuplicate() {
 func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_SameAddress() {
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		IsActive:         true,
 		IdentityHash:     "hash1",
@@ -1209,7 +1257,7 @@ func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_SameAddress() {
 	require.NoError(suite.T(), err)
 
 	// Check with same address - should not error (for updates)
-	err = suite.keeper.CheckDuplicateIdentityHash(suite.ctx, "hash1", "cosmos1test")
+	err = suite.keeper.CheckDuplicateIdentityHash(suite.ctx, "hash1", suite.addrTest)
 	require.NoError(suite.T(), err)
 }
 
@@ -1217,7 +1265,7 @@ func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_SameAddress() {
 func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_DifferentAddress() {
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test1",
+		Address:          suite.addrTest1,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		IsActive:         true,
 		IdentityHash:     "hash1",
@@ -1227,7 +1275,7 @@ func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_DifferentAddress() 
 	require.NoError(suite.T(), err)
 
 	// Check with different address - should error
-	err = suite.keeper.CheckDuplicateIdentityHash(suite.ctx, "hash1", "cosmos1test2")
+	err = suite.keeper.CheckDuplicateIdentityHash(suite.ctx, "hash1", suite.addrTest2)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "identity hash")
 }
@@ -1236,7 +1284,7 @@ func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_DifferentAddress() 
 func (suite *KeeperTestSuite) TestBeginBlocker_WithRoleMigrations() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1source",
+		Address:          suite.addrSource,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		IsActive:         true,
 		IdentityHash:     "hash1",
@@ -1247,8 +1295,8 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithRoleMigrations() {
 
 	// Create role migration
 	migration := &identv1.RoleMigration{
-		FromAddress: "cosmos1source",
-		ToAddress:   "cosmos1target",
+		FromAddress: suite.addrSource,
+		ToAddress:   suite.addrTarget,
 		// Migration status will be set by keeper,
 		// CreatedAt will be set by keeper,
 	}
@@ -1260,7 +1308,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithRoleMigrations() {
 	require.NoError(suite.T(), err)
 
 	// Verify migration was processed
-	migration, err = suite.keeper.GetRoleMigration(suite.ctx, "cosmos1source", "cosmos1target")
+	migration, err = suite.keeper.GetRoleMigration(suite.ctx, suite.addrSource, suite.addrTarget)
 	// Migration might succeed or fail depending on account limits
 	// We just verify BeginBlocker processed it without error
 	_ = err
@@ -1271,7 +1319,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithRoleMigrations() {
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_DuplicateIdentityHash() {
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test1",
+		Address:          suite.addrTest1,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1283,7 +1331,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_DuplicateIdentityHash() {
 
 	// Try to create second account with same identity hash - should fail
 	account2 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test2",
+		Address:          suite.addrTest2,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1299,7 +1347,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_DuplicateIdentityHash() {
 func (suite *KeeperTestSuite) TestGetVerifiedAccount_UnmarshalError() {
 	// Create account first
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1311,11 +1359,11 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_UnmarshalError() {
 
 	// Corrupt the data in store
 	store := suite.ctx.KVStore(suite.storeKey)
-	accountKey := types.GetVerifiedAccountKey("cosmos1test")
+	accountKey := types.GetVerifiedAccountKey(suite.addrTest)
 	store.Set(accountKey, []byte("invalid data"))
 
 	// Try to get account - should return error
-	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "failed to unmarshal")
 }
@@ -1329,7 +1377,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithInactiveCitizen() {
 	// Create citizen account with old last activity
 	oldTime := time.Now().Add(-100 * 24 * time.Hour) // 100 days ago
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1citizen",
+		Address:          suite.addrCitizen,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -1353,7 +1401,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithInactiveCitizen() {
 	require.NoError(suite.T(), err)
 
 	// Verify citizen was downgraded to GUEST
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updated.Role)
 }
@@ -1363,7 +1411,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithInactiveValidator() {
 	// Create validator account with old last activity
 	oldTime := time.Now().Add(-100 * 24 * time.Hour) // 100 days ago
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1validator",
+		Address:          suite.addrValidator,
 		Role:             identv1.Role_ROLE_VALIDATOR,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -1387,7 +1435,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithInactiveValidator() {
 	require.NoError(suite.T(), err)
 
 	// Verify validator was downgraded to GUEST
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrValidator)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updated.Role)
 }
@@ -1397,7 +1445,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithActiveAccount() {
 	// Create citizen account with recent activity
 	recentTime := time.Now().Add(-1 * 24 * time.Hour) // 1 day ago
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1citizen",
+		Address:          suite.addrCitizen,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(recentTime),
@@ -1421,7 +1469,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithActiveAccount() {
 	require.NoError(suite.T(), err)
 
 	// Verify citizen role was NOT changed
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, updated.Role)
 }
@@ -1430,7 +1478,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithActiveAccount() {
 func (suite *KeeperTestSuite) TestBeginBlocker_WithGuestAccount() {
 	// Create citizen account first, then downgrade to guest
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1guest",
+		Address:          suite.addrGuest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1450,7 +1498,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithGuestAccount() {
 	require.NoError(suite.T(), err)
 
 	// Verify guest role was NOT changed
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1guest")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrGuest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updated.Role)
 }
@@ -1459,7 +1507,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithGuestAccount() {
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount() {
 	// Create account first
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1471,7 +1519,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount
 
 	// Corrupt the data in store
 	store := suite.ctx.KVStore(suite.storeKey)
-	accountKey := types.GetVerifiedAccountKey("cosmos1test")
+	accountKey := types.GetVerifiedAccountKey(suite.addrTest)
 	store.Set(accountKey, []byte("invalid data"))
 
 	// Try to update - should handle unmarshal error gracefully
@@ -1486,7 +1534,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount
 func (suite *KeeperTestSuite) TestReleaseIdentityHash_NoIdentityHash() {
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1502,7 +1550,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash_NoIdentityHash() {
 	store.Delete(identityHashKey)
 
 	// Release should handle missing key gracefully
-	err = suite.keeper.ReleaseIdentityHash(suite.ctx, "cosmos1test")
+	err = suite.keeper.ReleaseIdentityHash(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 }
 
@@ -1512,10 +1560,11 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_CitizenLimit() {
 	params.MaxIdentitiesPerAddress = 2
 	suite.keeper.SetParams(suite.ctx, params)
 
-	// Create 2 citizens (at limit)
+	// Create 2 citizens (at limit) with valid addresses
+	citizenAddrs := []string{mustAddr("0000000000000000000000000000000000000040"), mustAddr("0000000000000000000000000000000000000041")}
 	for i := 0; i < 2; i++ {
 		account := &identv1.VerifiedAccount{
-			Address:          fmt.Sprintf("cosmos1citizen%d", i),
+			Address:          citizenAddrs[i],
 			Role:             identv1.Role_ROLE_CITIZEN,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
@@ -1528,7 +1577,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_CitizenLimit() {
 
 	// Try to create third citizen - should fail
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1citizen3",
+		Address:          mustAddr("0000000000000000000000000000000000000042"),
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1548,7 +1597,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_ValidatorLimit() {
 
 	// Create 1 validator (at limit)
 	account1 := &identv1.VerifiedAccount{
-		Address:          "cosmos1validator1",
+		Address:          suite.addrValidator1,
 		Role:             identv1.Role_ROLE_VALIDATOR,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1560,7 +1609,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_ValidatorLimit() {
 
 	// Try to create second validator - should fail
 	account2 := &identv1.VerifiedAccount{
-		Address:          "cosmos1validator2",
+		Address:          suite.addrValidator2,
 		Role:             identv1.Role_ROLE_VALIDATOR,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1592,7 +1641,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithAnteilKeeperError() {
 	// Create inactive citizen
 	oldTime := time.Now().Add(-100 * 24 * time.Hour)
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1citizen",
+		Address:          suite.addrCitizen,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -1616,7 +1665,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithAnteilKeeperError() {
 	require.NoError(suite.T(), err)
 
 	// Verify citizen was still downgraded despite burn error
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updated.Role)
 }
@@ -1625,7 +1674,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithAnteilKeeperError() {
 func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_UnmarshalError() {
 	// Create valid account first
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1639,7 +1688,7 @@ func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_UnmarshalError() {
 	store := suite.ctx.KVStore(suite.storeKey)
 	accountStore := prefix.NewStore(store, types.VerifiedAccountKeyPrefix)
 	// Get the key for the account
-	accountKey := types.GetVerifiedAccountKey("cosmos1test")
+	accountKey := types.GetVerifiedAccountKey(suite.addrTest)
 	// Remove prefix to get the key in the prefixed store
 	keyWithoutPrefix := accountKey[len(types.VerifiedAccountKeyPrefix):]
 	accountStore.Set(keyWithoutPrefix, []byte("invalid data"))
@@ -1682,7 +1731,7 @@ func (suite *KeeperTestSuite) TestEndBlocker_GetAllAccountsError() {
 func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRoleChange() {
 	// Create citizen account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1citizen",
+		Address:          suite.addrCitizen,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1693,14 +1742,14 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRoleChange() {
 	require.NoError(suite.T(), err)
 
 	// Try to change to GUEST (should be rejected - downgrade not allowed)
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen", identv1.Role_ROLE_GUEST)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrCitizen, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "downgrade from citizen to guest")
 }
 
 // TestChangeAccountRole_AccountNotFound tests ChangeAccountRole when account doesn't exist
 func (suite *KeeperTestSuite) TestChangeAccountRole_AccountNotFound() {
-	err := suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1nonexistent", identv1.Role_ROLE_VALIDATOR)
+	err := suite.keeper.ChangeAccountRole(suite.ctx, suite.addrNonexistent, identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAccountNotFound, err)
 }
@@ -1726,7 +1775,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_GetAccountsError() {
 
 	// Try to set account - checkAccountLimits should fail
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1742,7 +1791,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_GetAccountsError() {
 func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1from",
+		Address:          suite.addrFrom,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1754,7 +1803,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 
 	// Create target account with different identity hash first
 	targetAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1to",
+		Address:          suite.addrTo,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1766,8 +1815,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 
 	// Create migration with hash that conflicts with existing account
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash789", // Different hash, but target already exists
@@ -1778,7 +1827,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 	require.NoError(suite.T(), err)
 
 	// Try to execute migration - should fail because target account already exists
-	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "already exists")
 }
@@ -1787,7 +1836,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 func (suite *KeeperTestSuite) TestExecuteRoleMigration_UpdateAccountError() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1from",
+		Address:          suite.addrFrom,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1799,13 +1848,13 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_UpdateAccountError() {
 
 	// Corrupt source account data
 	store := suite.ctx.KVStore(suite.storeKey)
-	accountKey := types.GetVerifiedAccountKey("cosmos1from")
+	accountKey := types.GetVerifiedAccountKey(suite.addrFrom)
 	store.Set(accountKey, []byte("invalid data"))
 
 	// Create migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash456",
@@ -1816,7 +1865,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_UpdateAccountError() {
 	require.NoError(suite.T(), err)
 
 	// Try to execute migration - should fail when trying to update source account
-	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
 }
 
@@ -1824,7 +1873,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_UpdateAccountError() {
 func (suite *KeeperTestSuite) TestExecuteRoleMigration_SameIdentityHash() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1from",
+		Address:          suite.addrFrom,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1836,8 +1885,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SameIdentityHash() {
 
 	// Create migration with same identity hash
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123", // Same as source
@@ -1848,7 +1897,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SameIdentityHash() {
 	require.NoError(suite.T(), err)
 
 	// Execute migration - should remove old identity hash mapping
-	err = suite.keeper.ExecuteRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.NoError(suite.T(), err)
 
 	// Verify old identity hash mapping was removed
@@ -1863,8 +1912,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SameIdentityHash() {
 func (suite *KeeperTestSuite) TestGetAllRoleMigrations_UnmarshalError() {
 	// Create valid migration first
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -1876,7 +1925,7 @@ func (suite *KeeperTestSuite) TestGetAllRoleMigrations_UnmarshalError() {
 
 	// Corrupt migration data in store
 	store := suite.ctx.KVStore(suite.storeKey)
-	migrationKey := types.GetRoleMigrationKey("cosmos1from", "cosmos1to")
+	migrationKey := types.GetRoleMigrationKey(suite.addrFrom, suite.addrTo)
 	store.Set(migrationKey, []byte("invalid data"))
 
 	// Try to get all migrations - should return error
@@ -1892,8 +1941,8 @@ func (suite *KeeperTestSuite) TestGetAllRoleMigrations_UnmarshalError() {
 func (suite *KeeperTestSuite) TestGetRoleMigration_UnmarshalError() {
 	// Create valid migration first
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -1905,11 +1954,11 @@ func (suite *KeeperTestSuite) TestGetRoleMigration_UnmarshalError() {
 
 	// Corrupt migration data in store
 	store := suite.ctx.KVStore(suite.storeKey)
-	migrationKey := types.GetRoleMigrationKey("cosmos1from", "cosmos1to")
+	migrationKey := types.GetRoleMigrationKey(suite.addrFrom, suite.addrTo)
 	store.Set(migrationKey, []byte("invalid data"))
 
 	// Try to get migration - should return error
-	_, err = suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	_, err = suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
 	// Error message may vary, but should indicate unmarshaling failure
 	require.NotNil(suite.T(), err)
@@ -1919,7 +1968,7 @@ func (suite *KeeperTestSuite) TestGetRoleMigration_UnmarshalError() {
 func (suite *KeeperTestSuite) TestValidateRoleChoice_AlreadyVerified() {
 	// Create account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1930,7 +1979,7 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_AlreadyVerified() {
 	require.NoError(suite.T(), err)
 
 	// Try to validate role choice for already verified address
-	err = suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1test", identv1.Role_ROLE_CITIZEN)
+	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_CITIZEN)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAlreadyVerified, err)
 }
@@ -1938,12 +1987,12 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_AlreadyVerified() {
 // TestValidateRoleChoice_InvalidRole tests ValidateRoleChoice with invalid role
 func (suite *KeeperTestSuite) TestValidateRoleChoice_InvalidRole() {
 	// Try to validate GUEST role (invalid)
-	err := suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1test", identv1.Role_ROLE_GUEST)
+	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
 
 	// Try to validate UNSPECIFIED role (invalid)
-	err = suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1test", identv1.Role_ROLE_UNSPECIFIED)
+	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_UNSPECIFIED)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
 }
@@ -1951,11 +2000,11 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_InvalidRole() {
 // TestValidateRoleChoice_ValidRoles tests ValidateRoleChoice with valid roles
 func (suite *KeeperTestSuite) TestValidateRoleChoice_ValidRoles() {
 	// Validate CITIZEN role (valid)
-	err := suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1test", identv1.Role_ROLE_CITIZEN)
+	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_CITIZEN)
 	require.NoError(suite.T(), err)
 
 	// Validate VALIDATOR role (valid)
-	err = suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1test2", identv1.Role_ROLE_VALIDATOR)
+	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest2, identv1.Role_ROLE_VALIDATOR)
 	require.NoError(suite.T(), err)
 }
 
@@ -1963,8 +2012,8 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_ValidRoles() {
 func (suite *KeeperTestSuite) TestSetRoleMigration_MarshalError() {
 	// Create valid migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -1976,9 +2025,9 @@ func (suite *KeeperTestSuite) TestSetRoleMigration_MarshalError() {
 	require.NoError(suite.T(), err)
 
 	// Verify migration was stored
-	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), "cosmos1from", retrieved.FromAddress)
+	require.Equal(suite.T(), suite.addrFrom, retrieved.FromAddress)
 }
 
 // TestGetVerifiedAccount_UnmarshalError_EdgeCase tests GetVerifiedAccount edge cases
@@ -1986,7 +2035,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_UnmarshalError_EdgeCase() {
 	// This test is already covered by TestGetVerifiedAccount_UnmarshalError
 	// Adding additional edge case: account exists but data is corrupted
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -1998,11 +2047,11 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_UnmarshalError_EdgeCase() {
 
 	// Corrupt data
 	store := suite.ctx.KVStore(suite.storeKey)
-	accountKey := types.GetVerifiedAccountKey("cosmos1test")
+	accountKey := types.GetVerifiedAccountKey(suite.addrTest)
 	store.Set(accountKey, []byte("corrupted"))
 
 	// Should return error
-	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.Error(suite.T(), err)
 }
 
@@ -2015,7 +2064,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_AccountLimitError() {
 
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test1",
+		Address:          suite.addrTest1,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2027,7 +2076,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_AccountLimitError() {
 
 	// Try to create second account - should fail
 	account2 := &identv1.VerifiedAccount{
-		Address:          "cosmos1test2",
+		Address:          suite.addrTest2,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2044,7 +2093,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_UpdateError() {
 	// Create inactive citizen
 	oldTime := time.Now().Add(-100 * 24 * time.Hour)
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1citizen",
+		Address:          suite.addrCitizen,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -2065,7 +2114,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_UpdateError() {
 
 	// Corrupt account data before BeginBlocker
 	store := suite.ctx.KVStore(suite.storeKey)
-	accountKey := types.GetVerifiedAccountKey("cosmos1citizen")
+	accountKey := types.GetVerifiedAccountKey(suite.addrCitizen)
 	store.Set(accountKey, []byte("invalid data"))
 
 	// Run BeginBlocker - should handle error gracefully
@@ -2083,8 +2132,8 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ProcessMigrationsError() {
 
 // TestBeginBlocker_ProcessRoleMigrations_PendingExecuted tests that pending role migrations are executed in BeginBlocker
 func (suite *KeeperTestSuite) TestBeginBlocker_ProcessRoleMigrations_PendingExecuted() {
-	fromAddr := "cosmos1from"
-	toAddr := "cosmos1to"
+	fromAddr := suite.addrFrom
+	toAddr := suite.addrTo
 	// Source account must exist for ExecuteRoleMigration
 	acc := &identv1.VerifiedAccount{
 		Address:              fromAddr,
@@ -2173,7 +2222,7 @@ func (suite *KeeperTestSuite) TestGetAllVerificationProviders() {
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalError() {
 	// Create account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2189,7 +2238,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalError() {
 	require.NoError(suite.T(), err)
 
 	// Verify update
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.False(suite.T(), updated.IsActive)
 }
@@ -2197,20 +2246,20 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalError() {
 // TestValidateRoleChoice_EdgeCases tests ValidateRoleChoice with various edge cases
 func (suite *KeeperTestSuite) TestValidateRoleChoice_EdgeCases() {
 	// Test with valid CITIZEN role
-	err := suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1new", identv1.Role_ROLE_CITIZEN)
+	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew, identv1.Role_ROLE_CITIZEN)
 	require.NoError(suite.T(), err)
 
 	// Test with valid VALIDATOR role
-	err = suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1new2", identv1.Role_ROLE_VALIDATOR)
+	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew2, identv1.Role_ROLE_VALIDATOR)
 	require.NoError(suite.T(), err)
 
 	// Test with invalid GUEST role
-	err = suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1new3", identv1.Role_ROLE_GUEST)
+	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew3, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
 
 	// Test with invalid UNSPECIFIED role
-	err = suite.keeper.ValidateRoleChoice(suite.ctx, "cosmos1new4", identv1.Role_ROLE_UNSPECIFIED)
+	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew4, identv1.Role_ROLE_UNSPECIFIED)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
 }
@@ -2219,8 +2268,8 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_EdgeCases() {
 func (suite *KeeperTestSuite) TestSetRoleMigration_EdgeCases() {
 	// Create valid migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1from",
-		ToAddress:     "cosmos1to",
+		FromAddress:   suite.addrFrom,
+		ToAddress:     suite.addrTo,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_CITIZEN,
 		MigrationHash: "hash123",
@@ -2236,7 +2285,7 @@ func (suite *KeeperTestSuite) TestSetRoleMigration_EdgeCases() {
 	require.NoError(suite.T(), err)
 
 	// Verify update
-	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, "cosmos1from", "cosmos1to")
+	retrieved, err := suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.IsCompleted)
 }
@@ -2254,9 +2303,9 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ComplexScenario() {
 		lastActive       time.Time
 		shouldDeactivate bool
 	}{
-		{"cosmos1active", identv1.Role_ROLE_CITIZEN, time.Now().Add(-1 * 24 * time.Hour), false},
-		{"cosmos1inactive", identv1.Role_ROLE_CITIZEN, time.Now().Add(-100 * 24 * time.Hour), true},
-		{"cosmos1validator", identv1.Role_ROLE_VALIDATOR, time.Now().Add(-50 * 24 * time.Hour), false},
+		{suite.addrActive, identv1.Role_ROLE_CITIZEN, time.Now().Add(-1 * 24 * time.Hour), false},
+		{suite.addrInactive, identv1.Role_ROLE_CITIZEN, time.Now().Add(-100 * 24 * time.Hour), true},
+		{suite.addrValidator, identv1.Role_ROLE_VALIDATOR, time.Now().Add(-50 * 24 * time.Hour), false},
 	}
 
 	for _, acc := range accounts {
@@ -2287,22 +2336,23 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ComplexScenario() {
 	require.NoError(suite.T(), err)
 
 	// Verify inactive citizen was deactivated
-	inactive, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1inactive")
+	inactive, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrInactive)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, inactive.Role)
 
 	// Verify active citizen was NOT deactivated
-	active, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1active")
+	active, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrActive)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, active.Role)
 }
 
 // TestEndBlocker_ComplexScenario tests EndBlocker with multiple accounts
 func (suite *KeeperTestSuite) TestEndBlocker_ComplexScenario() {
-	// Create multiple accounts
+	// Create multiple accounts with valid addresses
+	endBlockerAddrs := []string{mustAddr("0000000000000000000000000000000000000070"), mustAddr("0000000000000000000000000000000000000071"), mustAddr("0000000000000000000000000000000000000072"), mustAddr("0000000000000000000000000000000000000073"), mustAddr("0000000000000000000000000000000000000074")}
 	for i := 0; i < 5; i++ {
 		account := &identv1.VerifiedAccount{
-			Address:          fmt.Sprintf("cosmos1test%d", i),
+			Address:          endBlockerAddrs[i],
 			Role:             identv1.Role_ROLE_CITIZEN,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.New(time.Now().Add(-10 * 24 * time.Hour)),
@@ -2323,7 +2373,7 @@ func (suite *KeeperTestSuite) TestEndBlocker_ComplexScenario() {
 
 	// Verify all accounts had their activity updated
 	for i := 0; i < 5; i++ {
-		account, err := suite.keeper.GetVerifiedAccount(suite.ctx, fmt.Sprintf("cosmos1test%d", i))
+		account, err := suite.keeper.GetVerifiedAccount(suite.ctx, endBlockerAddrs[i])
 		require.NoError(suite.T(), err)
 		require.WithinDuration(suite.T(), currentTime, account.GetLastActive().AsTime(), time.Second)
 	}
@@ -2352,7 +2402,7 @@ func (suite *KeeperTestSuite) TestNewKeeper_WithKeyTable() {
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_IdentityHashUnchanged() {
 	// Create account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2368,7 +2418,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_IdentityHashUnchanged() 
 	require.NoError(suite.T(), err)
 
 	// Verify update
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.False(suite.T(), updated.IsActive)
 	require.Equal(suite.T(), "hash1", updated.IdentityHash)
@@ -2378,7 +2428,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_IdentityHashUnchanged() 
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccountError() {
 	// Create account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2390,7 +2440,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount
 
 	// Corrupt account data
 	store := suite.ctx.KVStore(suite.storeKey)
-	accountKey := types.GetVerifiedAccountKey("cosmos1test")
+	accountKey := types.GetVerifiedAccountKey(suite.addrTest)
 	store.Set(accountKey, []byte("invalid data"))
 
 	// Try to update - unmarshal error is handled gracefully (continue without checking identity hash change)
@@ -2402,7 +2452,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount
 	require.NoError(suite.T(), err)
 
 	// Verify account was updated despite unmarshal error
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.False(suite.T(), updated.IsActive)
 }
@@ -2411,7 +2461,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_MarshalError() {
 	// Create valid account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2422,9 +2472,9 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_MarshalError() {
 	require.NoError(suite.T(), err)
 
 	// Verify account was stored
-	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), "cosmos1test", retrieved.Address)
+	require.Equal(suite.T(), suite.addrTest, retrieved.Address)
 }
 
 // TestcheckAccountActivity_ValidatorInactive tests checkAccountActivity with inactive validator
@@ -2432,7 +2482,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_ValidatorInactive() {
 	// Create inactive validator
 	oldTime := time.Now().Add(-100 * 24 * time.Hour)
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1validator",
+		Address:          suite.addrValidator,
 		Role:             identv1.Role_ROLE_VALIDATOR,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
@@ -2456,7 +2506,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_ValidatorInactive() {
 	require.NoError(suite.T(), err)
 
 	// Verify validator was downgraded to GUEST
-	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
+	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrValidator)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updated.Role)
 }
@@ -2467,7 +2517,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_ValidatorInactive() {
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_MarshalErrorPath() {
 	// Create valid account - Marshal should succeed
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2486,7 +2536,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_MarshalErrorPath() {
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalErrorPath() {
 	// Create account
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2509,7 +2559,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalErrorPath() {
 func (suite *KeeperTestSuite) TestReleaseIdentityHash_EdgeCases() {
 	// Test with account that has identity hash but mapping doesn't exist
 	account := &identv1.VerifiedAccount{
-		Address:          "cosmos1test",
+		Address:          suite.addrTest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
@@ -2525,7 +2575,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash_EdgeCases() {
 	store.Delete(identityHashKey)
 
 	// Release should handle missing mapping gracefully
-	err = suite.keeper.ReleaseIdentityHash(suite.ctx, "cosmos1test")
+	err = suite.keeper.ReleaseIdentityHash(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 }
 
@@ -2538,8 +2588,8 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_AllRoles() {
 		role       identv1.Role
 		lastActive time.Time
 	}{
-		{"cosmos1citizen", identv1.Role_ROLE_CITIZEN, time.Now().Add(-100 * 24 * time.Hour)},
-		{"cosmos1validator", identv1.Role_ROLE_VALIDATOR, time.Now().Add(-100 * 24 * time.Hour)},
+		{suite.addrCitizen, identv1.Role_ROLE_CITIZEN, time.Now().Add(-100 * 24 * time.Hour)},
+		{suite.addrValidator, identv1.Role_ROLE_VALIDATOR, time.Now().Add(-100 * 24 * time.Hour)},
 	}
 
 	var err error
@@ -2558,7 +2608,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_AllRoles() {
 
 	// Create guest account by downgrading a citizen
 	citizenAccount := &identv1.VerifiedAccount{
-		Address:          "cosmos1guest",
+		Address:          suite.addrGuest,
 		Role:             identv1.Role_ROLE_CITIZEN,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(time.Now().Add(-100 * 24 * time.Hour)),
@@ -2592,17 +2642,17 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_AllRoles() {
 	require.NoError(suite.T(), err)
 
 	// Verify citizen was deactivated
-	citizen, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen")
+	citizen, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, citizen.Role)
 
 	// Verify validator was deactivated
-	validator, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
+	validator, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrValidator)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, validator.Role)
 
 	// Verify guest was NOT changed (should skip)
-	guest, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1guest")
+	guest, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrGuest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, guest.Role)
 }
@@ -2618,10 +2668,11 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_DefaultRole() {
 
 // TestGetAllVerifiedAccounts_IteratorError tests GetAllVerifiedAccounts edge cases
 func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_IteratorError() {
-	// Create multiple accounts
+	// Create multiple accounts with valid addresses
+	iterAddrs := []string{mustAddr("0000000000000000000000000000000000000080"), mustAddr("0000000000000000000000000000000000000081"), mustAddr("0000000000000000000000000000000000000082")}
 	for i := 0; i < 3; i++ {
 		account := &identv1.VerifiedAccount{
-			Address:          fmt.Sprintf("cosmos1test%d", i),
+			Address:          iterAddrs[i],
 			Role:             identv1.Role_ROLE_CITIZEN,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
@@ -2641,27 +2692,27 @@ func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_IteratorError() {
 // TestValidateRoleChangeProof tests ValidateRoleChangeProof function
 func (suite *KeeperTestSuite) TestValidateRoleChangeProof() {
 	// Test valid proof
-	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "hash123", "proof-hash123-abc", identv1.Role_ROLE_VALIDATOR)
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, suite.addrTest, "hash123", "proof-hash123-abc", identv1.Role_ROLE_VALIDATOR)
 	require.NoError(suite.T(), err, "Valid proof should pass validation")
 }
 
 // TestValidateRoleChangeProof_EmptyProof tests ValidateRoleChangeProof with empty proof
 func (suite *KeeperTestSuite) TestValidateRoleChangeProof_EmptyProof() {
-	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "hash123", "", identv1.Role_ROLE_VALIDATOR)
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, suite.addrTest, "hash123", "", identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "ZKP proof cannot be empty")
 }
 
 // TestValidateRoleChangeProof_EmptyIdentityHash tests ValidateRoleChangeProof with empty identity hash
 func (suite *KeeperTestSuite) TestValidateRoleChangeProof_EmptyIdentityHash() {
-	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "", "proof123", identv1.Role_ROLE_VALIDATOR)
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, suite.addrTest, "", "proof123", identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "identity hash cannot be empty")
 }
 
 // TestValidateRoleChangeProof_ShortProof tests ValidateRoleChangeProof with short proof
 func (suite *KeeperTestSuite) TestValidateRoleChangeProof_ShortProof() {
-	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, "cosmos1test", "hash123", "short", identv1.Role_ROLE_VALIDATOR)
+	err := suite.keeper.ValidateRoleChangeProof(suite.ctx, suite.addrTest, "hash123", "short", identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "ZKP proof is too short")
 }
@@ -2673,7 +2724,7 @@ func (suite *KeeperTestSuite) TestValidateRoleChange_Downgrade() {
 	
 	// Test 1: VALIDATOR to GUEST downgrade (should be rejected)
 	validatorAccount := &identv1.VerifiedAccount{
-		Address:      "cosmos1validator",
+		Address:      suite.addrValidator,
 		Role:         identv1.Role_ROLE_VALIDATOR,
 		IdentityHash: "hash1",
 		IsActive:     true,
@@ -2682,13 +2733,13 @@ func (suite *KeeperTestSuite) TestValidateRoleChange_Downgrade() {
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, validatorAccount)
 	require.NoError(suite.T(), err)
 	
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1validator", identv1.Role_ROLE_GUEST)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrValidator, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err, "Downgrade from validator to guest should be rejected")
 	require.Contains(suite.T(), err.Error(), "downgrade from validator to guest")
 	
 	// Test 2: CITIZEN to GUEST downgrade (should be rejected)
 	citizenAccount := &identv1.VerifiedAccount{
-		Address:      "cosmos1citizen",
+		Address:      suite.addrCitizen,
 		Role:         identv1.Role_ROLE_CITIZEN,
 		IdentityHash: "hash2",
 		IsActive:     true,
@@ -2697,13 +2748,13 @@ func (suite *KeeperTestSuite) TestValidateRoleChange_Downgrade() {
 	err = suite.keeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 	
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen", identv1.Role_ROLE_GUEST)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrCitizen, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err, "Downgrade from citizen to guest should be rejected")
 	require.Contains(suite.T(), err.Error(), "downgrade from citizen to guest")
 	
 	// Test 3: Valid upgrades should work (CITIZEN to VALIDATOR)
 	citizen2Account := &identv1.VerifiedAccount{
-		Address:      "cosmos1citizen2",
+		Address:      suite.addrCitizen2,
 		Role:         identv1.Role_ROLE_CITIZEN,
 		IdentityHash: "hash3",
 		IsActive:     true,
@@ -2713,11 +2764,11 @@ func (suite *KeeperTestSuite) TestValidateRoleChange_Downgrade() {
 	require.NoError(suite.T(), err)
 	
 	// Upgrade CITIZEN to VALIDATOR (should work)
-	err = suite.keeper.ChangeAccountRole(suite.ctx, "cosmos1citizen2", identv1.Role_ROLE_VALIDATOR)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrCitizen2, identv1.Role_ROLE_VALIDATOR)
 	require.NoError(suite.T(), err, "Upgrade from citizen to validator should succeed")
 	
 	// Verify role was changed
-	updatedCitizen2, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1citizen2")
+	updatedCitizen2, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen2)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, updatedCitizen2.Role)
 }

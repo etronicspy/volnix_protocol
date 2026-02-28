@@ -31,6 +31,10 @@ type MsgServerTestSuite struct {
 }
 
 func (suite *MsgServerTestSuite) SetupTest() {
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
 	// Create codec
 	interfaceRegistry := cdctypes.NewInterfaceRegistry()
 	std.RegisterInterfaces(interfaceRegistry)
@@ -59,7 +63,7 @@ func (suite *MsgServerTestSuite) SetupTest() {
 func (suite *MsgServerTestSuite) TestPlaceOrder() {
 	// Test valid order creation
 	msg := &anteilv1.MsgPlaceOrder{
-		Owner:        "cosmos1test",
+		Owner:        mustAddrInternal("0000000000000000000000000000000000000001"),
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -76,7 +80,7 @@ func (suite *MsgServerTestSuite) TestPlaceOrder() {
 	// Verify order was created
 	order, err := suite.keeper.GetOrder(suite.ctx, resp.OrderId)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), "cosmos1test", order.Owner)
+	require.Equal(suite.T(), mustAddrInternal("0000000000000000000000000000000000000001"), order.Owner)
 	require.Equal(suite.T(), anteilv1.OrderType_ORDER_TYPE_LIMIT, order.OrderType)
 
 	// Test invalid order creation
@@ -97,7 +101,7 @@ func (suite *MsgServerTestSuite) TestPlaceOrder() {
 func (suite *MsgServerTestSuite) TestCancelOrder() {
 	// First create an order
 	createMsg := &anteilv1.MsgPlaceOrder{
-		Owner:        "cosmos1test",
+		Owner:        mustAddrInternal("0000000000000000000000000000000000000001"),
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -110,7 +114,7 @@ func (suite *MsgServerTestSuite) TestCancelOrder() {
 
 	// Test valid order cancellation
 	msg := &anteilv1.MsgCancelOrder{
-		Owner:   "cosmos1test",
+		Owner:   mustAddrInternal("0000000000000000000000000000000000000001"),
 		OrderId: createResp.OrderId,
 	}
 
@@ -126,7 +130,7 @@ func (suite *MsgServerTestSuite) TestCancelOrder() {
 	// Test canceling non-existent order
 	nonExistentMsg := &anteilv1.MsgCancelOrder{
 		OrderId: "non_existent_id",
-		Owner:   "cosmos1test",
+		Owner:   mustAddrInternal("0000000000000000000000000000000000000001"),
 	}
 
 	_, err = suite.msgServer.CancelOrder(suite.ctx, nonExistentMsg)
@@ -143,7 +147,7 @@ func (suite *MsgServerTestSuite) TestPlaceBid() {
 	// Test placing bid
 	msg := &anteilv1.MsgPlaceBid{
 		AuctionId:    auction.AuctionId,
-		Bidder:       "cosmos1test",
+		Bidder:       mustAddrInternal("0000000000000000000000000000000000000001"),
 		Amount:       "1000000",
 		IdentityHash: "hash123",
 	}
@@ -159,7 +163,7 @@ func (suite *MsgServerTestSuite) TestPlaceBid() {
 	// Test placing bid on non-existent auction
 	nonExistentMsg := &anteilv1.MsgPlaceBid{
 		AuctionId:    "non_existent_auction",
-		Bidder:       "cosmos2test",
+		Bidder:       mustAddrInternal("0000000000000000000000000000000000000002"),
 		Amount:       "1000000",
 		IdentityHash: "hash456",
 	}
@@ -176,10 +180,10 @@ func (suite *MsgServerTestSuite) TestSettleAuction() {
 	require.NoError(suite.T(), err)
 
 	// Place bids using keeper directly
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1test", "1000000")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, mustAddrInternal("0000000000000000000000000000000000000001"), "1000000")
 	require.NoError(suite.T(), err)
 
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos2test", "1500000")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, mustAddrInternal("0000000000000000000000000000000000000002"), "1500000")
 	require.NoError(suite.T(), err)
 
 	// Verify winning bid was set

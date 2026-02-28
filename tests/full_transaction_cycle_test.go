@@ -59,7 +59,7 @@ func (suite *FullTransactionCycleTestSuite) SetupTest() {
 // 4. ANT Market Participation (Create orders, place bids)
 func (suite *FullTransactionCycleTestSuite) TestCompleteUserJourney() {
 	ctx := suite.testCtx.Ctx
-	userAddr := "cosmos1user123"
+	userAddr := TestAddresses.Test1
 
 	suite.T().Log("=== Phase 1: Identity Verification ===")
 
@@ -215,7 +215,7 @@ func (suite *FullTransactionCycleTestSuite) TestCompleteUserJourney() {
 // TestRoleChangeValidation tests that role changes follow proper validation rules
 func (suite *FullTransactionCycleTestSuite) TestRoleChangeValidation() {
 	ctx := suite.testCtx.Ctx
-	userAddr := "cosmos1user456"
+	userAddr := TestAddresses.Test2
 
 	// Step 1: Create Citizen account
 	citizenAccount := identtypes.NewVerifiedAccount(userAddr, identv1.Role_ROLE_CITIZEN, "hash_456")
@@ -260,8 +260,8 @@ func (suite *FullTransactionCycleTestSuite) TestRoleChangeValidation() {
 // TestAuctionAccessControl tests that only validators can place bids in auctions
 func (suite *FullTransactionCycleTestSuite) TestAuctionAccessControl() {
 	ctx := suite.testCtx.Ctx
-	citizenAddr := "cosmos1citizen789"
-	validatorAddr := "cosmos1validator789"
+	citizenAddr := TestAddresses.Test3
+	validatorAddr := TestAddresses.Validator2
 
 	// Step 1: Create Citizen account
 	citizenAccount := identtypes.NewVerifiedAccount(citizenAddr, identv1.Role_ROLE_CITIZEN, "hash_citizen")

@@ -12,12 +12,18 @@ import (
 	"github.com/cosmos/cosmos-sdk/std"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
 )
+
+// consensusAuthority returns the consensus module address for test msg authorization
+func consensusAuthority() string {
+	return authtypes.NewModuleAddress(types.ModuleName).String()
+}
 
 type MsgServerTestSuite struct {
 	suite.Suite
@@ -59,7 +65,7 @@ func (suite *MsgServerTestSuite) SetupTest() {
 func (suite *MsgServerTestSuite) TestUpdateConsensusState() {
 	// Test valid consensus state update
 	msg := &consensusv1.MsgUpdateConsensusState{
-		Authority:        "cosmos1test",
+		Authority:        consensusAuthority(),
 		CurrentHeight:    1000,
 		TotalAntBurned:   "1000000",
 		ActiveValidators: []string{"cosmos1test1", "cosmos2test2"},
@@ -92,7 +98,7 @@ func (suite *MsgServerTestSuite) TestUpdateConsensusState() {
 func (suite *MsgServerTestSuite) TestSetValidatorWeight() {
 	// Test valid validator weight setting
 	msg := &consensusv1.MsgSetValidatorWeight{
-		Authority: "cosmos1test",
+		Authority: consensusAuthority(),
 		Validator: "cosmos1validator",
 		Weight:    "1000000",
 	}
@@ -119,7 +125,7 @@ func (suite *MsgServerTestSuite) TestSetValidatorWeight() {
 
 	// Test empty validator address
 	emptyValidatorMsg := &consensusv1.MsgSetValidatorWeight{
-		Authority: "cosmos1test",
+		Authority: consensusAuthority(),
 		Validator: "",
 		Weight:    "1000000",
 	}
@@ -132,7 +138,7 @@ func (suite *MsgServerTestSuite) TestSetValidatorWeight() {
 func (suite *MsgServerTestSuite) TestProcessHalving() {
 	// Test processing halving
 	msg := &consensusv1.MsgProcessHalving{
-		Authority: "cosmos1test",
+		Authority: consensusAuthority(),
 	}
 
 	resp, err := suite.msgServer.ProcessHalving(suite.ctx, msg)
@@ -157,7 +163,7 @@ func (suite *MsgServerTestSuite) TestProcessHalving() {
 func (suite *MsgServerTestSuite) TestSelectBlockProducer() {
 	// Test selecting block producer
 	msg := &consensusv1.MsgSelectBlockProducer{
-		Authority:  "cosmos1test",
+		Authority:  consensusAuthority(),
 		Validators: []string{"cosmos1test1", "cosmos2test2", "cosmos3test3"},
 	}
 
@@ -179,7 +185,7 @@ func (suite *MsgServerTestSuite) TestSelectBlockProducer() {
 
 	// Test empty validators list
 	emptyValidatorsMsg := &consensusv1.MsgSelectBlockProducer{
-		Authority:  "cosmos1test",
+		Authority:  consensusAuthority(),
 		Validators: []string{},
 	}
 
@@ -191,7 +197,7 @@ func (suite *MsgServerTestSuite) TestSelectBlockProducer() {
 func (suite *MsgServerTestSuite) TestCalculateBlockTime() {
 	// Test calculating block time
 	msg := &consensusv1.MsgCalculateBlockTime{
-		Authority: "cosmos1test",
+		Authority: consensusAuthority(),
 		AntAmount: "1000000",
 	}
 
@@ -212,7 +218,7 @@ func (suite *MsgServerTestSuite) TestCalculateBlockTime() {
 
 	// Test zero ant amount
 	zeroAntMsg := &consensusv1.MsgCalculateBlockTime{
-		Authority: "cosmos1test",
+		Authority: consensusAuthority(),
 		AntAmount: "0",
 	}
 

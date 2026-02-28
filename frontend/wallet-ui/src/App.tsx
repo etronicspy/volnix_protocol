@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, Send, History, Users, Coins, Shield } from 'lucide-react';
+import { Wallet, Send, History, Users, Coins, Shield, TrendingUp } from 'lucide-react';
 import WalletConnect from './components/WalletConnect';
 import Balance from './components/Balance';
 import SendTokens from './components/SendTokens';
 import TransactionHistory from './components/TransactionHistory';
 import WalletTypes from './components/WalletTypes';
 import NetworkStaking from './components/NetworkStaking';
-import { WalletState, WalletType } from './types/wallet';
+import ValidatorDashboard from './components/ValidatorDashboard';
+import AntMarket from './components/AntMarket';
+import { WalletState, WalletType, ValidatorInfo } from './types/wallet';
+import { AntMarketOrder } from './types/wallet';
 import { blockchainService } from './services/blockchainService';
 
 function App() {
@@ -23,10 +26,11 @@ function App() {
     isVerified: false
   });
 
-  const [activeTab, setActiveTab] = useState<'wallet' | 'send' | 'history' | 'types' | 'staking'>('wallet');
+  const [activeTab, setActiveTab] = useState<'wallet' | 'send' | 'history' | 'types' | 'staking' | 'market'>('wallet');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isRestoring, setIsRestoring] = useState(true); // Флаг для отслеживания восстановления состояния
+  const [validatorInfo, setValidatorInfo] = useState<ValidatorInfo | null>(null);
 
   // Ключи для localStorage
   const CURRENT_WALLET_KEY = 'volnix_current_wallet';
@@ -39,7 +43,7 @@ function App() {
       try {
         // Восстанавливаем активную вкладку
         const savedTab = localStorage.getItem(ACTIVE_TAB_KEY);
-        if (savedTab && ['wallet', 'send', 'history', 'types', 'staking'].includes(savedTab)) {
+        if (savedTab && ['wallet', 'send', 'history', 'types', 'staking', 'market'].includes(savedTab)) {
           setActiveTab(savedTab as typeof activeTab);
         }
 
@@ -111,6 +115,26 @@ function App() {
       
       console.log('Loaded role from blockchain:', walletType);
 
+      // Загружаем validatorInfo для валидаторов
+      let vInfo: ValidatorInfo | null = null;
+      if (walletType === 'validator') {
+        const activated = await blockchainService.getActivatedLizenz(address);
+        const lznActivated = activated?.amount ? (parseInt(activated.amount, 10) / 1_000_000).toFixed(6) : '0';
+        vInfo = {
+          address,
+          lznActivated,
+          lznTotal: balances.lzn || '0',
+          shareOfNetwork: '0',
+          passiveIncome: '0',
+          activeIncome: '0',
+          moaRequired: '0',
+          moaCurrent: '0',
+          moaCompliance: 1,
+          lastBlockWon: undefined,
+          blocksWonTotal: 0,
+        };
+      }
+
       // Загружаем транзакции
       const blockchainTxs = await blockchainService.getTransactions(address);
       
@@ -144,6 +168,7 @@ function App() {
         isVerified: walletType !== 'guest',
         transactions
       }));
+      setValidatorInfo(vInfo);
     } catch (err: any) {
       const errorMessage = err?.message || err?.toString() || 'Failed to load wallet data';
       setError(errorMessage);
@@ -159,6 +184,7 @@ function App() {
         },
         transactions: prev.transactions || []
       }));
+      setValidatorInfo(null);
     } finally {
       setIsLoading(false);
     }
@@ -211,6 +237,7 @@ function App() {
       transactions: [],
       isVerified: false
     });
+    setValidatorInfo(null);
 
     // Очищаем сохраненное состояние подключения
     localStorage.removeItem(CURRENT_WALLET_KEY);
@@ -313,6 +340,76 @@ function App() {
       setIsLoading(false);
     }
   };
+
+  const handleActivateLzn = async (amount: string) => {
+    if (!walletState.address) {
+      setError('Wallet not connected');
+      return;
+    }
+    setIsLoading(true);
+    setError('');
+    try {
+      const identityHash = await blockchainService.getIdentityHash(walletState.address);
+      if (!identityHash) {
+        throw new Error('Identity hash not found. Verify your identity first (Wallet Types → upgrade to Validator with ZKP).');
+      }
+      await blockchainService.activateLzn(walletState.address, amount, identityHash);
+      await loadWalletData(walletState.address);
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to activate LZN');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeactivateLzn = async (reason: string) => {
+    if (!walletState.address) {
+      setError('Wallet not connected');
+      return;
+    }
+    setIsLoading(true);
+    setError('');
+    try {
+      await blockchainService.deactivateLzn(walletState.address, reason);
+      await loadWalletData(walletState.address);
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to deactivate LZN');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreateOrder = async (order: Partial<AntMarketOrder>) => {
+    if (!walletState.address) {
+      setError('Wallet not connected');
+      return;
+    }
+    if (!order.antAmount || !order.pricePerAnt) {
+      setError('Amount and price are required');
+      return;
+    }
+    setIsLoading(true);
+    setError('');
+    try {
+      await blockchainService.placeOrder(
+        walletState.address,
+        order.orderSide === 'SELL' ? 'sell' : 'buy',
+        order.antAmount,
+        order.pricePerAnt,
+        order.orderType === 'MARKET'
+      );
+      await loadWalletData(walletState.address);
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to place order');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const marketWalletType = walletState.walletType === 'validator' ? 'validator' : 'citizen';
 
   return (
     <div className="container">
@@ -421,6 +518,14 @@ function App() {
                 <Shield size={20} />
                 Staking
               </button>
+              <button
+                className={`button ${activeTab === 'market' ? '' : 'button-secondary'}`}
+                onClick={() => setActiveTab('market')}
+                style={activeTab !== 'market' ? { background: '#6b7280', opacity: 0.7 } : {}}
+              >
+                <TrendingUp size={20} />
+                Market
+              </button>
             </div>
           </nav>
 
@@ -429,7 +534,26 @@ function App() {
             {activeTab === 'send' && <SendTokens onSend={sendTokens} balance={walletState.balance} />}
             {activeTab === 'history' && <TransactionHistory transactions={walletState.transactions} />}
             {activeTab === 'types' && <WalletTypes currentType={walletState.walletType} onUpgrade={upgradeWalletType} />}
-            {activeTab === 'staking' && <NetworkStaking userAddress={walletState.address} />}
+            {activeTab === 'staking' && (
+              <>
+                {validatorInfo && (
+                  <ValidatorDashboard
+                    validatorInfo={validatorInfo}
+                    onActivateLzn={handleActivateLzn}
+                    onDeactivateLzn={handleDeactivateLzn}
+                  />
+                )}
+                <NetworkStaking userAddress={walletState.address} />
+              </>
+            )}
+            {activeTab === 'market' && (
+              <AntMarket
+                walletType={marketWalletType}
+                antBalance={walletState.balance.ant}
+                wrtBalance={walletState.balance.wrt}
+                onCreateOrder={handleCreateOrder}
+              />
+            )}
           </div>
         </>
       )}

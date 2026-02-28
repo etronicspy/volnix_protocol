@@ -35,13 +35,10 @@ func AssertAccountActive(t *testing.T, keeper *identkeeper.Keeper, ctx sdk.Conte
 
 // CreateTestAccounts creates multiple test accounts with specified roles
 func CreateTestAccounts(t *testing.T, keeper *identkeeper.Keeper, ctx sdk.Context, roles []identv1.Role) []*identv1.VerifiedAccount {
+	addrs := GenerateTestAddresses("", len(roles))
 	accounts := make([]*identv1.VerifiedAccount, len(roles))
 	for i, role := range roles {
-		acc := NewTestVerifiedAccountCustom(
-			fmt.Sprintf("cosmos1test%d", i),
-			role,
-			fmt.Sprintf("hash%d", i),
-		)
+		acc := NewTestVerifiedAccountCustom(addrs[i], role, fmt.Sprintf("hash%d", i))
 		err := keeper.SetVerifiedAccount(ctx, acc)
 		require.NoError(t, err, "Failed to create test account %d", i)
 		accounts[i] = acc
@@ -85,13 +82,10 @@ func AssertUserPosition(t *testing.T, keeper *anteilkeeper.Keeper, ctx sdk.Conte
 
 // CreateTestOrders creates multiple test orders
 func CreateTestOrders(t *testing.T, keeper *anteilkeeper.Keeper, ctx sdk.Context, count int, orderSide anteilv1.OrderSide) []*anteilv1.Order {
+	addrs := GenerateTestAddresses("", count)
 	orders := make([]*anteilv1.Order, count)
 	for i := 0; i < count; i++ {
-		order := NewTestOrder(
-			fmt.Sprintf("cosmos1owner%d", i),
-			anteilv1.OrderType_ORDER_TYPE_LIMIT,
-			orderSide,
-		)
+		order := NewTestOrder(addrs[i], anteilv1.OrderType_ORDER_TYPE_LIMIT, orderSide)
 		err := keeper.SetOrder(ctx, order)
 		require.NoError(t, err, "Failed to create test order %d", i)
 		orders[i] = order
@@ -101,14 +95,10 @@ func CreateTestOrders(t *testing.T, keeper *anteilkeeper.Keeper, ctx sdk.Context
 
 // SetupAuctionWithValidators creates auction and validator accounts
 func SetupAuctionWithValidators(t *testing.T, anteilKeeper *anteilkeeper.Keeper, identKeeper *identkeeper.Keeper, ctx sdk.Context, numValidators int) (string, []*identv1.VerifiedAccount) {
-	// Create validators
+	addrs := GenerateTestAddresses("", numValidators)
 	validators := make([]*identv1.VerifiedAccount, numValidators)
 	for i := 0; i < numValidators; i++ {
-		val := NewTestVerifiedAccountCustom(
-			fmt.Sprintf("cosmos1validator%d", i),
-			identv1.Role_ROLE_VALIDATOR,
-			fmt.Sprintf("hash-val-%d", i),
-		)
+		val := NewTestVerifiedAccountCustom(addrs[i], identv1.Role_ROLE_VALIDATOR, fmt.Sprintf("hash-val-%d", i))
 		err := identKeeper.SetVerifiedAccount(ctx, val)
 		require.NoError(t, err, "Failed to create validator %d", i)
 		validators[i] = val

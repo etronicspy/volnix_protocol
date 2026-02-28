@@ -13,6 +13,7 @@ import (
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	abci "github.com/cometbft/cometbft/abci/types"
+	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -319,6 +320,11 @@ type VolnixApp struct {
 
 	// IMPROVED: Snapshot manager for State Sync
 	snapshotManager *SnapshotManager
+
+	// genesisValidatorPubKey stores the first validator's pubkey from InitChain.
+	// Used in EndBlocker to return ValidatorUpdates with correct pubkey when LZN is activated.
+	// In single-node demo: total LZN power is applied to this validator.
+	genesisValidatorPubKey *cmtcrypto.PublicKey
 }
 
 func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig, paramStoreDB cosmosdb.DB) *VolnixApp {
@@ -543,6 +549,10 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 
 	// Set BeginBlocker and EndBlocker for all modules
 	bapp.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
+		if err := app.ensureAccountForFundedAddress(ctx, DemoWalletAddress); err != nil {
+			return sdk.BeginBlock{}, fmt.Errorf("failed to ensure funded account: %w", err)
+		}
+
 		// Execute BeginBlocker for all modules
 		if err := identKeeper.BeginBlocker(ctx); err != nil {
 			return sdk.BeginBlock{}, fmt.Errorf("ident BeginBlocker failed: %w", err)
@@ -567,29 +577,31 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			return sdk.EndBlock{}, fmt.Errorf("consensus EndBlocker failed: %w", err)
 		}
 
-		// Build ValidatorUpdates from active LZN holders so CometBFT
-		// adjusts its validator set based on economic activity.
+		// Build ValidatorUpdates from active LZN so CometBFT adjusts validator set.
+		// In single-node demo: sum all LZN power and apply to genesis validator.
+		// lz.Validator is bech32 address, not pubkey — we use stored genesis pubkey.
 		var valUpdates []abci.ValidatorUpdate
-		allLizenz, err := lizenzKeeper.GetAllActivatedLizenz(ctx)
-		if err == nil {
-			for _, lz := range allLizenz {
-				if lz == nil || !lz.IsEligibleForRewards {
-					continue
-				}
-				// Voting power proportional to activated LZN amount (min 1)
-				power := int64(1)
-				if lz.Amount != "" && lz.Amount != "0" {
-					if amt, ok := math.NewIntFromString(lz.Amount); ok {
-						p := amt.Quo(math.NewInt(1_000_000)).Int64()
-						if p > 0 {
-							power = p
+		if app.genesisValidatorPubKey != nil {
+			totalPower := int64(0)
+			allLizenz, err := lizenzKeeper.GetAllActivatedLizenz(ctx)
+			if err == nil {
+				for _, lz := range allLizenz {
+					if lz == nil || !lz.IsEligibleForRewards {
+						continue
+					}
+					if lz.Amount != "" && lz.Amount != "0" {
+						if amt, ok := math.NewIntFromString(lz.Amount); ok {
+							p := amt.Quo(math.NewInt(1_000_000)).Int64()
+							totalPower += p
 						}
 					}
 				}
-				valUpdates = append(valUpdates, abci.ValidatorUpdate{
-					PubKey: abci.Ed25519ValidatorUpdate([]byte(lz.Validator), power).PubKey,
-					Power:  power,
-				})
+			}
+			if totalPower < 1 {
+				totalPower = 1
+			}
+			valUpdates = []abci.ValidatorUpdate{
+				{PubKey: *app.genesisValidatorPubKey, Power: totalPower},
 			}
 		}
 
@@ -612,14 +624,20 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			genesisState = make(map[string]json.RawMessage)
 		}
 
-		// Initialize auth module (from app_state or defaults)
-		if data := genesisState[authtypes.ModuleName]; len(data) > 0 {
-			auth.NewAppModule(encoding.Codec, authKeeper, nil, nil).InitGenesis(ctx, encoding.Codec, data)
+		// Always initialize auth module (from app_state or defaults),
+		// otherwise funded accounts may miss sequence/account state.
+		authGenesisData := genesisState[authtypes.ModuleName]
+		if len(authGenesisData) == 0 {
+			authGenesisData = auth.AppModuleBasic{}.DefaultGenesis(encoding.Codec)
 		}
+		auth.NewAppModule(encoding.Codec, authKeeper, nil, nil).InitGenesis(ctx, encoding.Codec, authGenesisData)
 
 		// Initialize bank module (from app_state; needed for demo wallet balances)
 		if data := genesisState[banktypes.ModuleName]; len(data) > 0 {
 			bank.NewAppModule(encoding.Codec, bankKeeper, authKeeper, nil).InitGenesis(ctx, encoding.Codec, data)
+		}
+		if err := app.ensureAccountForFundedAddress(ctx, DemoWalletAddress); err != nil {
+			return nil, fmt.Errorf("failed to ensure funded genesis account: %w", err)
 		}
 
 		// Initialize custom module params directly via keepers
@@ -636,6 +654,11 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 				PubKey: val.PubKey,
 				Power:  val.Power,
 			}
+		}
+		// Store first validator pubkey for EndBlocker (LZN → voting power)
+		if len(req.Validators) > 0 {
+			pk := req.Validators[0].PubKey
+			app.genesisValidatorPubKey = &pk
 		}
 
 		return &abci.ResponseInitChain{
@@ -688,6 +711,26 @@ func (app *VolnixApp) GetModuleManager() *module.Manager {
 	return app.mm
 }
 
+func (app *VolnixApp) ensureAccountForFundedAddress(ctx sdk.Context, bech32Addr string) error {
+	addr, err := sdk.AccAddressFromBech32(bech32Addr)
+	if err != nil {
+		return fmt.Errorf("invalid address %q: %w", bech32Addr, err)
+	}
+
+	if app.authKeeper.GetAccount(ctx, addr) != nil {
+		return nil
+	}
+
+	coins := app.bankKeeper.GetAllBalances(ctx, addr)
+	if coins.Empty() {
+		return nil
+	}
+
+	baseAccount := app.authKeeper.NewAccountWithAddress(ctx, addr)
+	app.authKeeper.SetAccount(ctx, baseAccount)
+	return nil
+}
+
 // ModuleManager returns the app module manager (alias for compatibility).
 func (app *VolnixApp) ModuleManager() *module.Manager {
 	return app.mm
@@ -696,6 +739,21 @@ func (app *VolnixApp) ModuleManager() *module.Manager {
 // GetConsensusKeeper returns the consensus keeper.
 func (app *VolnixApp) GetConsensusKeeper() *consensuskeeper.Keeper {
 	return app.consensusKeeper
+}
+
+// GetLizenzKeeper returns the lizenz keeper (for tests and gRPC).
+func (app *VolnixApp) GetLizenzKeeper() *lizenzkeeper.Keeper {
+	return app.lizenzKeeper
+}
+
+// GetIdentKeeper returns the ident keeper (for tests).
+func (app *VolnixApp) GetIdentKeeper() *identkeeper.Keeper {
+	return app.identKeeper
+}
+
+// GetGenesisValidatorPubKey returns the genesis validator pubkey (for tests).
+func (app *VolnixApp) GetGenesisValidatorPubKey() *cmtcrypto.PublicKey {
+	return app.genesisValidatorPubKey
 }
 
 // GetGovernanceKeeper returns the governance keeper.

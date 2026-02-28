@@ -31,9 +31,21 @@ type MsgServerTestSuite struct {
 	msgServer  identv1.MsgServer
 	storeKey   storetypes.StoreKey
 	paramStore paramtypes.Subspace
+
+	addrTest, addrValidator, addrGuest, addrUnspecified, addrNonexistent, addrTarget string
 }
 
 func (suite *MsgServerTestSuite) SetupTest() {
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
+	suite.addrTest = mustAddr("0000000000000000000000000000000000000001")
+	suite.addrValidator = mustAddr("0000000000000000000000000000000000000002")
+	suite.addrGuest = mustAddr("0000000000000000000000000000000000000003")
+	suite.addrUnspecified = mustAddr("0000000000000000000000000000000000000004")
+	suite.addrNonexistent = mustAddr("0000000000000000000000000000000000000005")
+	suite.addrTarget = mustAddr("0000000000000000000000000000000000000006")
 	// Create codec
 	interfaceRegistry := cdctypes.NewInterfaceRegistry()
 	std.RegisterInterfaces(interfaceRegistry)
@@ -95,7 +107,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 	zkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	coin := sdk.NewCoin("uvx", math.NewInt(1000000))
 	msg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		ZkpProof:             zkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
@@ -107,7 +119,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 	require.NotNil(suite.T(), resp)
 
 	// Verify account was created with chosen role
-	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, account.Role)
 	require.NotEmpty(suite.T(), account.IdentityHash)
@@ -139,7 +151,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
 
 	// Test verification as VALIDATOR
 	validatorMsg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1validator",
+		Address:              suite.addrValidator,
 		ZkpProof:             zkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
@@ -150,14 +162,14 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), resp)
 
-	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1validator")
+	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrValidator)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, account.Role)
 
 	// Test invalid role choice (GUEST)
 	guestZkpProof := "valid_zkp_proof_guest_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	guestMsg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1guest",
+		Address:              suite.addrGuest,
 		ZkpProof:             guestZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
@@ -171,7 +183,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity_RoleChoice() {
 	// Test invalid role choice (UNSPECIFIED)
 	unspecifiedZkpProof := "valid_zkp_proof_unspecified_123456789012345678901234567890123456789012345678901234567890" // 80 bytes
 	unspecifiedMsg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1unspecified",
+		Address:              suite.addrUnspecified,
 		ZkpProof:             unspecifiedZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
@@ -188,7 +200,7 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
 	createZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	createMsg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		ZkpProof:             createZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
@@ -202,7 +214,7 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 	changeCoin := sdk.NewCoin("uvx", math.NewInt(100000))
 	changeZkpProof := "zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	changeMsg := &identv1.MsgChangeRole{
-		Address:   "cosmos1test",
+		Address:   suite.addrTest,
 		NewRole:   identv1.Role_ROLE_VALIDATOR,
 		ZkpProof:  changeZkpProof,
 		ChangeFee: &changeCoin,
@@ -215,7 +227,7 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 	require.NotEmpty(suite.T(), resp.ChangeHash)
 
 	// Verify role was changed
-	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, account.Role)
 }
@@ -226,7 +238,7 @@ func (suite *MsgServerTestSuite) TestChangeRole_EmptyZkpProof() {
 	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
 	createZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234"
 	createMsg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		ZkpProof:             createZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
@@ -237,7 +249,7 @@ func (suite *MsgServerTestSuite) TestChangeRole_EmptyZkpProof() {
 
 	// Try to change role without ZKP proof
 	changeMsg := &identv1.MsgChangeRole{
-		Address:  "cosmos1test",
+		Address:  suite.addrTest,
 		NewRole:  identv1.Role_ROLE_VALIDATOR,
 		ZkpProof: "", // Empty proof!
 	}
@@ -253,7 +265,7 @@ func (suite *MsgServerTestSuite) TestChangeRole_InvalidRole() {
 	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
 	createZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234"
 	createMsg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		ZkpProof:             createZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
@@ -264,7 +276,7 @@ func (suite *MsgServerTestSuite) TestChangeRole_InvalidRole() {
 
 	// Try to change to invalid role
 	changeMsg := &identv1.MsgChangeRole{
-		Address:  "cosmos1test",
+		Address:  suite.addrTest,
 		NewRole:  identv1.Role_ROLE_UNSPECIFIED, // Invalid!
 		ZkpProof: "zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234",
 	}
@@ -276,7 +288,7 @@ func (suite *MsgServerTestSuite) TestChangeRole_InvalidRole() {
 // TestChangeRole_AccountNotFound tests ChangeRole for non-existent account
 func (suite *MsgServerTestSuite) TestChangeRole_AccountNotFound() {
 	changeMsg := &identv1.MsgChangeRole{
-		Address:  "cosmos1nonexistent",
+		Address:  suite.addrNonexistent,
 		NewRole:  identv1.Role_ROLE_VALIDATOR,
 		ZkpProof: "zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234",
 	}
@@ -310,7 +322,7 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 	createCoin := sdk.NewCoin("uvx", math.NewInt(1000000))
 	migrateZkpProof := "valid_zkp_proof_data_1234567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	createMsg := &identv1.MsgVerifyIdentity{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		ZkpProof:             migrateZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
@@ -324,8 +336,8 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 	migrationCoin := sdk.NewCoin("uvx", math.NewInt(500000))
 	migrationZkpProof := "valid_migration_zkp_proof_4567890123456789012345678901234567890123456789012345678901234" // 80 bytes
 	migrationMsg := &identv1.MsgMigrateRole{
-		FromAddress:  "cosmos1test",
-		ToAddress:    "cosmos2test",
+		FromAddress:  suite.addrTest,
+		ToAddress:    suite.addrTarget,
 		ZkpProof:     migrationZkpProof,
 		MigrationFee: &migrationCoin,
 	}
@@ -340,11 +352,11 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 	require.NotNil(suite.T(), resp)
 
 	// Verify source account is deleted
-	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos1test")
+	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.Error(suite.T(), err)
 
 	// Verify target account is created
-	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, "cosmos2test")
+	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTarget)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, account.Role)
 	

@@ -18,6 +18,13 @@ import (
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
 
+func init() {
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
+}
+
 // setupBenchmark creates a keeper for benchmarking
 func setupBenchmark(b *testing.B) (*keeper.Keeper, sdk.Context) {
 	// Create codec
@@ -52,7 +59,7 @@ func BenchmarkCreateOrder(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		order := &anteilv1.Order{
 			OrderId:      fmt.Sprintf("order-%d", i),
-			Owner:        fmt.Sprintf("cosmos1owner%d", i),
+			Owner:        mustAddr(fmt.Sprintf("000000000000000000000000000000000000%04x", i%0x10000)),
 			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 			AntAmount:    "1000000",
@@ -72,7 +79,7 @@ func BenchmarkGetOrder(b *testing.B) {
 	for i := 0; i < 1000; i++ {
 		order := &anteilv1.Order{
 			OrderId:      fmt.Sprintf("order-%d", i),
-			Owner:        "cosmos1test",
+			Owner:        addrTest,
 			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 			AntAmount:    "1000000",
@@ -93,11 +100,11 @@ func BenchmarkGetOrder(b *testing.B) {
 func BenchmarkPlaceBid(b *testing.B) {
 	k, ctx := setupBenchmark(b)
 	
-	// Create mock ident keeper with 100 validators
+	// Create mock ident keeper with 100 validators (valid addresses)
 	accounts := make([]*identv1.VerifiedAccount, 100)
 	for i := 0; i < 100; i++ {
 		accounts[i] = &identv1.VerifiedAccount{
-			Address:      fmt.Sprintf("cosmos1validator%d", i),
+			Address:      mustAddr(fmt.Sprintf("000000000000000000000000000000000000%04x", i+0x100)),
 			Role:         identv1.Role_ROLE_VALIDATOR,
 			IsActive:     true,
 			IdentityHash: fmt.Sprintf("hash%d", i),
@@ -118,7 +125,7 @@ func BenchmarkPlaceBid(b *testing.B) {
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		validatorAddr := fmt.Sprintf("cosmos1validator%d", i%100)
+		validatorAddr := accounts[i%100].Address
 		k.PlaceBid(ctx, "auction-bench", validatorAddr, "15.0")
 	}
 }
@@ -127,11 +134,11 @@ func BenchmarkPlaceBid(b *testing.B) {
 func BenchmarkDistributeAntToCitizens(b *testing.B) {
 	k, ctx := setupBenchmark(b)
 	
-	// Create mock ident keeper with 1000 citizens
+	// Create mock ident keeper with 1000 citizens (valid addresses)
 	accounts := make([]*identv1.VerifiedAccount, 1000)
 	for i := 0; i < 1000; i++ {
 		accounts[i] = &identv1.VerifiedAccount{
-			Address:      fmt.Sprintf("cosmos1citizen%d", i),
+			Address:      mustAddr(fmt.Sprintf("0000000000000000000000000000000000%06x", i+0x1000)),
 			Role:         identv1.Role_ROLE_CITIZEN,
 			IsActive:     true,
 			IdentityHash: fmt.Sprintf("hash%d", i),
@@ -150,18 +157,17 @@ func BenchmarkDistributeAntToCitizens(b *testing.B) {
 func BenchmarkGetUserPosition(b *testing.B) {
 	k, ctx := setupBenchmark(b)
 	
-	// Setup: Create 1000 positions
+	// Setup: Create 1000 positions (valid addresses)
+	userAddrs := make([]string, 1000)
 	for i := 0; i < 1000; i++ {
-		position := &anteilv1.UserPosition{
-			Owner:      fmt.Sprintf("cosmos1user%d", i),
-			AntBalance: "1000000",
-		}
+		userAddrs[i] = mustAddr(fmt.Sprintf("0000000000000000000000000000000000%06x", i+0x2000))
+		position := &anteilv1.UserPosition{Owner: userAddrs[i], AntBalance: "1000000"}
 		k.SetUserPosition(ctx, position)
 	}
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		k.GetUserPosition(ctx, fmt.Sprintf("cosmos1user%d", i%1000))
+		k.GetUserPosition(ctx, userAddrs[i%1000])
 	}
 }
 

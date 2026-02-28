@@ -53,6 +53,11 @@ type TestContext struct {
 // NewTestContext создает новый тестовый контекст со всеми необходимыми компонентами
 // Это исправляет проблему "store does not exist" путем правильной инициализации всех stores
 func NewTestContext(t require.TestingT) *TestContext {
+	// Ensure cosmos bech32 prefix for test addresses
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
 	// Create codec
 	interfaceRegistry := cdctypes.NewInterfaceRegistry()
 	std.RegisterInterfaces(interfaceRegistry)

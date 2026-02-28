@@ -3,11 +3,12 @@ import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import { GasPrice } from '@cosmjs/stargate';
 import { Comet38Client } from '@cosmjs/tendermint-rpc';
 import { Registry } from '@cosmjs/proto-signing';
-import { MsgChangeRoleType } from '../types/volnix-messages';
+import { MsgChangeRoleType, MsgActivateLZNType, MsgDeactivateLZNType, MsgPlaceOrderType } from '../types/volnix-messages';
 
 // Конфигурация сети
 const RPC_ENDPOINT = process.env.REACT_APP_RPC_ENDPOINT || 'http://localhost:26657';
-const CHAIN_ID = process.env.REACT_APP_CHAIN_ID || 'volnix-testnet';
+const REST_ENDPOINT = process.env.REACT_APP_REST_ENDPOINT || 'http://localhost:1317';
+const CHAIN_ID = process.env.REACT_APP_CHAIN_ID || 'volnix-1';
 const PREFIX = 'volnix';
 
 // Типы для балансов
@@ -31,6 +32,44 @@ class BlockchainService {
   private client: StargateClient | null = null;
   private signingClient: SigningStargateClient | null = null;
   private wallet: DirectSecp256k1HdWallet | null = null;
+  private readonly STATE_QUERY_RETRY_DELAYS_MS = [250, 500, 1000];
+
+  private isTransientStateQueryError(error: unknown): boolean {
+    const message = String((error as any)?.message || error || '').toLowerCase();
+    return (
+      message.includes('failed to load state at height') ||
+      message.includes('version does not exist') ||
+      message.includes('query failed with (38)')
+    );
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private normalizeBalances(balances: ReadonlyArray<{ denom: string; amount: string }>): { wrt: string; lzn: string; ant: string } {
+    const result = {
+      wrt: '0',
+      lzn: '0',
+      ant: '0',
+    };
+
+    balances.forEach((balance) => {
+      if (!balance || !balance.denom || !balance.amount) return;
+      const amountNum = parseInt(balance.amount, 10);
+      if (isNaN(amountNum)) return;
+
+      if (balance.denom === 'uwrt' || balance.denom === 'wrt') {
+        result.wrt = (amountNum / 1_000_000).toFixed(6);
+      } else if (balance.denom === 'ulzn' || balance.denom === 'lzn') {
+        result.lzn = (amountNum / 1_000_000).toFixed(6);
+      } else if (balance.denom === 'uant' || balance.denom === 'ant') {
+        result.ant = (amountNum / 1_000_000).toFixed(6);
+      }
+    });
+
+    return result;
+  }
 
   // Инициализация клиента для чтения
   async initializeClient(): Promise<void> {
@@ -105,8 +144,10 @@ class BlockchainService {
         const registry = new Registry(defaultRegistryTypes);
         
         // Register custom Volnix Protocol message types
-        // MsgChangeRole: for changing account roles
         registry.register('/volnix.ident.v1.MsgChangeRole', MsgChangeRoleType);
+        registry.register('/volnix.lizenz.v1.MsgActivateLZN', MsgActivateLZNType);
+        registry.register('/volnix.lizenz.v1.MsgDeactivateLZN', MsgDeactivateLZNType);
+        registry.register('/volnix.anteil.v1.MsgPlaceOrder', MsgPlaceOrderType);
         
         // CRITICAL: Use explicit chain-id to avoid "must provide a non-empty value" error
         // when blocks haven't been created yet
@@ -156,38 +197,38 @@ class BlockchainService {
 
   // Получение балансов всех токенов
   async getBalances(address: string): Promise<{ wrt: string; lzn: string; ant: string }> {
-    try {
+    const readBalances = async (): Promise<{ wrt: string; lzn: string; ant: string }> => {
       await this.initializeClient();
       if (!this.client) throw new Error('Client not initialized');
 
       const balances = await this.client.getAllBalances(address);
-      
-      const result = {
-        wrt: '0',
-        lzn: '0',
-        ant: '0',
-      };
+      return this.normalizeBalances(balances || []);
+    };
 
-      if (balances && Array.isArray(balances)) {
-        balances.forEach((balance) => {
-          if (!balance || !balance.denom || !balance.amount) return;
-          
-          const amount = balance.amount;
-          const amountNum = parseInt(amount, 10);
-          if (isNaN(amountNum)) return;
-
-          if (balance.denom === 'uwrt' || balance.denom === 'wrt') {
-            result.wrt = (amountNum / 1_000_000).toFixed(6);
-          } else if (balance.denom === 'ulzn' || balance.denom === 'lzn') {
-            result.lzn = (amountNum / 1_000_000).toFixed(6);
-          } else if (balance.denom === 'uant' || balance.denom === 'ant') {
-            result.ant = (amountNum / 1_000_000).toFixed(6);
+    try {
+      return await readBalances();
+    } catch (error: any) {
+      // Transient startup/race condition on some CometBFT/Cosmos SDK queries.
+      if (this.isTransientStateQueryError(error)) {
+        for (const delay of this.STATE_QUERY_RETRY_DELAYS_MS) {
+          try {
+            this.client = null;
+            await this.sleep(delay);
+            return await readBalances();
+          } catch (retryError: any) {
+            if (!this.isTransientStateQueryError(retryError)) {
+              throw retryError;
+            }
           }
-        });
+        }
       }
 
-      return result;
-    } catch (error: any) {
+      if (this.isTransientStateQueryError(error)) {
+        throw new Error(
+          'Node is temporarily unavailable while syncing state. Please wait a few seconds and try again.'
+        );
+      }
+
       // Если аккаунт не существует, возвращаем нулевые балансы
       if (error.message && error.message.includes('account does not exist')) {
         return { wrt: '0', lzn: '0', ant: '0' };
@@ -228,240 +269,105 @@ class BlockchainService {
     }
   }
 
-  // Сканирование блоков для поиска входящих транзакций
-  async scanForIncomingTransactions(address: string, blocksToScan: number = 100): Promise<void> {
-    try {
-      console.log(`🔍 Scanning last ${blocksToScan} blocks for incoming transactions to ${address}...`);
-      
-      // Получаем текущую высоту блока
-      const statusResponse = await fetch(`${RPC_ENDPOINT}/status`);
-      const statusData = await statusResponse.json();
-      const latestHeight = parseInt(statusData.result?.sync_info?.latest_block_height || '0');
-      
-      if (latestHeight === 0) {
-        console.warn('⚠️  Could not get latest block height');
-        return;
-      }
-      
-      console.log(`📊 Latest block height: ${latestHeight}`);
-      
-      // Определяем диапазон блоков для сканирования
-      const startHeight = Math.max(1, latestHeight - blocksToScan + 1);
-      const endHeight = latestHeight;
-      
-      let foundCount = 0;
-      
-      // Сканируем блоки
-      for (let height = endHeight; height >= startHeight; height--) {
-        try {
-          // Получаем результаты транзакций в блоке
-          const blockResultResponse = await fetch(`${RPC_ENDPOINT}/block_results?height=${height}`);
-          const blockResultData = await blockResultResponse.json();
-          const txResults = blockResultData.result?.txs_results || [];
-          
-          if (txResults.length === 0) continue;
-          
-          // Получаем сами транзакции чтобы извлечь хеши
-          const blockResponse = await fetch(`${RPC_ENDPOINT}/block?height=${height}`);
-          const blockData = await blockResponse.json();
-          const txs = blockData.result?.block?.data?.txs || [];
-          
-          // Проверяем каждую транзакцию
-          for (let i = 0; i < txResults.length; i++) {
-            const txResult = txResults[i];
-            const events = txResult.events || [];
-            
-            // Ищем события transfer с нашим адресом как получателем
-            for (const event of events) {
-              if (event.type === 'transfer' || event.type === 'coin_received') {
-                const attributes = event.attributes || [];
-                
-                let recipient = '';
-                for (const attr of attributes) {
-                  try {
-                    // CRITICAL: Проверяем index - если true, значения уже декодированы
-                    const isIndexed = attr.index === true;
-                    const key = isIndexed ? (attr.key || '') : (attr.key ? atob(attr.key) : '');
-                    const value = isIndexed ? (attr.value || '') : (attr.value ? atob(attr.value) : '');
-                    
-                    if (key === 'recipient' || key === 'receiver') {
-                      recipient = value;
-                    }
-                  } catch (e) {
-                    // Игнорируем ошибки декодирования
-                  }
-                }
-                
-                // Если это наш адрес - сохраняем хеш транзакции
-                if (recipient === address && txs[i]) {
-                  // Вычисляем хеш транзакции (SHA256 от base64 tx)
-                  const txHash = await this.calculateTxHash(txs[i]);
-                  if (txHash) {
-                    this.saveTxHash(address, txHash);
-                    foundCount++;
-                    console.log(`   ✅ Found incoming tx at block ${height}: ${txHash.substring(0, 16)}...`);
-                  }
-                }
+  // Парсинг событий transfer из tx_result в BlockchainTransaction
+  private parseTxEventsToTransaction(
+    tx: { hash?: string; height: string | number },
+    txResult: { code?: number; events?: Array<{ type?: string; attributes?: Array<{ key?: string; value?: string; index?: boolean }> }> },
+    address: string
+  ): BlockchainTransaction {
+    let from = '';
+    let to = '';
+    let amount = '0';
+    let denom = 'uwrt';
+
+    const events = txResult.events || [];
+    for (const event of events) {
+      if (event.type === 'transfer' || event.type === 'coin_spent' || event.type === 'coin_received') {
+        const attributes = event.attributes || [];
+        for (const attr of attributes) {
+          const isIndexed = attr.index === true;
+          let key = '';
+          let value = '';
+          if (isIndexed) {
+            key = attr.key || '';
+            value = attr.value || '';
+          } else {
+            try {
+              key = attr.key ? atob(attr.key) : '';
+              value = attr.value ? atob(attr.value) : '';
+            } catch {
+              key = attr.key || '';
+              value = attr.value || '';
+            }
+          }
+          if (key === 'sender' || key === 'spender') from = value;
+          else if (key === 'recipient' || key === 'receiver') to = value;
+          else if (key === 'amount') {
+            const amounts = value.split(',');
+            for (const amt of amounts) {
+              const match = amt.trim().match(/^(\d+)(\w+)$/);
+              if (match) {
+                amount = match[1];
+                denom = match[2];
+                break;
               }
             }
           }
-        } catch (error: any) {
-          // Игнорируем ошибки отдельных блоков
-          console.warn(`⚠️  Error scanning block ${height}:`, error.message);
         }
       }
-      
-      console.log(`🔍 Scan complete. Found ${foundCount} incoming transactions.`);
-    } catch (error: any) {
-      console.warn(`Failed to scan for incoming transactions: ${error.message}`);
     }
+
+    const hash = (typeof tx.hash === 'string' ? tx.hash : '').replace(/^0x/i, '').toUpperCase();
+    const height = typeof tx.height === 'string' ? parseInt(tx.height, 10) : tx.height;
+
+    return {
+      hash,
+      height,
+      timestamp: new Date().toISOString(),
+      from: from || address,
+      to: to || address,
+      amount,
+      denom,
+      status: (txResult.code === 0 ? 'success' : 'failed') as 'success' | 'failed',
+    };
   }
 
-  // Вычисление хеша транзакции из base64 данных
-  private async calculateTxHash(txBase64: string): Promise<string | null> {
-    try {
-      // Декодируем base64 в байты
-      const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
-      
-      // Вычисляем SHA256
-      const hashBuffer = await crypto.subtle.digest('SHA-256', txBytes);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      
-      return hashHex.toUpperCase();
-    } catch (error) {
-      console.warn('Failed to calculate tx hash:', error);
-      return null;
-    }
-  }
-
-  // Получение транзакций аккаунта
-  async getTransactions(address: string, limit: number = 50, scanBlocks: boolean = true): Promise<BlockchainTransaction[]> {
+  // Получение транзакций через tx_search (источник правды — нода)
+  async getTransactions(address: string, limit: number = 50, _scanBlocks?: boolean): Promise<BlockchainTransaction[]> {
     await this.initializeClient();
     if (!this.client) throw new Error('Client not initialized');
 
     try {
-      // НОВЫЙ: Сначала сканируем блоки для поиска входящих транзакций
-      if (scanBlocks) {
-        const SCAN_FLAG_KEY = `volnix_last_scan_${address}`;
-        const lastScan = localStorage.getItem(SCAN_FLAG_KEY);
-        const now = Date.now();
-        
-        // Сканируем только раз в 30 секунд
-        if (!lastScan || now - parseInt(lastScan) > 30000) {
-          await this.scanForIncomingTransactions(address, 100);
-          localStorage.setItem(SCAN_FLAG_KEY, now.toString());
+      const perPage = Math.min(limit, 100);
+
+      const fetchTxSearch = async (query: string): Promise<BlockchainTransaction[]> => {
+        const url = `${RPC_ENDPOINT}/tx_search?query=${encodeURIComponent(query)}&prove=false&per_page=${perPage}&order_by=desc`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.error) {
+          console.warn(`tx_search failed for ${query}:`, data.error);
+          return [];
         }
+        const txs = data.result?.txs || [];
+        return txs.map((item: { hash?: string; height?: string; tx_result?: object }) =>
+          this.parseTxEventsToTransaction(item, item.tx_result || {}, address)
+        );
+      };
+
+      const [incoming, outgoing] = await Promise.all([
+        fetchTxSearch(`transfer.recipient='${address}'`),
+        fetchTxSearch(`transfer.sender='${address}'`),
+      ]);
+
+      const byHash = new Map<string, BlockchainTransaction>();
+      for (const tx of [...incoming, ...outgoing]) {
+        if (!byHash.has(tx.hash)) byHash.set(tx.hash, tx);
       }
-      
-      // Загружаем хеши из localStorage и получаем детали через /tx?hash=
-      // Это работает, так как /tx?hash= индексируется корректно, в отличие от /tx_search
-      
-      const TX_STORAGE_KEY = `volnix_txs_${address}`;
-      const storedTxs = localStorage.getItem(TX_STORAGE_KEY);
-      const txHashes: string[] = storedTxs ? JSON.parse(storedTxs) : [];
-      
-      if (txHashes.length === 0) {
-        console.log('📭 No transactions found in localStorage for', address);
-        return [];
-      }
+      const transactions = Array.from(byHash.values())
+        .sort((a, b) => b.height - a.height)
+        .slice(0, limit);
 
-      console.log(`📦 Loading ${txHashes.length} transactions from localStorage`);
-
-      // Загружаем детали каждой транзакции
-      const txPromises = txHashes.slice(0, limit).map(async (hash) => {
-        try {
-          const response = await fetch(`${RPC_ENDPOINT}/tx?hash=0x${hash}`);
-          const data = await response.json();
-          
-          if (data.error) {
-            console.warn(`Transaction ${hash} not found:`, data.error.data);
-            return null;
-          }
-
-          if (!data.result) {
-            return null;
-          }
-
-          const tx = data.result;
-          const txResult = tx.tx_result || {};
-          
-          // Парсим события для получения from/to/amount
-          let from = '';
-          let to = '';
-          let amount = '0';
-          let denom = 'uwrt';
-          
-          const events = txResult.events || [];
-          for (const event of events) {
-            // CRITICAL: Проверяем transfer, coin_spent и coin_received события
-            if (event.type === 'transfer' || event.type === 'coin_spent' || event.type === 'coin_received') {
-              const attributes = event.attributes || [];
-              for (const attr of attributes) {
-                // CRITICAL: Атрибуты могут быть в base64 ИЛИ уже декодированы (если index: true)
-                // Проверяем index флаг - если true, значения уже строки
-                let key = '';
-                let value = '';
-                
-                const isIndexed = attr.index === true;
-                
-                if (isIndexed) {
-                  // Если index: true, значения уже декодированы (строки)
-                  key = attr.key || '';
-                  value = attr.value || '';
-                } else {
-                  // Если index: false, значения в base64 - декодируем
-                  try {
-                    key = attr.key ? atob(attr.key) : '';
-                    value = attr.value ? atob(attr.value) : '';
-                  } catch (e) {
-                    // Если декодирование не удалось, используем как есть
-                    key = attr.key || '';
-                    value = attr.value || '';
-                  }
-                }
-                
-                // Парсим разные атрибуты
-                if (key === 'sender' || key === 'spender') {
-                  from = value;
-                } else if (key === 'recipient' || key === 'receiver') {
-                  to = value;
-                } else if (key === 'amount') {
-                  // amount формат: "1000000uwrt" или "1000000uwrt,2000000ulzn"
-                  const amounts = value.split(',');
-                  for (const amt of amounts) {
-                    const match = amt.trim().match(/^(\d+)(\w+)$/);
-                    if (match) {
-                      amount = match[1];
-                      denom = match[2];
-                      break; // Берем первую сумму
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          return {
-            hash: tx.hash || hash,
-            height: typeof tx.height === 'string' ? parseInt(tx.height) : tx.height,
-            timestamp: new Date().toISOString(), // CometBFT не возвращает timestamp через /tx
-            from: from || address,
-            to: to || address,
-            amount,
-            denom,
-            status: (txResult.code === 0 ? 'success' : 'failed') as 'success' | 'failed',
-          };
-        } catch (error: any) {
-          console.warn(`Failed to load transaction ${hash}:`, error.message);
-          return null;
-        }
-      });
-
-      const results = await Promise.all(txPromises);
-      const transactions = results.filter((tx): tx is BlockchainTransaction => tx !== null);
-      
-      console.log(`✅ Loaded ${transactions.length} transactions`);
+      console.log(`✅ Loaded ${transactions.length} transactions via tx_search`);
       return transactions;
     } catch (error: any) {
       console.warn(`Failed to get transactions: ${error.message || error}. Returning empty.`);
@@ -683,6 +589,120 @@ class BlockchainService {
     }
   }
 
+  // Активация LZN (только для валидаторов с верифицированной идентичностью)
+  async activateLzn(
+    validator: string,
+    amount: string,
+    identityHash: string
+  ): Promise<string> {
+    if (!this.signingClient) {
+      throw new Error('Signing client not initialized. Please connect wallet with mnemonic.');
+    }
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      throw new Error('Amount must be greater than 0');
+    }
+    if (!identityHash || identityHash.trim() === '') {
+      throw new Error('Identity hash is required for LZN activation. Verify your identity first.');
+    }
+    const amountInMicro = Math.floor(amountNum * 1_000_000).toString();
+    if (amountInMicro === '0') {
+      throw new Error('Amount is too small');
+    }
+
+    const msg = {
+      typeUrl: '/volnix.lizenz.v1.MsgActivateLZN',
+      value: {
+        validator,
+        amount: amountInMicro,
+        identityHash,
+      },
+    };
+
+    const fee = {
+      amount: [{ denom: 'uwrt', amount: '5000' }],
+      gas: '200000',
+    };
+
+    const result = await this.signingClient.signAndBroadcast(validator, [msg], fee);
+    if (result.code !== 0) {
+      throw new Error(`Activate LZN failed: ${result.rawLog}`);
+    }
+    this.saveTxHash(validator, result.transactionHash);
+    await new Promise((r) => setTimeout(r, 500));
+    return result.transactionHash;
+  }
+
+  // Деактивация LZN
+  async deactivateLzn(validator: string, reason: string): Promise<string> {
+    if (!this.signingClient) {
+      throw new Error('Signing client not initialized. Please connect wallet with mnemonic.');
+    }
+    if (!reason || reason.trim() === '') {
+      throw new Error('Reason is required for LZN deactivation.');
+    }
+
+    const msg = {
+      typeUrl: '/volnix.lizenz.v1.MsgDeactivateLZN',
+      value: {
+        validator,
+        amount: '0',
+        reason,
+      },
+    };
+
+    const fee = {
+      amount: [{ denom: 'uwrt', amount: '5000' }],
+      gas: '200000',
+    };
+
+    const result = await this.signingClient.signAndBroadcast(validator, [msg], fee);
+    if (result.code !== 0) {
+      throw new Error(`Deactivate LZN failed: ${result.rawLog}`);
+    }
+    this.saveTxHash(validator, result.transactionHash);
+    await new Promise((r) => setTimeout(r, 500));
+    return result.transactionHash;
+  }
+
+  // Получение активированного LZN для валидатора
+  async getActivatedLizenz(validator: string): Promise<{ amount: string } | null> {
+    const paths = [
+      `${REST_ENDPOINT}/volnix/lizenz/v1/activated/${validator}`,
+      `${REST_ENDPOINT}/volnix/lizenz/v1/lizenz/${validator}`,
+    ];
+    for (const url of paths) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          if (res.status === 404) continue;
+          throw new Error(`Failed to get activated lizenz: ${res.status}`);
+        }
+        const data = await res.json();
+        const al = data?.activated_lizenz;
+        if (!al) return null;
+        return { amount: al.amount || '0' };
+      } catch (e: any) {
+        if (e?.message?.includes('404') || e?.message?.includes('not found')) continue;
+        console.warn('getActivatedLizenz:', url, e?.message);
+      }
+    }
+    return null;
+  }
+
+  // Получение identity hash для верифицированного аккаунта
+  async getIdentityHash(address: string): Promise<string | null> {
+    try {
+      const res = await fetch(`${REST_ENDPOINT}/volnix/ident/v1/verified_account/${address}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const va = data?.verified_account;
+      return va?.identity_hash || va?.identityHash || null;
+    } catch {
+      return null;
+    }
+  }
+
   // Получение статуса сети
   async getNetworkStatus(): Promise<any> {
     await this.initializeClient();
@@ -725,6 +745,77 @@ class BlockchainService {
       // ignore
     }
     return '0.001 WRT';
+  }
+
+  // Размещение ордера на рынке ANT
+  async placeOrder(
+    owner: string,
+    side: 'buy' | 'sell',
+    antAmount: string,
+    price: string,
+    isMarket: boolean
+  ): Promise<string> {
+    if (!this.signingClient) {
+      throw new Error('Signing client not initialized. Please connect wallet with mnemonic.');
+    }
+
+    const amountNum = parseFloat(antAmount);
+    const priceNum = parseFloat(price);
+    if (isNaN(amountNum) || amountNum <= 0 || isNaN(priceNum) || priceNum <= 0) {
+      throw new Error('Amount and price must be greater than 0');
+    }
+
+    // Convert to micro units (1 ANT = 1_000_000 uant, 1 WRT = 1_000_000 uwrt)
+    const antAmountMicro = Math.floor(amountNum * 1_000_000).toString();
+    const priceMicro = Math.floor(priceNum * 1_000_000).toString();
+
+    if (antAmountMicro === '0') {
+      throw new Error('Amount is too small');
+    }
+
+    // OrderType: 1=LIMIT, 2=MARKET
+    // OrderSide: 1=BUY, 2=SELL
+    const orderType = isMarket ? 2 : 1;
+    const orderSide = side === 'buy' ? 1 : 2;
+
+    let identityHash = '';
+    try {
+      const hash = await this.getIdentityHash(owner);
+      if (hash) identityHash = hash;
+    } catch {
+      // identity_hash optional for order placement
+    }
+
+    const placeOrderMsg = {
+      typeUrl: '/volnix.anteil.v1.MsgPlaceOrder',
+      value: {
+        owner,
+        orderType,
+        orderSide,
+        antAmount: antAmountMicro,
+        price: priceMicro,
+        identityHash,
+      },
+    };
+
+    const fee = {
+      amount: [{ denom: 'uwrt', amount: '5000' }],
+      gas: '300000',
+    };
+
+    const result = await this.signingClient.signAndBroadcast(
+      owner,
+      [placeOrderMsg],
+      fee
+    );
+
+    if (result.code !== 0) {
+      throw new Error(`Order failed: ${result.rawLog}`);
+    }
+
+    this.saveTxHash(owner, result.transactionHash);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return result.transactionHash;
   }
 
   // Получение ордеров ANT с REST API
@@ -923,16 +1014,23 @@ class BlockchainService {
       return result.transactionHash;
     } catch (error: any) {
       console.error('❌ Error sending role change transaction:', error);
-      
+
+      const msg = String(error?.message || error || '');
+
       // Provide helpful error messages
-      if (error.message && error.message.includes('not registered')) {
+      if (msg.includes('does not exist on chain') || msg.includes('query sequence')) {
+        throw new Error(
+          'Account does not exist on chain. Send some WRT tokens to your address first (from another wallet or faucet), then try changing your role again.'
+        );
+      }
+      if (msg.includes('not registered')) {
         throw new Error('Message type not registered. Please check Registry configuration.');
       }
-      if (error.message && error.message.includes('ZKP proof')) {
+      if (msg.includes('ZKP proof')) {
         throw new Error('ZKP proof validation failed. Please retry role change.');
       }
-      
-      throw new Error(`Failed to change role: ${error.message || error}`);
+
+      throw new Error(`Failed to change role: ${msg || error}`);
     }
   }
 

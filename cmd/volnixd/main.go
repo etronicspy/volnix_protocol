@@ -45,7 +45,7 @@ func main() {
 				return fmt.Errorf("failed to create server: %w", err)
 			}
 
-			if err := server.initializeFiles(); err != nil {
+			if err := server.InitializeFiles(); err != nil {
 				return fmt.Errorf("failed to initialize files: %w", err)
 			}
 

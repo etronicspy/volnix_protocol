@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/ident/types"
@@ -161,6 +162,9 @@ func TestChangeAccountRole(t *testing.T) {
 }
 
 func TestValidateAccount(t *testing.T) {
+	validAddr, _ := sdk.AccAddressFromHexUnsafe("0000000000000000000000000000000000000001")
+	validAddrStr := validAddr.String()
+
 	tests := []struct {
 		name    string
 		account *identv1.VerifiedAccount
@@ -169,7 +173,7 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "valid account",
 			account: &identv1.VerifiedAccount{
-				Address:      "cosmos1test",
+				Address:      validAddrStr,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IdentityHash: "hash123",
 			},
@@ -187,7 +191,7 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "empty identity hash",
 			account: &identv1.VerifiedAccount{
-				Address:      "cosmos1test",
+				Address:      validAddrStr,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IdentityHash: "",
 			},
@@ -196,7 +200,7 @@ func TestValidateAccount(t *testing.T) {
 		{
 			name: "unspecified role",
 			account: &identv1.VerifiedAccount{
-				Address:      "cosmos1test",
+				Address:      validAddrStr,
 				Role:         identv1.Role_ROLE_UNSPECIFIED,
 				IdentityHash: "hash123",
 			},

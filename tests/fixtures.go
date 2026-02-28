@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
@@ -14,21 +15,65 @@ import (
 	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
-// TestAddresses provides standard test addresses for consistency
+func init() {
+	// Ensure cosmos prefix for tests (valid bech32)
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
+}
+
+// mustBech32 creates a valid bech32 address from hex (20 bytes = 40 hex chars)
+// Ensures cosmos prefix is set before creating address (required for package init order)
+func mustBech32(hexStr string) string {
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
+	addr, err := sdk.AccAddressFromHexUnsafe(hexStr)
+	if err != nil {
+		panic(err)
+	}
+	return addr.String()
+}
+
+// TestAddresses provides standard test addresses (valid bech32)
 var TestAddresses = struct {
 	Guest      string
 	Citizen    string
 	Citizen2   string
+	Citizen3   string
 	Validator  string
 	Validator2 string
 	Inactive   string
+	Buyer      string
+	Seller     string
+	Source     string
+	Target     string
+	Target2    string
+	Target3    string
+	Test1      string
+	Test2      string
+	Test3      string
+	Invalid    string
 }{
-	Guest:      "cosmos1guest",
-	Citizen:    "cosmos1citizen",
-	Citizen2:   "cosmos1citizen2",
-	Validator:  "cosmos1validator",
-	Validator2: "cosmos1validator2",
-	Inactive:   "cosmos1inactive",
+	Guest:      mustBech32("0000000000000000000000000000000000000001"),
+	Citizen:    mustBech32("0000000000000000000000000000000000000002"),
+	Citizen2:   mustBech32("0000000000000000000000000000000000000003"),
+	Citizen3:   mustBech32("0000000000000000000000000000000000000013"),
+	Validator:  mustBech32("0000000000000000000000000000000000000004"),
+	Validator2: mustBech32("0000000000000000000000000000000000000005"),
+	Inactive:   mustBech32("0000000000000000000000000000000000000006"),
+	Buyer:      mustBech32("0000000000000000000000000000000000000007"),
+	Seller:     mustBech32("0000000000000000000000000000000000000008"),
+	Source:     mustBech32("0000000000000000000000000000000000000009"),
+	Target:     mustBech32("000000000000000000000000000000000000000a"),
+	Target2:    mustBech32("000000000000000000000000000000000000000b"),
+	Target3:    mustBech32("000000000000000000000000000000000000000c"),
+	Test1:      mustBech32("0000000000000000000000000000000000000010"),
+	Test2:      mustBech32("0000000000000000000000000000000000000011"),
+	Test3:      mustBech32("0000000000000000000000000000000000000012"),
+	Invalid:    "invalid_address", // Not valid bech32 - for negative tests
 }
 
 // TestHashes provides standard identity hashes for consistency
@@ -155,11 +200,12 @@ func RepeatRole(role identv1.Role, count int) []identv1.Role {
 	return roles
 }
 
-// GenerateTestAddresses generates n unique test addresses
-func GenerateTestAddresses(prefix string, count int) []string {
+// GenerateTestAddresses generates n unique valid bech32 test addresses
+func GenerateTestAddresses(_ string, count int) []string {
 	addresses := make([]string, count)
 	for i := 0; i < count; i++ {
-		addresses[i] = fmt.Sprintf("cosmos1%s%d", prefix, i)
+		hexStr := fmt.Sprintf("000000000000000000000000000000000000%04x", i+0x100)
+		addresses[i] = mustBech32(hexStr)
 	}
 	return addresses
 }

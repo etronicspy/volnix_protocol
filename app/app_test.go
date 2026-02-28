@@ -82,21 +82,43 @@ func TestVolnixApp_GetBaseApp(t *testing.T) {
 }
 
 func TestVolnixApp_GetModuleManager(t *testing.T) {
-	// This test requires full VolnixApp with module manager
-	// Skip for now until AccountKeeper is integrated
-	t.Skip("Skipping until AccountKeeper integration is complete")
+	db := cosmosdb.NewMemDB()
+	paramDB := cosmosdb.NewMemDB()
+	logger := sdklog.NewNopLogger()
+	encoding := MakeEncodingConfig()
+
+	app := NewVolnixApp(logger, db, nil, encoding, paramDB)
+	require.NotNil(t, app)
+
+	mm := app.GetModuleManager()
+	require.NotNil(t, mm)
 }
 
 func TestVolnixApp_ModuleManager(t *testing.T) {
-	// This test requires full VolnixApp with module manager
-	// Skip for now until AccountKeeper is integrated
-	t.Skip("Skipping until AccountKeeper integration is complete")
+	db := cosmosdb.NewMemDB()
+	paramDB := cosmosdb.NewMemDB()
+	logger := sdklog.NewNopLogger()
+	encoding := MakeEncodingConfig()
+
+	app := NewVolnixApp(logger, db, nil, encoding, paramDB)
+	require.NotNil(t, app)
+
+	mm := app.ModuleManager()
+	require.NotNil(t, mm)
+	require.Equal(t, app.GetModuleManager(), mm)
 }
 
 func TestVolnixApp_GetConsensusKeeper(t *testing.T) {
-	// This test requires full VolnixApp with consensus keeper
-	// Skip for now until AccountKeeper is integrated
-	t.Skip("Skipping until AccountKeeper integration is complete")
+	db := cosmosdb.NewMemDB()
+	paramDB := cosmosdb.NewMemDB()
+	logger := sdklog.NewNopLogger()
+	encoding := MakeEncodingConfig()
+
+	app := NewVolnixApp(logger, db, nil, encoding, paramDB)
+	require.NotNil(t, app)
+
+	ck := app.GetConsensusKeeper()
+	require.NotNil(t, ck)
 }
 
 func TestVolnixApp_ModuleAccountAddrs(t *testing.T) {

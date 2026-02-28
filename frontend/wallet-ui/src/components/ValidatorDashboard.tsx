@@ -5,7 +5,7 @@ import { ValidatorInfo } from '../types/wallet';
 interface ValidatorDashboardProps {
   validatorInfo: ValidatorInfo;
   onActivateLzn: (amount: string) => void;
-  onDeactivateLzn: (amount: string) => void;
+  onDeactivateLzn: (reason: string) => void;
 }
 
 const ValidatorDashboard: React.FC<ValidatorDashboardProps> = ({ 
@@ -227,8 +227,8 @@ const ValidatorDashboard: React.FC<ValidatorDashboardProps> = ({
           <button
             className="button"
             onClick={() => {
-              const amount = prompt('Введите количество LZN для деактивации:');
-              if (amount) onDeactivateLzn(amount);
+              const reason = prompt('Введите причину деактивации LZN:');
+              if (reason) onDeactivateLzn(reason);
             }}
             style={{ background: '#ef4444' }}
             disabled={parseFloat(validatorInfo.lznActivated) === 0}

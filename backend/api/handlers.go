@@ -90,7 +90,7 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"chain_id":      "volnix-testnet",
+		"chain_id":      "volnix-1",
 		"latest_height": latestHeight,
 		"modules":       modules,
 	})

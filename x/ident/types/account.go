@@ -3,6 +3,7 @@ package types
 import (
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -60,6 +61,11 @@ func ValidateAccount(acc *identv1.VerifiedAccount) error {
 
 	if acc.Role == identv1.Role_ROLE_UNSPECIFIED {
 		return ErrInvalidRole
+	}
+
+	// Validate address format (bech32) - reject clearly invalid addresses
+	if _, err := sdk.AccAddressFromBech32(acc.Address); err != nil {
+		return ErrInvalidAddress
 	}
 
 	return nil

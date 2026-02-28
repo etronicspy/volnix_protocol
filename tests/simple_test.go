@@ -258,7 +258,7 @@ func TestSystemStability(t *testing.T) {
 					
 				case 2:
 					// Simulate account verification
-					accountAddr := fmt.Sprintf("cosmos1stabilityacc%d_%d", workerID, operationID)
+					accountAddr := mustBech32(fmt.Sprintf("000000000000000000000000000000000000%04x", (workerID*1000+operationID)%0x10000))
 					hash := simpleHash(accountAddr)
 					if len(hash) == 0 {
 						localErrors++

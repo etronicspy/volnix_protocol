@@ -30,9 +30,21 @@ type QueryServerTestSuite struct {
 	queryServer QueryServer
 	storeKey   storetypes.StoreKey
 	paramStore paramtypes.Subspace
+
+	addrTest, addrNonexistent string
+	addrTest1, addrTest2, addrTest3 string
 }
 
 func (suite *QueryServerTestSuite) SetupTest() {
+	cfg := sdk.GetConfig()
+	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+	}
+	suite.addrTest = mustAddr("0000000000000000000000000000000000000001")
+	suite.addrNonexistent = mustAddr("0000000000000000000000000000000000000009")
+	suite.addrTest1 = mustAddr("000000000000000000000000000000000000000a")
+	suite.addrTest2 = mustAddr("000000000000000000000000000000000000000b")
+	suite.addrTest3 = mustAddr("000000000000000000000000000000000000000c")
 	interfaceRegistry := cdctypes.NewInterfaceRegistry()
 	std.RegisterInterfaces(interfaceRegistry)
 	suite.cdc = codec.NewProtoCodec(interfaceRegistry)
@@ -70,7 +82,7 @@ func (suite *QueryServerTestSuite) TestParams() {
 func (suite *QueryServerTestSuite) TestVerifiedAccount() {
 	// Create a verified account
 	account := &identv1.VerifiedAccount{
-		Address:              "cosmos1test",
+		Address:              suite.addrTest,
 		Role:                 identv1.Role_ROLE_CITIZEN,
 		IsActive:             true,
 		VerificationDate:     timestamppb.Now(),
@@ -84,7 +96,7 @@ func (suite *QueryServerTestSuite) TestVerifiedAccount() {
 	// Query the account
 	ctx := sdk.WrapSDKContext(suite.ctx)
 	req := &identv1.QueryVerifiedAccountRequest{
-		Address: "cosmos1test",
+		Address: suite.addrTest,
 	}
 	
 	resp, err := suite.queryServer.VerifiedAccount(ctx, req)
@@ -109,7 +121,7 @@ func (suite *QueryServerTestSuite) TestVerifiedAccount_EmptyAddress() {
 func (suite *QueryServerTestSuite) TestVerifiedAccount_NotFound() {
 	ctx := sdk.WrapSDKContext(suite.ctx)
 	req := &identv1.QueryVerifiedAccountRequest{
-		Address: "cosmos1nonexistent",
+		Address: suite.addrNonexistent,
 	}
 	
 	_, err := suite.queryServer.VerifiedAccount(ctx, req)
@@ -125,7 +137,7 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts() {
 	// Create multiple verified accounts with different roles to avoid limit issues
 	accounts := []*identv1.VerifiedAccount{
 		{
-			Address:              "cosmos1test1",
+			Address:              suite.addrTest1,
 			Role:                 identv1.Role_ROLE_CITIZEN,
 			IsActive:             true,
 			VerificationDate:     timestamppb.Now(),
@@ -134,7 +146,7 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts() {
 			IdentityHash:         "test_hash1",
 		},
 		{
-			Address:              "cosmos1test2",
+			Address:              suite.addrTest2,
 			Role:                 identv1.Role_ROLE_VALIDATOR,
 			IsActive:             true,
 			VerificationDate:     timestamppb.Now(),
@@ -143,7 +155,7 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts() {
 			IdentityHash:         "test_hash2",
 		},
 		{
-			Address:              "cosmos1test3",
+			Address:              suite.addrTest3,
 			Role:                 identv1.Role_ROLE_CITIZEN,
 			IsActive:             true,
 			VerificationDate:     timestamppb.Now(),
@@ -175,13 +187,14 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts_WithPagination() {
 	suite.keeper.SetParams(suite.ctx, params)
 	
 	// Create multiple verified accounts with different roles to avoid limit issues
+	pagAddrs := []string{mustAddr("0000000000000000000000000000000000000010"), mustAddr("0000000000000000000000000000000000000011"), mustAddr("0000000000000000000000000000000000000012"), mustAddr("0000000000000000000000000000000000000013"), mustAddr("0000000000000000000000000000000000000014")}
 	for i := 0; i < 5; i++ {
 		role := identv1.Role_ROLE_CITIZEN
 		if i%2 == 1 {
 			role = identv1.Role_ROLE_VALIDATOR
 		}
 		account := &identv1.VerifiedAccount{
-			Address:              "cosmos1test" + string(rune('0'+i)),
+			Address:              pagAddrs[i],
 			Role:                 role,
 			IsActive:             true,
 			VerificationDate:     timestamppb.Now(),

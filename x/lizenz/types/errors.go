@@ -46,4 +46,7 @@ var (
 	
 	// ErrInvalidRoleForLizenz indicates that validator does not have VALIDATOR role
 	ErrInvalidRoleForLizenz = errors.Register(ModuleName, 14, "only validators with ROLE_VALIDATOR can activate LZN")
+
+	// ErrLizenzAlreadyActive indicates that LZN is already active (IsEligibleForRewards=true)
+	ErrLizenzAlreadyActive = errors.Register(ModuleName, 15, "LZN is already active")
 )

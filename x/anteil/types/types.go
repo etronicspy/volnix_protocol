@@ -104,11 +104,24 @@ func IsOrderValid(order *anteilv1.Order) error {
 	if order.AntAmount == "" {
 		return ErrEmptyAntAmount
 	}
+	if order.AntAmount == "0" {
+		return ErrZeroAntAmount
+	}
 	if order.Price == "" {
 		return ErrEmptyPrice
 	}
 	if order.IdentityHash == "" {
 		return ErrEmptyIdentityHash
+	}
+	if order.OrderType == anteilv1.OrderType_ORDER_TYPE_UNSPECIFIED {
+		return ErrInvalidOrderType
+	}
+	if order.OrderSide == anteilv1.OrderSide_ORDER_SIDE_UNSPECIFIED {
+		return ErrInvalidOrderSide
+	}
+	// Reject negative or zero price
+	if price, err := strconv.ParseFloat(order.Price, 64); err != nil || price <= 0 {
+		return ErrInvalidPrice
 	}
 	return nil
 }

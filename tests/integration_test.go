@@ -75,32 +75,32 @@ func (suite *IntegrationTestSuite) SetupTest() {
 
 func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 	// Step 1: Create verified identity (Citizen)
-	citizenAccount := identtypes.NewVerifiedAccount("cosmos1citizen", identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
 	// Step 2: Create verified identity (Validator)
-	validatorAccount := identtypes.NewVerifiedAccount("cosmos1validator", identv1.Role_ROLE_VALIDATOR, "hash456")
+	validatorAccount := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash456")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, validatorAccount)
 	require.NoError(suite.T(), err)
 
 	// Step 3: Create LZN for validator
-	lizenz := lizenztypes.NewLizenz("cosmos1validator", "1000000", "hash456")
+	lizenz := lizenztypes.NewLizenz(TestAddresses.Validator, "1000000", "hash456")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, lizenz)
 	require.NoError(suite.T(), err)
 
 	// Step 4: Activate LZN
-	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, "cosmos1validator")
+	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 
 	// Step 5: Create ANT position for citizen
-	citizenPosition := anteiltypes.NewUserPosition("cosmos1citizen", "10000000")
+	citizenPosition := anteiltypes.NewUserPosition(TestAddresses.Citizen, "10000000")
 	err = suite.anteilKeeper.SetUserPosition(suite.ctx, citizenPosition)
 	require.NoError(suite.T(), err)
 
 	// Step 6: Create sell order (citizen selling ANT)
 	sellOrder := anteiltypes.NewOrder(
-		"cosmos1citizen",
+		TestAddresses.Citizen,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"1000000",
@@ -114,7 +114,7 @@ func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 
 	// Step 7: Create buy order (validator buying ANT)
 	buyOrder := anteiltypes.NewOrder(
-		"cosmos1validator",
+		TestAddresses.Validator,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1000000",
@@ -142,7 +142,7 @@ func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 	require.Equal(suite.T(), anteilv1.OrderStatus_ORDER_STATUS_FILLED, sellOrderRetrieved.Status)
 
 	// Step 11: Verify user positions were updated
-	citizenPositionRetrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1citizen")
+	citizenPositionRetrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, TestAddresses.Citizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "1", citizenPositionRetrieved.TotalTrades)
 	require.Equal(suite.T(), "1000000", citizenPositionRetrieved.TotalVolume) // ANT amount traded
@@ -154,7 +154,7 @@ func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 	auctionID := auction.AuctionId
 
 	// Step 13: Place bid in auction
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator", "1000000")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator, "1000000")
 	require.NoError(suite.T(), err)
 
 	// Close the auction before settlement
@@ -169,7 +169,7 @@ func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 	require.NoError(suite.T(), err)
 
 	// Step 15: Update consensus state
-	err = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 1000, "1000000", []string{"cosmos1validator"})
+	err = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 1000, "1000000", []string{TestAddresses.Validator})
 	require.NoError(suite.T(), err)
 
 	// Step 16: Verify consensus state
@@ -178,23 +178,23 @@ func (suite *IntegrationTestSuite) TestCompleteEconomicFlow() {
 	require.Equal(suite.T(), uint64(1000), consensusState.CurrentHeight)
 	require.Equal(suite.T(), "1000000", consensusState.TotalAntBurned)
 	require.Len(suite.T(), consensusState.ActiveValidators, 1)
-	require.Equal(suite.T(), "cosmos1validator", consensusState.ActiveValidators[0])
+	require.Equal(suite.T(), TestAddresses.Validator, consensusState.ActiveValidators[0])
 }
 
 func (suite *IntegrationTestSuite) TestRoleMigrationFlow() {
 	// Step 1: Create source account (Citizen)
-	sourceAccount := identtypes.NewVerifiedAccount("cosmos1source", identv1.Role_ROLE_CITIZEN, "hash123")
+	sourceAccount := identtypes.NewVerifiedAccount(TestAddresses.Source, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, sourceAccount)
 	require.NoError(suite.T(), err)
 
 	// Step 2: Create ANT position for source account
-	sourcePosition := anteiltypes.NewUserPosition("cosmos1source", "10000000")
+	sourcePosition := anteiltypes.NewUserPosition(TestAddresses.Source, "10000000")
 	err = suite.anteilKeeper.SetUserPosition(suite.ctx, sourcePosition)
 	require.NoError(suite.T(), err)
 
 	// Step 3: Create some orders for source account
 	sellOrder := anteiltypes.NewOrder(
-		"cosmos1source",
+		TestAddresses.Source,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"1000000",
@@ -207,8 +207,8 @@ func (suite *IntegrationTestSuite) TestRoleMigrationFlow() {
 
 	// Step 4: Set role migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1source",
-		ToAddress:     "cosmos1target",
+		FromAddress:   TestAddresses.Source,
+		ToAddress:     TestAddresses.Target,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
@@ -220,16 +220,16 @@ func (suite *IntegrationTestSuite) TestRoleMigrationFlow() {
 	require.NoError(suite.T(), err)
 
 	// Step 5: Execute role migration
-	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, "cosmos1source", "cosmos1target")
+	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, TestAddresses.Source, TestAddresses.Target)
 	require.NoError(suite.T(), err)
 
 	// Step 6: Verify source account is deactivated (not deleted)
-	sourceAccount, err = suite.identKeeper.GetVerifiedAccount(suite.ctx, "cosmos1source")
+	sourceAccount, err = suite.identKeeper.GetVerifiedAccount(suite.ctx, TestAddresses.Source)
 	require.NoError(suite.T(), err)
 	require.False(suite.T(), sourceAccount.IsActive, "source account should be deactivated after migration")
 
 	// Step 7: Verify target account is created
-	targetAccount, err := suite.identKeeper.GetVerifiedAccount(suite.ctx, "cosmos1target")
+	targetAccount, err := suite.identKeeper.GetVerifiedAccount(suite.ctx, TestAddresses.Target)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, targetAccount.Role)
 	require.Equal(suite.T(), "hash123", targetAccount.IdentityHash)
@@ -238,9 +238,9 @@ func (suite *IntegrationTestSuite) TestRoleMigrationFlow() {
 	// Note: Position migration is not automatically handled by ExecuteRoleMigration
 	// In a real implementation, this would need to be handled separately
 	// For now, we'll skip this check or implement position migration logic
-	// targetPosition, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1target")
+	// targetPosition, err := suite.anteilKeeper.GetUserPosition(suite.ctx, TestAddresses.Target)
 	// require.NoError(suite.T(), err)
-	// require.Equal(suite.T(), "cosmos1target", targetPosition.Owner)
+	// require.Equal(suite.T(), TestAddresses.Target, targetPosition.Owner)
 	// require.Equal(suite.T(), "10000000", targetPosition.AntBalance)
 
 	// Step 9: Note: In real implementation, we would verify order was transferred
@@ -248,20 +248,20 @@ func (suite *IntegrationTestSuite) TestRoleMigrationFlow() {
 
 func (suite *IntegrationTestSuite) TestMOAViolationFlow() {
 	// Step 1: Create validator account
-	validatorAccount := identtypes.NewVerifiedAccount("cosmos1validator", identv1.Role_ROLE_VALIDATOR, "hash456")
+	validatorAccount := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash456")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, validatorAccount)
 	require.NoError(suite.T(), err)
 
 	// Step 2: Create and activate LZN
-	lizenz := lizenztypes.NewLizenz("cosmos1validator", "1000000", "hash456")
+	lizenz := lizenztypes.NewLizenz(TestAddresses.Validator, "1000000", "hash456")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, lizenz)
 	require.NoError(suite.T(), err)
 
-	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, "cosmos1validator")
+	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 
 	// Step 3: Set validator weight
-	err = suite.consensusKeeper.SetValidatorWeight(suite.ctx, "cosmos1validator", "1000000")
+	err = suite.consensusKeeper.SetValidatorWeight(suite.ctx, TestAddresses.Validator, "1000000")
 	require.NoError(suite.T(), err)
 
 	// Step 4: Simulate MOA violation by setting old last active time
@@ -276,19 +276,19 @@ func (suite *IntegrationTestSuite) TestMOAViolationFlow() {
 	require.NoError(suite.T(), err)
 
 	// Step 6: Verify LZN is deactivated due to MOA violation
-	_, err = suite.lizenzKeeper.GetLizenz(suite.ctx, "cosmos1validator")
+	_, err = suite.lizenzKeeper.GetLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 	// Note: In real implementation, we would verify lizenz status
 
 	// Step 7: Verify validator is removed from active validators
 	consensusState, err := suite.consensusKeeper.GetConsensusState(suite.ctx)
 	require.NoError(suite.T(), err)
-	require.NotContains(suite.T(), consensusState.ActiveValidators, "cosmos1validator")
+	require.NotContains(suite.T(), consensusState.ActiveValidators, TestAddresses.Validator)
 }
 
 func (suite *IntegrationTestSuite) TestHalvingFlow() {
 	// Step 1: Set up consensus state with high height
-	err := suite.consensusKeeper.UpdateConsensusState(suite.ctx, 100000, "1000000", []string{"cosmos1validator"})
+	err := suite.consensusKeeper.UpdateConsensusState(suite.ctx, 100000, "1000000", []string{TestAddresses.Validator})
 	require.NoError(suite.T(), err)
 
 	// Step 2: Set halving info
@@ -322,10 +322,10 @@ func (suite *IntegrationTestSuite) TestHalvingFlow() {
 
 func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 	// Step 1: Create multiple accounts
-	citizen1 := identtypes.NewVerifiedAccount("cosmos1citizen1", identv1.Role_ROLE_CITIZEN, "hash123")
-	citizen2 := identtypes.NewVerifiedAccount("cosmos1citizen2", identv1.Role_ROLE_CITIZEN, "hash456")
-	validator1 := identtypes.NewVerifiedAccount("cosmos1validator1", identv1.Role_ROLE_VALIDATOR, "hash789")
-	validator2 := identtypes.NewVerifiedAccount("cosmos1validator2", identv1.Role_ROLE_VALIDATOR, "hash101")
+	citizen1 := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
+	citizen2 := identtypes.NewVerifiedAccount(TestAddresses.Citizen2, identv1.Role_ROLE_CITIZEN, "hash456")
+	validator1 := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash789")
+	validator2 := identtypes.NewVerifiedAccount(TestAddresses.Validator2, identv1.Role_ROLE_VALIDATOR, "hash101")
 
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizen1)
 	require.NoError(suite.T(), err)
@@ -344,20 +344,20 @@ func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 	suite.lizenzKeeper.SetParams(suite.ctx, params)
 	
 	// Only activate first validator to avoid 33% limit violation
-	lizenz1 := lizenztypes.NewLizenz("cosmos1validator1", "1000000", "hash789")
+	lizenz1 := lizenztypes.NewLizenz(TestAddresses.Validator, "1000000", "hash789")
 
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, lizenz1)
 	require.NoError(suite.T(), err)
 
 	// Step 3: Activate LZN - only first validator
-	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, "cosmos1validator1")
+	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 	// Note: Second validator cannot activate due to 33% limit - this is expected behavior
 	// For test purposes, we'll proceed with just one activated validator
 
 	// Step 4: Create ANT positions for citizens
-	position1 := anteiltypes.NewUserPosition("cosmos1citizen1", "10000000")
-	position2 := anteiltypes.NewUserPosition("cosmos1citizen2", "15000000")
+	position1 := anteiltypes.NewUserPosition(TestAddresses.Citizen, "10000000")
+	position2 := anteiltypes.NewUserPosition(TestAddresses.Citizen2, "15000000")
 
 	err = suite.anteilKeeper.SetUserPosition(suite.ctx, position1)
 	require.NoError(suite.T(), err)
@@ -367,7 +367,7 @@ func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 	// Step 5: Create multiple orders
 	// Citizen1 selling ANT
 	sellOrder1 := anteiltypes.NewOrder(
-		"cosmos1citizen1",
+		TestAddresses.Citizen,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"1000000",
@@ -377,7 +377,7 @@ func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 
 	// Citizen2 selling ANT
 	sellOrder2 := anteiltypes.NewOrder(
-		"cosmos1citizen2",
+		TestAddresses.Citizen2,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"2000000",
@@ -387,7 +387,7 @@ func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 
 	// Validator1 buying ANT
 	buyOrder1 := anteiltypes.NewOrder(
-		"cosmos1validator1",
+		TestAddresses.Validator,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1500000",
@@ -397,7 +397,7 @@ func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 
 	// Validator2 buying ANT
 	buyOrder2 := anteiltypes.NewOrder(
-		"cosmos1validator2",
+		TestAddresses.Validator2,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"2500000",
@@ -433,12 +433,12 @@ func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 	// Step 7: Note: In real implementation, we would verify trades were executed
 
 	// Step 8: Verify all positions were updated
-	position1Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position1Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, TestAddresses.Citizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "1", position1Retrieved.TotalTrades)
 	require.Equal(suite.T(), "1500000", position1Retrieved.TotalVolume)
 
-	position2Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1citizen2")
+	position2Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, TestAddresses.Citizen2)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "1", position2Retrieved.TotalTrades)
 	// TotalVolume is based on trade amount (buyOrder2.AntAmount = "2500000"), not sellOrder2.AntAmount
@@ -451,9 +451,9 @@ func (suite *IntegrationTestSuite) TestComplexTradingScenario() {
 	auctionID := auction.AuctionId
 
 	// Step 10: Place multiple bids
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator1", "1000000")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator, "1000000")
 	require.NoError(suite.T(), err)
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator2", "1500000")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator2, "1500000")
 	require.NoError(suite.T(), err)
 
 	// Close the auction before settlement

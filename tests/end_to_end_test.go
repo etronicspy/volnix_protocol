@@ -77,9 +77,9 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	suite.T().Log("Phase 1: Identity Verification and Role Assignment")
 
 	// Create citizens
-	citizen1 := identtypes.NewVerifiedAccount("cosmos1citizen1", identv1.Role_ROLE_CITIZEN, "hash123")
-	citizen2 := identtypes.NewVerifiedAccount("cosmos1citizen2", identv1.Role_ROLE_CITIZEN, "hash456")
-	citizen3 := identtypes.NewVerifiedAccount("cosmos1citizen3", identv1.Role_ROLE_CITIZEN, "hash789")
+	citizen1 := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
+	citizen2 := identtypes.NewVerifiedAccount(TestAddresses.Citizen2, identv1.Role_ROLE_CITIZEN, "hash456")
+	citizen3 := identtypes.NewVerifiedAccount(TestAddresses.Citizen3, identv1.Role_ROLE_CITIZEN, "hash789")
 
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizen1)
 	require.NoError(suite.T(), err)
@@ -89,8 +89,8 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	require.NoError(suite.T(), err)
 
 	// Create validators
-	validator1 := identtypes.NewVerifiedAccount("cosmos1validator1", identv1.Role_ROLE_VALIDATOR, "hash101")
-	validator2 := identtypes.NewVerifiedAccount("cosmos1validator2", identv1.Role_ROLE_VALIDATOR, "hash202")
+	validator1 := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash101")
+	validator2 := identtypes.NewVerifiedAccount(TestAddresses.Validator2, identv1.Role_ROLE_VALIDATOR, "hash202")
 
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, validator1)
 	require.NoError(suite.T(), err)
@@ -121,13 +121,13 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	// If both have amount A, total = 2A, so A <= 2A*0.33, which means 1 <= 0.66 (false!)
 	// Solution: Only one validator can have LZN, OR use very different amounts
 	// For test: Activate only first validator
-	lizenz1 := lizenztypes.NewLizenz("cosmos1validator1", "1000000", "hash101")
+	lizenz1 := lizenztypes.NewLizenz(TestAddresses.Validator, "1000000", "hash101")
 	
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, lizenz1)
 	require.NoError(suite.T(), err)
 	
 	// Activate LZN - only first validator
-	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, "cosmos1validator1")
+	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 	
 	// Note: Second validator cannot activate due to 33% limit
@@ -139,9 +139,9 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	suite.T().Log("Phase 3: ANT Position Creation")
 
 	// Create ANT positions for citizens
-	position1 := anteiltypes.NewUserPosition("cosmos1citizen1", "10000000")
-	position2 := anteiltypes.NewUserPosition("cosmos1citizen2", "15000000")
-	position3 := anteiltypes.NewUserPosition("cosmos1citizen3", "20000000")
+	position1 := anteiltypes.NewUserPosition(TestAddresses.Citizen, "10000000")
+	position2 := anteiltypes.NewUserPosition(TestAddresses.Citizen2, "15000000")
+	position3 := anteiltypes.NewUserPosition(TestAddresses.Citizen3, "20000000")
 
 	err = suite.anteilKeeper.SetUserPosition(suite.ctx, position1)
 	require.NoError(suite.T(), err)
@@ -157,7 +157,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 
 	// Create sell orders (citizens selling ANT)
 	sellOrder1 := anteiltypes.NewOrder(
-		"cosmos1citizen1",
+		TestAddresses.Citizen,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"1000000",
@@ -166,7 +166,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	)
 
 	sellOrder2 := anteiltypes.NewOrder(
-		"cosmos1citizen2",
+		TestAddresses.Citizen2,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"2000000",
@@ -175,7 +175,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	)
 
 	sellOrder3 := anteiltypes.NewOrder(
-		"cosmos1citizen3",
+		TestAddresses.Citizen3,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"3000000",
@@ -196,7 +196,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 
 	// Create buy orders (validators buying ANT)
 	buyOrder1 := anteiltypes.NewOrder(
-		"cosmos1validator1",
+		TestAddresses.Validator,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1500000",
@@ -205,7 +205,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	)
 
 	buyOrder2 := anteiltypes.NewOrder(
-		"cosmos1validator2",
+		TestAddresses.Validator2,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"2500000",
@@ -242,9 +242,9 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	auctionID := auction.AuctionId
 
 	// Place bids
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator1", "1000000")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator, "1000000")
 	require.NoError(suite.T(), err)
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1validator2", "1500000")
+	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator2, "1500000")
 	require.NoError(suite.T(), err)
 
 	// Close the auction before settlement
@@ -264,7 +264,7 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	suite.T().Log("Phase 6: Consensus State Update")
 
 	// Update consensus state
-	err = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 1000, "1000000", []string{"cosmos1validator1", "cosmos1validator2"})
+	err = suite.consensusKeeper.UpdateConsensusState(suite.ctx, 1000, "1000000", []string{TestAddresses.Validator, TestAddresses.Validator2})
 	require.NoError(suite.T(), err)
 
 	// Verify consensus state
@@ -292,12 +292,12 @@ func (suite *EndToEndTestSuite) TestCompleteEconomicCycle() {
 	require.Equal(suite.T(), anteilv1.OrderStatus_ORDER_STATUS_FILLED, sellOrder1Retrieved.Status)
 
 	// Verify user positions were updated
-	position1Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position1Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, TestAddresses.Citizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "1", position1Retrieved.TotalTrades)
 	require.Equal(suite.T(), "1500000", position1Retrieved.TotalVolume)
 
-	position2Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1citizen2")
+	position2Retrieved, err := suite.anteilKeeper.GetUserPosition(suite.ctx, TestAddresses.Citizen2)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "1", position2Retrieved.TotalTrades)
 	require.Equal(suite.T(), "2500000", position2Retrieved.TotalVolume)
@@ -343,18 +343,18 @@ func (suite *EndToEndTestSuite) TestRoleMigrationScenario() {
 	suite.T().Log("Testing Role Migration Scenario")
 
 	// Create source account
-	sourceAccount := identtypes.NewVerifiedAccount("cosmos1source", identv1.Role_ROLE_CITIZEN, "hash123")
+	sourceAccount := identtypes.NewVerifiedAccount(TestAddresses.Source, identv1.Role_ROLE_CITIZEN, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, sourceAccount)
 	require.NoError(suite.T(), err)
 
 	// Create ANT position
-	position := anteiltypes.NewUserPosition("cosmos1source", "10000000")
+	position := anteiltypes.NewUserPosition(TestAddresses.Source, "10000000")
 	err = suite.anteilKeeper.SetUserPosition(suite.ctx, position)
 	require.NoError(suite.T(), err)
 
 	// Create orders
 	order := anteiltypes.NewOrder(
-		"cosmos1source",
+		TestAddresses.Source,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"1000000",
@@ -367,8 +367,8 @@ func (suite *EndToEndTestSuite) TestRoleMigrationScenario() {
 
 	// Set role migration
 	migration := &identv1.RoleMigration{
-		FromAddress:   "cosmos1source",
-		ToAddress:     "cosmos1target",
+		FromAddress:   TestAddresses.Source,
+		ToAddress:     TestAddresses.Target,
 		FromRole:      identv1.Role_ROLE_CITIZEN,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
@@ -380,16 +380,16 @@ func (suite *EndToEndTestSuite) TestRoleMigrationScenario() {
 	require.NoError(suite.T(), err)
 
 	// Execute migration
-	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, "cosmos1source", "cosmos1target")
+	err = suite.identKeeper.ExecuteRoleMigration(suite.ctx, TestAddresses.Source, TestAddresses.Target)
 	require.NoError(suite.T(), err)
 
 	// Verify migration - source account should be deactivated (not deleted)
-	sourceAccount, err = suite.identKeeper.GetVerifiedAccount(suite.ctx, "cosmos1source")
+	sourceAccount, err = suite.identKeeper.GetVerifiedAccount(suite.ctx, TestAddresses.Source)
 	require.NoError(suite.T(), err)
 	require.False(suite.T(), sourceAccount.IsActive, "source account should be deactivated after migration")
 	
 	// Verify target account exists and is active
-	targetAccount, err := suite.identKeeper.GetVerifiedAccount(suite.ctx, "cosmos1target")
+	targetAccount, err := suite.identKeeper.GetVerifiedAccount(suite.ctx, TestAddresses.Target)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), targetAccount.IsActive, "target account should be active")
 	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, targetAccount.Role, "target should have same role as source")
@@ -397,9 +397,9 @@ func (suite *EndToEndTestSuite) TestRoleMigrationScenario() {
 	// Note: Position migration is not automatically handled by ExecuteRoleMigration
 	// In a real implementation, this would need to be handled separately
 	// For now, we'll skip this check or implement position migration logic
-	// targetPosition, err := suite.anteilKeeper.GetUserPosition(suite.ctx, "cosmos1target")
+	// targetPosition, err := suite.anteilKeeper.GetUserPosition(suite.ctx, TestAddresses.Target)
 	// require.NoError(suite.T(), err)
-	// require.Equal(suite.T(), "cosmos1target", targetPosition.Owner)
+	// require.Equal(suite.T(), TestAddresses.Target, targetPosition.Owner)
 
 	// Note: In real implementation, we would verify the order was transferred
 
@@ -410,20 +410,20 @@ func (suite *EndToEndTestSuite) TestMOAViolationScenario() {
 	suite.T().Log("Testing MOA Violation Scenario")
 
 	// Create validator
-	validatorAccount := identtypes.NewVerifiedAccount("cosmos1validator", identv1.Role_ROLE_VALIDATOR, "hash456")
+	validatorAccount := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash456")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, validatorAccount)
 	require.NoError(suite.T(), err)
 
 	// Create and activate LZN
-	lizenz := lizenztypes.NewLizenz("cosmos1validator", "1000000", "hash456")
+	lizenz := lizenztypes.NewLizenz(TestAddresses.Validator, "1000000", "hash456")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, lizenz)
 	require.NoError(suite.T(), err)
 
-	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, "cosmos1validator")
+	err = suite.lizenzKeeper.ActivateLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 
 	// Set validator weight
-	err = suite.consensusKeeper.SetValidatorWeight(suite.ctx, "cosmos1validator", "1000000")
+	err = suite.consensusKeeper.SetValidatorWeight(suite.ctx, TestAddresses.Validator, "1000000")
 	require.NoError(suite.T(), err)
 
 	// Simulate MOA violation
@@ -438,14 +438,14 @@ func (suite *EndToEndTestSuite) TestMOAViolationScenario() {
 	require.NoError(suite.T(), err)
 
 	// Verify LZN is deactivated
-	_, err = suite.lizenzKeeper.GetLizenz(suite.ctx, "cosmos1validator")
+	_, err = suite.lizenzKeeper.GetLizenz(suite.ctx, TestAddresses.Validator)
 	require.NoError(suite.T(), err)
 	// Note: In real implementation, we would verify lizenz status
 
 	// Verify validator is removed from active validators
 	consensusState, err := suite.consensusKeeper.GetConsensusState(suite.ctx)
 	require.NoError(suite.T(), err)
-	require.NotContains(suite.T(), consensusState.ActiveValidators, "cosmos1validator")
+	require.NotContains(suite.T(), consensusState.ActiveValidators, TestAddresses.Validator)
 
 	suite.T().Log("✓ MOA violation scenario completed successfully")
 }

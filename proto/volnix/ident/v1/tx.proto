@@ -19,6 +19,7 @@ service Msg {
 
 // MsgVerifyIdentity defines a message for verifying identity with ZKP
 message MsgVerifyIdentity {
+  option (cosmos.msg.v1.signer) = "address";
   string address = 1;
   string zkp_proof = 2;
   string verification_provider = 3;
@@ -35,6 +36,7 @@ message MsgVerifyIdentityResponse {
 
 // MsgMigrateRole defines a message for migrating role to another address
 message MsgMigrateRole {
+  option (cosmos.msg.v1.signer) = "from_address";
   string from_address = 1;
   string to_address = 2;
   string zkp_proof = 3;
@@ -49,6 +51,7 @@ message MsgMigrateRoleResponse {
 
 // MsgChangeRole defines a message for changing role within the same address
 message MsgChangeRole {
+  option (cosmos.msg.v1.signer) = "address";
   string address = 1;
   Role new_role = 2;
   string zkp_proof = 3;

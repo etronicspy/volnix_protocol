@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"cosmossdk.io/log"
@@ -32,18 +33,12 @@ type MinimalVolnixServer struct {
 
 // NewMinimalCometBFTServer creates a minimal server for CometBFT testing
 func NewMinimalCometBFTServer(homeDir string, logger log.Logger) (*MinimalVolnixServer, error) {
-	// Create database
 	dbPath := filepath.Join(homeDir, "data")
-	db, err := cosmosdb.NewGoLevelDB("volnix", dbPath, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create database: %w", err)
-	}
-
-	// Real encoding config with protobuf tx codec and all module types
 	encodingConfig := MakeEncodingConfig()
-
-	// Full Volnix app with all modules wired
-	app := NewVolnixApp(logger, db, nil, encodingConfig, nil)
+	app, err := loadOrRecoverVolnixApp(homeDir, dbPath, logger, encodingConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	// Enable disk persistence for snapshots (survives restarts)
 	if app.snapshotManager != nil {
@@ -72,6 +67,9 @@ func NewMinimalCometBFTServer(homeDir string, logger log.Logger) (*MinimalVolnix
 	config.RPC.ListenAddress = "tcp://0.0.0.0:26657"
 	config.RPC.CORSAllowedOrigins = []string{"*"}
 
+	// Enable tx indexer for tx_search (transfer.sender, transfer.recipient queries)
+	config.TxIndex.Indexer = "kv"
+
 	// Configure mempool
 	config.Mempool.Size = 5000
 	config.Mempool.MaxTxsBytes = 1073741824
@@ -88,6 +86,60 @@ func NewMinimalCometBFTServer(homeDir string, logger log.Logger) (*MinimalVolnix
 	}
 
 	return server, nil
+}
+
+func loadOrRecoverVolnixApp(homeDir, dbPath string, logger log.Logger, encodingConfig EncodingConfig) (*VolnixApp, error) {
+	db, err := cosmosdb.NewGoLevelDB("volnix", dbPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database: %w", err)
+	}
+
+	app, appErr := newVolnixAppSafe(logger, db, encodingConfig)
+	if appErr == nil {
+		return app, nil
+	}
+
+	msg := strings.ToLower(appErr.Error())
+	if !strings.Contains(msg, "version does not exist") {
+		return nil, appErr
+	}
+
+	// Dev standalone self-healing path: if local store versions became incompatible
+	// (e.g. module store keys changed), rebuild full node data to keep
+	// application DB and CometBFT blockstore consistent.
+	logger.Info("detected incompatible local store version, rebuilding standalone DB", "home", homeDir, "error", appErr)
+
+	if err := db.Close(); err != nil {
+		logger.Error("failed to close corrupted DB before reset", "error", err)
+	}
+
+	if err := os.RemoveAll(dbPath); err != nil {
+		return nil, fmt.Errorf("failed to reset corrupted node data: %w", err)
+	}
+	if err := os.MkdirAll(dbPath, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to recreate data dir after reset: %w", err)
+	}
+
+	db, err = cosmosdb.NewGoLevelDB("volnix", dbPath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to recreate database after reset: %w", err)
+	}
+
+	app, appErr = newVolnixAppSafe(logger, db, encodingConfig)
+	if appErr != nil {
+		return nil, appErr
+	}
+	return app, nil
+}
+
+func newVolnixAppSafe(logger log.Logger, db cosmosdb.DB, encodingConfig EncodingConfig) (app *VolnixApp, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("failed to initialize volnix app: %v", r)
+		}
+	}()
+	app = NewVolnixApp(logger, db, nil, encodingConfig, nil)
+	return app, nil
 }
 
 // Start starts the minimal server with CometBFT node
@@ -114,15 +166,22 @@ func (s *MinimalVolnixServer) Start(ctx context.Context) error {
 	s.logger.Info("🌐 Network endpoints:")
 	s.logger.Info("   🔗 RPC: " + s.config.RPC.ListenAddress)
 	s.logger.Info("   📡 P2P: " + s.config.P2P.ListenAddress)
+	s.logger.Info("   📡 gRPC: tcp://0.0.0.0:9090")
 
-	// Start CometBFT node
+	// Start CometBFT node first (loads app state via InitChain/Info)
 	s.logger.Info("⚡ Starting CometBFT consensus...")
 	if err := s.node.Start(); err != nil {
 		return fmt.Errorf("failed to start CometBFT node: %w", err)
 	}
 
+	// Start gRPC server on 9090 for REST API / backend clients
+	if err := s.app.StartGRPCServer(ctx, 9090); err != nil {
+		s.logger.Error("Failed to start gRPC server", "error", err)
+		return fmt.Errorf("failed to start gRPC server: %w", err)
+	}
+
 	s.logger.Info("🎯 Minimal Volnix Protocol node is running!")
-	s.logger.Info("✨ Ready for consensus and P2P networking!")
+	s.logger.Info("✨ Ready for consensus, gRPC queries, and P2P networking!")
 
 	// Wait for context cancellation
 	<-ctx.Done()
@@ -177,11 +236,9 @@ func (s *MinimalVolnixServer) CreateGenesisFile(genesisFile string) error {
 	dataDir := filepath.Join(s.homeDir, "data")
 	privValKeyFile := filepath.Join(configDir, "priv_validator_key.json")
 	privValStateFile := filepath.Join(dataDir, "priv_validator_state.json")
-	var pv *privval.FilePV
-	if _, err := os.Stat(privValKeyFile); os.IsNotExist(err) {
-		pv = privval.GenFilePV(privValKeyFile, privValStateFile)
-	} else {
-		pv = privval.LoadFilePV(privValKeyFile, privValStateFile)
+	pv, err := loadOrCreateFilePV(privValKeyFile, privValStateFile)
+	if err != nil {
+		return err
 	}
 	return s.createGenesisFile(genesisFile, pv)
 }
@@ -195,10 +252,13 @@ func (s *MinimalVolnixServer) createCometBFTNode() error {
 		return fmt.Errorf("failed to load or generate node key: %w", err)
 	}
 
-	// Load private validator (key was generated during initializeFiles)
+	// Load private validator (key/state generated during initializeFiles)
 	privValKeyFile := filepath.Join(s.config.RootDir, "config", "priv_validator_key.json")
 	privValStateFile := filepath.Join(s.config.RootDir, "data", "priv_validator_state.json")
-	privValidator := privval.LoadFilePV(privValKeyFile, privValStateFile)
+	privValidator, err := loadOrCreateFilePV(privValKeyFile, privValStateFile)
+	if err != nil {
+		return fmt.Errorf("failed to load private validator files: %w", err)
+	}
 
 	// Create genesis provider
 	genesisFile := filepath.Join(s.config.RootDir, "config", "genesis.json")
@@ -251,19 +311,21 @@ func (s *MinimalVolnixServer) initializeFiles() error {
 	s.config.Consensus.CreateEmptyBlocks = true
 	s.config.Consensus.CreateEmptyBlocksInterval = 0 * time.Second
 
-	// Generate or load validator key (single source of truth)
+	// Generate or load validator key/state (single source of truth)
 	privValKeyFile := filepath.Join(configDir, "priv_validator_key.json")
 	privValStateFile := filepath.Join(dataDir, "priv_validator_state.json")
-	var pv *privval.FilePV
-	if _, err := os.Stat(privValKeyFile); os.IsNotExist(err) {
-		pv = privval.GenFilePV(privValKeyFile, privValStateFile)
-	} else {
-		pv = privval.LoadFilePV(privValKeyFile, privValStateFile)
+	pv, err := loadOrCreateFilePV(privValKeyFile, privValStateFile)
+	if err != nil {
+		return fmt.Errorf("failed to initialize private validator files: %w", err)
 	}
 
 	// CosmJS compatibility: always reset priv_validator_state on startup
 	pv.Reset()
 	pv.Save()
+	// Ensure state file exists even after full data dir resets.
+	if err := os.WriteFile(privValStateFile, []byte(`{"height":"0","round":0,"step":0}`), 0o644); err != nil {
+		return fmt.Errorf("failed to write priv_validator_state: %w", err)
+	}
 
 	// Create genesis file if it doesn't exist
 	genesisFile := filepath.Join(configDir, "genesis.json")
@@ -282,6 +344,22 @@ func (s *MinimalVolnixServer) initializeFiles() error {
 	}
 
 	return nil
+}
+
+func loadOrCreateFilePV(keyFilePath, stateFilePath string) (*privval.FilePV, error) {
+	if _, err := os.Stat(keyFilePath); os.IsNotExist(err) {
+		pv := privval.GenFilePV(keyFilePath, stateFilePath)
+		pv.Save()
+		return pv, nil
+	}
+
+	if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
+		pv := privval.LoadFilePVEmptyState(keyFilePath, stateFilePath)
+		pv.Save()
+		return pv, nil
+	}
+
+	return privval.LoadFilePV(keyFilePath, stateFilePath), nil
 }
 
 // createGenesisFile creates a genesis file with proper module state.

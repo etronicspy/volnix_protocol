@@ -23,6 +23,9 @@ var (
 	// ErrInvalidIdentityHash indicates that the identity hash is invalid
 	ErrInvalidIdentityHash = errors.Register(ModuleName, 6, "invalid identity hash")
 
+	// ErrInvalidAddress indicates that the address format is invalid (not a valid bech32)
+	ErrInvalidAddress = errors.Register(ModuleName, 13, "invalid address format")
+
 	// ErrRoleChangeNotAllowed indicates that the role change is not allowed
 	ErrRoleChangeNotAllowed = errors.Register(ModuleName, 7, "role change not allowed")
 

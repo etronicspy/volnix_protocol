@@ -108,7 +108,7 @@ func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, gs json.Ra
 	if err := json.Unmarshal(gs, &genState); err != nil {
 		panic(fmt.Errorf("failed to unmarshal governance genesis state: %w", err))
 	}
-	InitGenesis(ctx, am.keeper, &genState)
+	InitGenesis(ctx, am.keeper, &genState, cdc)
 }
 
 // ExportGenesis returns the exported genesis state as raw bytes for the governance module

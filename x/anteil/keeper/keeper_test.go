@@ -20,6 +20,7 @@ import (
 
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
@@ -67,7 +68,7 @@ func TestKeeperTestSuite(t *testing.T) {
 func (suite *KeeperTestSuite) TestSetOrder() {
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -90,7 +91,7 @@ func (suite *KeeperTestSuite) TestSetOrder() {
 func (suite *KeeperTestSuite) TestSetOrder_Duplicate() {
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -118,7 +119,7 @@ func (suite *KeeperTestSuite) TestGetOrder_NotFound() {
 func (suite *KeeperTestSuite) TestUpdateOrder() {
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -145,7 +146,7 @@ func (suite *KeeperTestSuite) TestUpdateOrder() {
 func (suite *KeeperTestSuite) TestCancelOrder() {
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -171,7 +172,7 @@ func (suite *KeeperTestSuite) TestCancelOrder() {
 func (suite *KeeperTestSuite) TestDeleteOrder() {
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -199,7 +200,7 @@ func (suite *KeeperTestSuite) TestGetAllOrders() {
 	for i := range 5 {
 		order := &anteilv1.Order{
 			OrderId:      "order" + string(rune(i)),
-			Owner:        "cosmos1test",
+			Owner:        addrTest,
 			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 			AntAmount:    "1000000",
@@ -222,7 +223,7 @@ func (suite *KeeperTestSuite) TestGetOrdersByOwner() {
 	for i := range 3 {
 		order := &anteilv1.Order{
 			OrderId:      "order_owner1_" + string(rune(i)),
-			Owner:        "cosmos1owner1",
+			Owner:        addrOwner1,
 			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 			AntAmount:    "1000000",
@@ -238,7 +239,7 @@ func (suite *KeeperTestSuite) TestGetOrdersByOwner() {
 	for i := range 2 {
 		order := &anteilv1.Order{
 			OrderId:      "order_owner2_" + string(rune(i)),
-			Owner:        "cosmos1owner2",
+			Owner:        addrOwner2,
 			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 			AntAmount:    "1000000",
@@ -252,21 +253,25 @@ func (suite *KeeperTestSuite) TestGetOrdersByOwner() {
 	}
 
 	// Get orders for owner1
-	orders, err := suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1owner1")
+	orders, err := suite.keeper.GetOrdersByOwner(suite.ctx, addrOwner1)
 	require.NoError(suite.T(), err)
 	require.Len(suite.T(), orders, 3)
 
 	// Get orders for owner2
-	orders, err = suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1owner2")
+	orders, err = suite.keeper.GetOrdersByOwner(suite.ctx, addrOwner2)
 	require.NoError(suite.T(), err)
 	require.Len(suite.T(), orders, 2)
 }
 
 // Test Trade Management
 func (suite *KeeperTestSuite) TestExecuteTrade() {
+	// SELL orders require sufficient ANT balance - set position for seller
+	err := suite.keeper.SetUserPosition(suite.ctx, types.NewUserPosition(addrSeller, "1000000"))
+	require.NoError(suite.T(), err)
+
 	buyOrder := &anteilv1.Order{
 		OrderId:      "buy1",
-		Owner:        "cosmos1buyer",
+		Owner:        addrBuyer,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -278,7 +283,7 @@ func (suite *KeeperTestSuite) TestExecuteTrade() {
 
 	sellOrder := &anteilv1.Order{
 		OrderId:      "sell1",
-		Owner:        "cosmos1seller",
+		Owner:        addrSeller,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
 		AntAmount:    "1000000",
@@ -288,7 +293,7 @@ func (suite *KeeperTestSuite) TestExecuteTrade() {
 		IdentityHash: "hash_sell",
 	}
 
-	err := suite.keeper.SetOrder(suite.ctx, buyOrder)
+	err = suite.keeper.SetOrder(suite.ctx, buyOrder)
 	require.NoError(suite.T(), err)
 
 	err = suite.keeper.SetOrder(suite.ctx, sellOrder)
@@ -312,7 +317,7 @@ func (suite *KeeperTestSuite) TestExecuteTrade_InvalidOrderType() {
 	// Both orders are buy orders
 	buyOrder1 := &anteilv1.Order{
 		OrderId:      "buy1",
-		Owner:        "cosmos1buyer1",
+		Owner:        addrBuyer1,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -324,7 +329,7 @@ func (suite *KeeperTestSuite) TestExecuteTrade_InvalidOrderType() {
 
 	buyOrder2 := &anteilv1.Order{
 		OrderId:      "buy2",
-		Owner:        "cosmos1buyer2",
+		Owner:        addrBuyer2,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -351,8 +356,8 @@ func (suite *KeeperTestSuite) TestSetTrade() {
 		TradeId:     "trade1",
 		BuyOrderId:  "buy1",
 		SellOrderId: "sell1",
-		Buyer:       "cosmos1buyer",
-		Seller:      "cosmos1seller",
+		Buyer:       addrBuyer,
+		Seller:      addrSeller,
 		Price:       "1.5",
 		AntAmount:   "1000000",
 		ExecutedAt:  timestamppb.Now(),
@@ -368,14 +373,16 @@ func (suite *KeeperTestSuite) TestSetTrade() {
 }
 
 func (suite *KeeperTestSuite) TestGetAllTrades() {
+	tradeAddrs := []string{mustAddr("0000000000000000000000000000000000000020"), mustAddr("0000000000000000000000000000000000000021"), mustAddr("0000000000000000000000000000000000000022"), mustAddr("0000000000000000000000000000000000000023"), mustAddr("0000000000000000000000000000000000000024")}
+	sellerAddrs := []string{mustAddr("0000000000000000000000000000000000000025"), mustAddr("0000000000000000000000000000000000000026"), mustAddr("0000000000000000000000000000000000000027"), mustAddr("0000000000000000000000000000000000000028"), mustAddr("0000000000000000000000000000000000000029")}
 	// Create multiple trades
 	for i := range 5 {
 		trade := &anteilv1.Trade{
-			TradeId:     "trade" + string(rune(i)),
-			BuyOrderId:  "buy" + string(rune(i)),
-			SellOrderId: "sell" + string(rune(i)),
-			Buyer:       "cosmos1buyer" + string(rune(i)),
-			Seller:      "cosmos1seller" + string(rune(i)),
+			TradeId:     "trade" + string(rune('0'+i)),
+			BuyOrderId:  "buy" + string(rune('0'+i)),
+			SellOrderId: "sell" + string(rune('0'+i)),
+			Buyer:       tradeAddrs[i],
+			Seller:      sellerAddrs[i],
 			Price:       "1.5",
 			AntAmount:   "1000000",
 			ExecutedAt:  timestamppb.Now(),
@@ -496,7 +503,7 @@ func (suite *KeeperTestSuite) TestPlaceBid() {
 	require.NoError(suite.T(), err)
 
 	// Place bid
-	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder", "1500000")
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", addrBidder, "1500000")
 	require.NoError(suite.T(), err)
 
 	// Verify bid was placed
@@ -521,7 +528,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_AuctionClosed() {
 	require.NoError(suite.T(), err)
 
 	// Try to place bid on closed auction
-	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder", "1500000")
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", addrBidder, "1500000")
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAuctionClosed, err)
 }
@@ -546,7 +553,7 @@ func (suite *KeeperTestSuite) TestSettleAuction() {
 	require.NoError(suite.T(), err)
 
 	// Place a bid
-	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder", "1500000")
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", addrBidder, "1500000")
 	require.NoError(suite.T(), err)
 
 	// Get updated auction with winning bid
@@ -592,7 +599,7 @@ func (suite *KeeperTestSuite) TestSettleAuction_NotClosed() {
 // Test User Position Management
 func (suite *KeeperTestSuite) TestSetUserPosition() {
 	position := &anteilv1.UserPosition{
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		AntBalance:   "10000000",
 		TotalTrades:  "5",
 		TotalVolume:  "5000000",
@@ -603,7 +610,7 @@ func (suite *KeeperTestSuite) TestSetUserPosition() {
 	require.NoError(suite.T(), err)
 
 	// Verify position was stored
-	retrieved, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetUserPosition(suite.ctx, addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), position.Owner, retrieved.Owner)
 	require.Equal(suite.T(), position.AntBalance, retrieved.AntBalance)
@@ -611,7 +618,7 @@ func (suite *KeeperTestSuite) TestSetUserPosition() {
 
 func (suite *KeeperTestSuite) TestUpdateUserPosition() {
 	position := &anteilv1.UserPosition{
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		AntBalance:   "10000000",
 		TotalTrades:  "5",
 		TotalVolume:  "5000000",
@@ -622,11 +629,11 @@ func (suite *KeeperTestSuite) TestUpdateUserPosition() {
 	require.NoError(suite.T(), err)
 
 	// Update position
-	err = suite.keeper.UpdateUserPosition(suite.ctx, "cosmos1test", "500000", 1)
+	err = suite.keeper.UpdateUserPosition(suite.ctx, addrTest, "500000", 1)
 	require.NoError(suite.T(), err)
 
 	// Verify update
-	retrieved, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1test")
+	retrieved, err := suite.keeper.GetUserPosition(suite.ctx, addrTest)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "500000", retrieved.AntBalance)
 }
@@ -711,7 +718,7 @@ func (suite *KeeperTestSuite) TestGetSetParams() {
 func (suite *KeeperTestSuite) TestCreateOrder() {
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -764,7 +771,7 @@ func (suite *KeeperTestSuite) TestGetTrade_NotFound() {
 }
 
 func (suite *KeeperTestSuite) TestGetUserPosition_NotFound() {
-	_, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1notfound")
+	_, err := suite.keeper.GetUserPosition(suite.ctx, addrNotFound)
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrPositionNotFound, err)
 }
@@ -785,7 +792,7 @@ func (suite *KeeperTestSuite) TestGetBid() {
 	require.NoError(suite.T(), err)
 
 	// Place a bid
-	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder", "1500000")
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", addrBidder, "1500000")
 	require.NoError(suite.T(), err)
 
 	// Get the bid
@@ -796,7 +803,7 @@ func (suite *KeeperTestSuite) TestGetBid() {
 	bid, err := suite.keeper.GetBid(suite.ctx, "auction1", retrieved.WinningBid)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), bid)
-	require.Equal(suite.T(), "cosmos1bidder", bid.Bidder)
+	require.Equal(suite.T(), addrBidder, bid.Bidder)
 }
 
 func (suite *KeeperTestSuite) TestGetBid_NotFound() {
@@ -827,7 +834,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_AuctionExpired() {
 	require.NoError(suite.T(), err)
 
 	// Try to place bid on expired auction
-	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder", "1500000")
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", addrBidder, "1500000")
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAuctionExpired, err)
 }
@@ -848,11 +855,11 @@ func (suite *KeeperTestSuite) TestPlaceBid_HigherBid() {
 	require.NoError(suite.T(), err)
 
 	// Place first bid
-	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder1", "1500000")
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", addrBidder1, "1500000")
 	require.NoError(suite.T(), err)
 
 	// Place higher bid
-	err = suite.keeper.PlaceBid(suite.ctx, "auction1", "cosmos1bidder2", "2000000")
+	err = suite.keeper.PlaceBid(suite.ctx, "auction1", addrBidder2, "2000000")
 	require.NoError(suite.T(), err)
 
 	// Verify higher bid is winning
@@ -861,7 +868,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_HigherBid() {
 
 	winningBid, err := suite.keeper.GetBid(suite.ctx, "auction1", retrieved.WinningBid)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), "cosmos1bidder2", winningBid.Bidder)
+	require.Equal(suite.T(), addrBidder2, winningBid.Bidder)
 }
 
 func (suite *KeeperTestSuite) TestSettleAuction_NoWinningBid() {
@@ -899,11 +906,15 @@ func (suite *KeeperTestSuite) TestEndBlocker() {
 // Additional tests for better coverage
 
 func (suite *KeeperTestSuite) TestGetOrdersByOwner_MultipleOwners() {
+	// SELL orders require sufficient ANT balance - set position for owner2
+	err := suite.keeper.SetUserPosition(suite.ctx, types.NewUserPosition(addrOwner2, "5000000"))
+	require.NoError(suite.T(), err)
+
 	// Create orders for owner1
 	for i := 0; i < 3; i++ {
 		order := &anteilv1.Order{
 			OrderId:      fmt.Sprintf("order_owner1_%d", i),
-			Owner:        "cosmos1owner1",
+			Owner:        addrOwner1,
 			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 			AntAmount:    "1000000",
@@ -920,7 +931,7 @@ func (suite *KeeperTestSuite) TestGetOrdersByOwner_MultipleOwners() {
 	for i := 0; i < 2; i++ {
 		order := &anteilv1.Order{
 			OrderId:      fmt.Sprintf("order_owner2_%d", i),
-			Owner:        "cosmos1owner2",
+			Owner:        addrOwner2,
 			OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
 			AntAmount:    "1000000",
@@ -934,17 +945,17 @@ func (suite *KeeperTestSuite) TestGetOrdersByOwner_MultipleOwners() {
 	}
 
 	// Get orders for owner1
-	orders1, err := suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1owner1")
+	orders1, err := suite.keeper.GetOrdersByOwner(suite.ctx, addrOwner1)
 	require.NoError(suite.T(), err)
 	require.Len(suite.T(), orders1, 3)
 
 	// Get orders for owner2
-	orders2, err := suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1owner2")
+	orders2, err := suite.keeper.GetOrdersByOwner(suite.ctx, addrOwner2)
 	require.NoError(suite.T(), err)
 	require.Len(suite.T(), orders2, 2)
 
 	// Get orders for non-existent owner
-	orders3, err := suite.keeper.GetOrdersByOwner(suite.ctx, "cosmos1nonexistent")
+	orders3, err := suite.keeper.GetOrdersByOwner(suite.ctx, addrNonexistent)
 	require.NoError(suite.T(), err)
 	require.Empty(suite.T(), orders3)
 }
@@ -952,7 +963,7 @@ func (suite *KeeperTestSuite) TestGetOrdersByOwner_MultipleOwners() {
 func (suite *KeeperTestSuite) TestUpdateOrder_NotFound() {
 	order := &anteilv1.Order{
 		OrderId:      "nonexistent",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -997,7 +1008,7 @@ func (suite *KeeperTestSuite) TestUpdateAuction_NotFound() {
 }
 
 func (suite *KeeperTestSuite) TestPlaceBid_AuctionNotFound() {
-	err := suite.keeper.PlaceBid(suite.ctx, "nonexistent", "cosmos1bidder", "1500000")
+	err := suite.keeper.PlaceBid(suite.ctx, "nonexistent", addrBidder, "1500000")
 	require.Error(suite.T(), err)
 	require.Equal(suite.T(), types.ErrAuctionNotFound, err)
 }
@@ -1008,13 +1019,13 @@ func (suite *KeeperTestSuite) TestPlaceBid_OnlyValidators() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:      "cosmos1citizen",
+				Address:      addrCitizen,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IsActive:     true,
 				IdentityHash: "hash1",
 			},
 			{
-				Address:      "cosmos1validator",
+				Address:      addrValidator,
 				Role:         identv1.Role_ROLE_VALIDATOR,
 				IsActive:     true,
 				IdentityHash: "hash2",
@@ -1029,16 +1040,16 @@ func (suite *KeeperTestSuite) TestPlaceBid_OnlyValidators() {
 	require.NoError(suite.T(), err)
 	
 	// Test 1: Citizen should NOT be able to place bid
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1citizen", "2.0")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, addrCitizen, "2.0")
 	require.Error(suite.T(), err, "Citizens should not be able to place bids")
 	require.Contains(suite.T(), err.Error(), "only active validators can participate in auctions")
 	
 	// Test 2: Validator SHOULD be able to place bid
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "2.0")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, addrValidator, "2.0")
 	require.NoError(suite.T(), err, "Validators should be able to place bids")
 	
 	// Test 3: Guest should NOT be able to place bid
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1guest", "2.0")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, addrGuest, "2.0")
 	require.Error(suite.T(), err, "Guests should not be able to place bids")
 }
 
@@ -1048,7 +1059,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_ReservePrice() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:      "cosmos1validator",
+				Address:      addrValidator,
 				Role:         identv1.Role_ROLE_VALIDATOR,
 				IsActive:     true,
 				IdentityHash: "hash1",
@@ -1063,16 +1074,16 @@ func (suite *KeeperTestSuite) TestPlaceBid_ReservePrice() {
 	require.NoError(suite.T(), err)
 	
 	// Test 1: Bid below reserve price should be rejected
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "5.0")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, addrValidator, "5.0")
 	require.Error(suite.T(), err, "Bids below reserve price should be rejected")
 	require.Contains(suite.T(), err.Error(), "below reserve price")
 	
 	// Test 2: Bid equal to reserve price should succeed
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "10.0")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, addrValidator, "10.0")
 	require.NoError(suite.T(), err, "Bids equal to reserve price should succeed")
 	
 	// Test 3: Bid above reserve price should succeed
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "15.0")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, addrValidator, "15.0")
 	require.NoError(suite.T(), err, "Bids above reserve price should succeed")
 }
 
@@ -1082,7 +1093,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_InvalidAmount() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:      "cosmos1validator",
+				Address:      addrValidator,
 				Role:         identv1.Role_ROLE_VALIDATOR,
 				IsActive:     true,
 				IdentityHash: "hash1",
@@ -1097,7 +1108,7 @@ func (suite *KeeperTestSuite) TestPlaceBid_InvalidAmount() {
 	require.NoError(suite.T(), err)
 	
 	// Test with invalid amount format
-	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, "cosmos1validator", "invalid")
+	err = suite.keeper.PlaceBid(suite.ctx, auction.AuctionId, addrValidator, "invalid")
 	require.Error(suite.T(), err, "Invalid amount format should be rejected")
 	require.Contains(suite.T(), err.Error(), "invalid bid amount")
 }
@@ -1110,7 +1121,7 @@ func (suite *KeeperTestSuite) TestSettleAuction_NotFound() {
 
 func (suite *KeeperTestSuite) TestGetUserPosition_Create() {
 	position := &anteilv1.UserPosition{
-		Owner:        "cosmos1newuser",
+		Owner:        addrNewUser,
 		AntBalance:   "5000000",
 		TotalTrades:  "10",
 		TotalVolume:  "10000000",
@@ -1120,17 +1131,21 @@ func (suite *KeeperTestSuite) TestGetUserPosition_Create() {
 	err := suite.keeper.SetUserPosition(suite.ctx, position)
 	require.NoError(suite.T(), err)
 
-	retrieved, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1newuser")
+	retrieved, err := suite.keeper.GetUserPosition(suite.ctx, addrNewUser)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), "cosmos1newuser", retrieved.Owner)
+	require.Equal(suite.T(), addrNewUser, retrieved.Owner)
 	require.Equal(suite.T(), "5000000", retrieved.AntBalance)
 	require.Equal(suite.T(), "10", retrieved.TotalTrades)
 }
 
 func (suite *KeeperTestSuite) TestExecuteTrade_BuyOrderNotFound() {
+	// SELL orders require sufficient ANT balance
+	err := suite.keeper.SetUserPosition(suite.ctx, types.NewUserPosition(addrSeller, "1000000"))
+	require.NoError(suite.T(), err)
+
 	sellOrder := &anteilv1.Order{
 		OrderId:      "sell1",
-		Owner:        "cosmos1seller",
+		Owner:        addrSeller,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
 		AntAmount:    "1000000",
@@ -1140,7 +1155,7 @@ func (suite *KeeperTestSuite) TestExecuteTrade_BuyOrderNotFound() {
 		IdentityHash: "hash_sell",
 	}
 
-	err := suite.keeper.SetOrder(suite.ctx, sellOrder)
+	err = suite.keeper.SetOrder(suite.ctx, sellOrder)
 	require.NoError(suite.T(), err)
 
 	// Try to execute trade with non-existent buy order
@@ -1152,7 +1167,7 @@ func (suite *KeeperTestSuite) TestExecuteTrade_BuyOrderNotFound() {
 func (suite *KeeperTestSuite) TestExecuteTrade_SellOrderNotFound() {
 	buyOrder := &anteilv1.Order{
 		OrderId:      "buy1",
-		Owner:        "cosmos1buyer",
+		Owner:        addrBuyer,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -1192,7 +1207,7 @@ func (suite *KeeperTestSuite) TestGetAllTrades_Empty() {
 func (suite *KeeperTestSuite) TestCreateOrder_Alias() {
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -1245,19 +1260,31 @@ func (m *MockIdentKeeper) GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.Ve
 	return m.accounts, nil
 }
 
+func (m *MockIdentKeeper) GetVerifiedAccount(ctx sdk.Context, address string) (*identv1.VerifiedAccount, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	for _, acc := range m.accounts {
+		if acc.Address == address {
+			return acc, nil
+		}
+	}
+	return nil, identtypes.ErrAccountNotFound
+}
+
 // Test DistributeAntToCitizens
 func (suite *KeeperTestSuite) TestDistributeAntToCitizens() {
 	// Create mock ident keeper with citizens
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:      "cosmos1citizen1",
+				Address:      addrCitizen1,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IsActive:     true,
 				IdentityHash: "hash1",
 			},
 			{
-				Address:      "cosmos1citizen2",
+				Address:      addrCitizen2,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IsActive:     true,
 				IdentityHash: "hash2",
@@ -1279,11 +1306,11 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens() {
 	require.NoError(suite.T(), err)
 
 	// Verify ANT was distributed to both citizens
-	position1, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position1, err := suite.keeper.GetUserPosition(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "5000000", position1.AntBalance)
 
-	position2, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen2")
+	position2, err := suite.keeper.GetUserPosition(suite.ctx, addrCitizen2)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "5000000", position2.AntBalance)
 
@@ -1306,7 +1333,7 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_RespectsLimit() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:      "cosmos1citizen1",
+				Address:      addrCitizen1,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IsActive:     true,
 				IdentityHash: "hash1",
@@ -1324,7 +1351,7 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_RespectsLimit() {
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create position with balance close to limit (90 ANT)
-	position := types.NewUserPosition("cosmos1citizen1", "90000000")
+	position := types.NewUserPosition(addrCitizen1, "90000000")
 	err := suite.keeper.SetUserPosition(suite.ctx, position)
 	require.NoError(suite.T(), err)
 
@@ -1333,7 +1360,7 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_RespectsLimit() {
 	require.NoError(suite.T(), err)
 
 	// Verify balance is capped at limit
-	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position, err = suite.keeper.GetUserPosition(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "100000000", position.AntBalance, "Balance should be capped at limit")
 
@@ -1342,7 +1369,7 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_RespectsLimit() {
 	require.NoError(suite.T(), err)
 
 	// Verify balance is still at limit
-	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position, err = suite.keeper.GetUserPosition(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "100000000", position.AntBalance, "Balance should remain at limit")
 }
@@ -1352,25 +1379,25 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:      "cosmos1citizen",
+				Address:      addrCitizen,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IsActive:     true,
 				IdentityHash: "hash1",
 			},
 			{
-				Address:      "cosmos1validator",
+				Address:      addrValidator,
 				Role:         identv1.Role_ROLE_VALIDATOR,
 				IsActive:     true,
 				IdentityHash: "hash2",
 			},
 			{
-				Address:      "cosmos1guest",
+				Address:      addrGuest,
 				Role:         identv1.Role_ROLE_GUEST,
 				IsActive:     true,
 				IdentityHash: "hash3",
 			},
 			{
-				Address:      "cosmos1inactive",
+				Address:      addrInactive,
 				Role:         identv1.Role_ROLE_CITIZEN,
 				IsActive:     false, // Inactive citizen
 				IdentityHash: "hash4",
@@ -1392,21 +1419,21 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 	require.NoError(suite.T(), err)
 
 	// Verify active citizen received ANT
-	position, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen")
+	position, err := suite.keeper.GetUserPosition(suite.ctx, addrCitizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "10000000", position.AntBalance, "Active citizen should receive ANT")
 
 	// UPDATED: Verify validator ALSO received ANT (validators have all citizen rights)
-	validatorPosition, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1validator")
+	validatorPosition, err := suite.keeper.GetUserPosition(suite.ctx, addrValidator)
 	require.NoError(suite.T(), err, "Validator should have position - validators have all citizen rights")
 	require.Equal(suite.T(), "10000000", validatorPosition.AntBalance, "Active validator should receive ANT")
 
 	// Verify guest did not receive ANT
-	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1guest")
+	_, err = suite.keeper.GetUserPosition(suite.ctx, addrGuest)
 	require.Error(suite.T(), err, "Guest should not have position")
 
 	// Verify inactive citizen did not receive ANT
-	_, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1inactive")
+	_, err = suite.keeper.GetUserPosition(suite.ctx, addrInactive)
 	require.Error(suite.T(), err, "Inactive citizen should not have position")
 
 	// Check events - should have 2 ant_distributed events (citizen + validator)
@@ -1425,28 +1452,28 @@ func (suite *KeeperTestSuite) TestDistributeAntToCitizens_OnlyCitizens() {
 		}
 	}
 	require.Equal(suite.T(), 2, antDistributedCount, "Should have exactly 2 ANT distribution events (citizen + validator)")
-	require.Contains(suite.T(), recipientAddresses, "cosmos1citizen", "Citizen should receive ANT")
-	require.Contains(suite.T(), recipientAddresses, "cosmos1validator", "Validator should receive ANT")
+	require.Contains(suite.T(), recipientAddresses, addrCitizen, "Citizen should receive ANT")
+	require.Contains(suite.T(), recipientAddresses, addrValidator, "Validator should receive ANT")
 }
 
 // Test BurnAntFromUser
 func (suite *KeeperTestSuite) TestBurnAntFromUser() {
 	// Create user position with ANT balance
-	position := types.NewUserPosition("cosmos1citizen1", "50000000") // 50 ANT
+	position := types.NewUserPosition(addrCitizen1, "50000000") // 50 ANT
 	err := suite.keeper.SetUserPosition(suite.ctx, position)
 	require.NoError(suite.T(), err)
 
 	// Verify position exists with balance
-	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position, err = suite.keeper.GetUserPosition(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "50000000", position.AntBalance)
 
 	// Burn ANT
-	err = suite.keeper.BurnAntFromUser(suite.ctx, "cosmos1citizen1")
+	err = suite.keeper.BurnAntFromUser(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 
 	// Verify balance is now zero
-	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position, err = suite.keeper.GetUserPosition(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "0", position.AntBalance)
 	require.Equal(suite.T(), "0", position.AvailableAnt)
@@ -1455,22 +1482,22 @@ func (suite *KeeperTestSuite) TestBurnAntFromUser() {
 
 func (suite *KeeperTestSuite) TestBurnAntFromUser_NoPosition() {
 	// Try to burn from non-existent position
-	err := suite.keeper.BurnAntFromUser(suite.ctx, "cosmos1nonexistent")
+	err := suite.keeper.BurnAntFromUser(suite.ctx, addrNonexistent)
 	require.NoError(suite.T(), err) // Should not error, just return nil
 }
 
 func (suite *KeeperTestSuite) TestBurnAntFromUser_ZeroBalance() {
 	// Create position with zero balance
-	position := types.NewUserPosition("cosmos1citizen1", "0")
+	position := types.NewUserPosition(addrCitizen1, "0")
 	err := suite.keeper.SetUserPosition(suite.ctx, position)
 	require.NoError(suite.T(), err)
 
 	// Try to burn from zero balance
-	err = suite.keeper.BurnAntFromUser(suite.ctx, "cosmos1citizen1")
+	err = suite.keeper.BurnAntFromUser(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err) // Should not error
 
 	// Verify balance is still zero
-	position, err = suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position, err = suite.keeper.GetUserPosition(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "0", position.AntBalance)
 }
@@ -1523,13 +1550,13 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithAntDistribution() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:     "cosmos1citizen1",
+				Address:     addrCitizen1,
 				Role:        identv1.Role_ROLE_CITIZEN,
 				IsActive:    true,
 				IdentityHash: "hash1",
 			},
 			{
-				Address:     "cosmos1citizen2",
+				Address:     addrCitizen2,
 				Role:        identv1.Role_ROLE_CITIZEN,
 				IsActive:    true,
 				IdentityHash: "hash2",
@@ -1562,11 +1589,11 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithAntDistribution() {
 	require.WithinDuration(suite.T(), currentTime, lastTime, time.Second, "Last distribution time should be updated to current time")
 
 	// Verify citizens received ANT
-	position1, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen1")
+	position1, err := suite.keeper.GetUserPosition(suite.ctx, addrCitizen1)
 	require.NoError(suite.T(), err)
 	require.NotEqual(suite.T(), "0", position1.AntBalance, "Citizen 1 should have received ANT")
 
-	position2, err := suite.keeper.GetUserPosition(suite.ctx, "cosmos1citizen2")
+	position2, err := suite.keeper.GetUserPosition(suite.ctx, addrCitizen2)
 	require.NoError(suite.T(), err)
 	require.NotEqual(suite.T(), "0", position2.AntBalance, "Citizen 2 should have received ANT")
 }
@@ -1577,7 +1604,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithoutAntDistribution() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:     "cosmos1citizen1",
+				Address:     addrCitizen1,
 				Role:        identv1.Role_ROLE_CITIZEN,
 				IsActive:    true,
 				IdentityHash: "hash1",
@@ -1612,10 +1639,14 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithoutAntDistribution() {
 
 // TestEndBlocker_WithOrders tests EndBlocker with orders to process
 func (suite *KeeperTestSuite) TestEndBlocker_WithOrders() {
+	// SELL orders require sufficient ANT balance
+	err := suite.keeper.SetUserPosition(suite.ctx, types.NewUserPosition(addrTest2, "1000000"))
+	require.NoError(suite.T(), err)
+
 	// Create some orders
 	order1 := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -1624,12 +1655,12 @@ func (suite *KeeperTestSuite) TestEndBlocker_WithOrders() {
 		CreatedAt:    timestamppb.Now(),
 		IdentityHash: "hash1",
 	}
-	err := suite.keeper.SetOrder(suite.ctx, order1)
+	err = suite.keeper.SetOrder(suite.ctx, order1)
 	require.NoError(suite.T(), err)
 
 	order2 := &anteilv1.Order{
 		OrderId:      "order2",
-		Owner:        "cosmos1test2",
+		Owner:        addrTest2,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
 		AntAmount:    "1000000",
@@ -1691,7 +1722,7 @@ func (suite *KeeperTestSuite) TestUpdateOrder_UnmarshalError() {
 	// First create a valid order
 	order := &anteilv1.Order{
 		OrderId:      "order1",
-		Owner:        "cosmos1test",
+		Owner:        addrTest,
 		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_BUY,
 		AntAmount:    "1000000",
@@ -1724,8 +1755,8 @@ func (suite *KeeperTestSuite) TestSetTrade_InvalidData() {
 		AntAmount:   "1000000",
 		Price:       "1.5",
 		ExecutedAt:  timestamppb.Now(),
-		Buyer:       "cosmos1buyer",
-		Seller:      "cosmos1seller",
+		Buyer:       addrBuyer,
+		Seller:      addrSeller,
 	}
 	err := suite.keeper.SetTrade(suite.ctx, trade1)
 	require.NoError(suite.T(), err)
@@ -1755,7 +1786,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_FirstDistribution() {
 	mockIdentKeeper := &MockIdentKeeper{
 		accounts: []*identv1.VerifiedAccount{
 			{
-				Address:     "cosmos1citizen1",
+				Address:     addrCitizen1,
 				Role:        identv1.Role_ROLE_CITIZEN,
 				IsActive:    true,
 				IdentityHash: "hash1",
@@ -1858,8 +1889,8 @@ func (suite *KeeperTestSuite) TestSetTrade_Duplicate() {
 		AntAmount:   "1000000",
 		Price:       "1.5",
 		ExecutedAt:  timestamppb.Now(),
-		Buyer:       "cosmos1buyer",
-		Seller:      "cosmos1seller",
+		Buyer:       addrBuyer,
+		Seller:      addrSeller,
 	}
 
 	// First time should succeed

@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/consensus/types"
 )
+
+// consensusModuleAuthority is the consensus module address used for msg authorization
+var consensusModuleAuthority = authtypes.NewModuleAddress(types.ModuleName).String()
 
 // MsgServer implements consensus module Msg service.
 type MsgServer struct {
@@ -40,7 +44,7 @@ func (s MsgServer) UpdateConsensusState(ctx context.Context, req *consensusv1.Ms
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check authorization
-	if req.Authority != "cosmos1test" {
+	if req.Authority != consensusModuleAuthority {
 		return nil, types.ErrUnauthorized
 	}
 
@@ -57,7 +61,7 @@ func (s MsgServer) SetValidatorWeight(ctx context.Context, req *consensusv1.MsgS
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check authorization
-	if req.Authority != "cosmos1test" {
+	if req.Authority != consensusModuleAuthority {
 		return nil, types.ErrUnauthorized
 	}
 
@@ -74,7 +78,7 @@ func (s MsgServer) ProcessHalving(ctx context.Context, req *consensusv1.MsgProce
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check authorization
-	if req.Authority != "cosmos1test" {
+	if req.Authority != consensusModuleAuthority {
 		return nil, types.ErrUnauthorized
 	}
 
@@ -89,7 +93,7 @@ func (s MsgServer) ProcessHalving(ctx context.Context, req *consensusv1.MsgProce
 // SelectBlockProducer selects block producer
 func (s MsgServer) SelectBlockProducer(ctx context.Context, req *consensusv1.MsgSelectBlockProducer) (*consensusv1.MsgSelectBlockProducerResponse, error) {
 	// Check authorization
-	if req.Authority != "cosmos1test" {
+	if req.Authority != consensusModuleAuthority {
 		return nil, types.ErrUnauthorized
 	}
 
@@ -110,7 +114,7 @@ func (s MsgServer) CalculateBlockTime(ctx context.Context, req *consensusv1.MsgC
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check authorization
-	if req.Authority != "cosmos1test" {
+	if req.Authority != consensusModuleAuthority {
 		return nil, types.ErrUnauthorized
 	}
 

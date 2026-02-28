@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -17,9 +18,10 @@ import (
 )
 
 // IdentKeeperInterface defines the interface for interacting with ident module
-// This allows anteil module to get verified citizens for ANT distribution
+// This allows anteil module to get verified citizens for ANT distribution and validate order owners
 type IdentKeeperInterface interface {
 	GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.VerifiedAccount, error)
+	GetVerifiedAccount(ctx sdk.Context, address string) (*identv1.VerifiedAccount, error)
 }
 
 type (
@@ -71,6 +73,36 @@ func (k *Keeper) SetIdentKeeper(identKeeper IdentKeeperInterface) {
 func (k Keeper) SetOrder(ctx sdk.Context, order *anteilv1.Order) error {
 	if err := anteiltypes.IsOrderValid(order); err != nil {
 		return err
+	}
+
+	// Validate account exists and has valid role (CITIZEN or VALIDATOR) for order creation
+	if k.identKeeper != nil {
+		account, err := k.identKeeper.GetVerifiedAccount(ctx, order.Owner)
+		if err != nil || account == nil {
+			return anteiltypes.ErrAccountNotFound
+		}
+		if !account.IsActive {
+			return anteiltypes.ErrAccountNotFound
+		}
+		switch account.Role {
+		case identv1.Role_ROLE_CITIZEN, identv1.Role_ROLE_VALIDATOR:
+			// Allowed
+		default:
+			return anteiltypes.ErrInvalidRoleForOrder
+		}
+	}
+
+	// For SELL orders: validate seller has sufficient ANT balance
+	if order.OrderSide == anteilv1.OrderSide_ORDER_SIDE_SELL {
+		pos, err := k.GetUserPosition(ctx, order.Owner)
+		balance := uint64(0)
+		if err == nil && pos != nil {
+			balance = anteiltypes.ParseUint64(pos.AntBalance)
+		}
+		sellAmount := anteiltypes.ParseUint64(order.AntAmount)
+		if sellAmount > balance {
+			return anteiltypes.ErrInsufficientBalance
+		}
 	}
 
 	store := ctx.KVStore(k.storeKey)
@@ -209,6 +241,16 @@ func (k Keeper) executeTrade(ctx sdk.Context, buyOrderID, sellOrderID string) er
 	}
 	if sellOrder.OrderSide != anteilv1.OrderSide_ORDER_SIDE_SELL {
 		return anteiltypes.ErrInvalidOrderType
+	}
+
+	// Price matching: buy price must be >= sell price for trade to execute
+	buyPrice, errBuy := math.LegacyNewDecFromStr(buyOrder.Price)
+	sellPrice, errSell := math.LegacyNewDecFromStr(sellOrder.Price)
+	if errBuy != nil || errSell != nil {
+		return anteiltypes.ErrInvalidPrice
+	}
+	if buyPrice.LT(sellPrice) {
+		return anteiltypes.ErrPriceMismatch
 	}
 
 	// Execute the trade

@@ -114,12 +114,9 @@ func BenchmarkCreateVerifiedAccount(b *testing.B) {
 
 	b.ResetTimer()
 
+	addrs := GenerateTestAddresses("", b.N)
 	for i := 0; i < b.N; i++ {
-		account := identtypes.NewVerifiedAccount(
-			"cosmos1test"+string(rune(i)),
-			identv1.Role_ROLE_CITIZEN,
-			"hash"+string(rune(i)),
-		)
+		account := identtypes.NewVerifiedAccount(addrs[i], identv1.Role_ROLE_CITIZEN, fmt.Sprintf("hash%d", i))
 		keeper.SetVerifiedAccount(ctx, account)
 	}
 }
@@ -143,15 +140,9 @@ func BenchmarkCreateOrder(b *testing.B) {
 
 	b.ResetTimer()
 
+	addrs := GenerateTestAddresses("", b.N)
 	for i := 0; i < b.N; i++ {
-		order := anteiltypes.NewOrder(
-			"cosmos1test"+string(rune(i)),
-			anteilv1.OrderType_ORDER_TYPE_LIMIT,
-			anteilv1.OrderSide_ORDER_SIDE_BUY,
-			"1000000",
-			"1.5",
-			"hash"+string(rune(i)),
-		)
+		order := anteiltypes.NewOrder(addrs[i], anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1000000", "1.5", fmt.Sprintf("hash%d", i))
 		keeper.CreateOrder(ctx, order)
 	}
 }
@@ -173,24 +164,13 @@ func BenchmarkExecuteTrade(b *testing.B) {
 	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
 	keeper.SetParams(ctx, anteiltypes.DefaultParams())
 
-	// Create orders for trading
-	buyOrder := anteiltypes.NewOrder(
-		"cosmos1buyer",
-		anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		anteilv1.OrderSide_ORDER_SIDE_BUY,
-		"1000000",
-		"1.5",
-		"hash123",
-	)
+	// Create orders for trading (SELL requires balance)
+	buyerAddr := mustBech32("0000000000000000000000000000000000000060")
+	sellerAddr := mustBech32("0000000000000000000000000000000000000061")
+	keeper.SetUserPosition(ctx, anteiltypes.NewUserPosition(sellerAddr, "1000000"))
 
-	sellOrder := anteiltypes.NewOrder(
-		"cosmos1seller",
-		anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		anteilv1.OrderSide_ORDER_SIDE_SELL,
-		"1000000",
-		"1.5",
-		"hash456",
-	)
+	buyOrder := anteiltypes.NewOrder(buyerAddr, anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1000000", "1.5", "hash123")
+	sellOrder := anteiltypes.NewOrder(sellerAddr, anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_SELL, "1000000", "1.5", "hash456")
 
 	err := keeper.CreateOrder(ctx, buyOrder)
 	require.NoError(b, err)
@@ -256,8 +236,9 @@ func BenchmarkPlaceBid(b *testing.B) {
 
 	b.ResetTimer()
 
+	addrs := GenerateTestAddresses("", b.N)
 	for i := 0; i < b.N; i++ {
-		keeper.PlaceBid(ctx, auctionID, "cosmos1bidder"+string(rune(i)), "1000000")
+		keeper.PlaceBid(ctx, auctionID, addrs[i], "1000000")
 	}
 }
 
@@ -287,8 +268,8 @@ func BenchmarkSettleAuction(b *testing.B) {
 		auctionID := auction.AuctionId
 
 		// Place bids
-		keeper.PlaceBid(ctx, auctionID, "cosmos1bidder1", "1000000")
-		keeper.PlaceBid(ctx, auctionID, "cosmos1bidder2", "1500000")
+		keeper.PlaceBid(ctx, auctionID, TestAddresses.Validator, "1000000")
+		keeper.PlaceBid(ctx, auctionID, TestAddresses.Validator2, "1500000")
 
 		// Settle auction
 		keeper.SettleAuction(ctx, auctionID)
@@ -312,16 +293,9 @@ func BenchmarkGetAllOrders(b *testing.B) {
 	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
 	keeper.SetParams(ctx, anteiltypes.DefaultParams())
 
-	// Create many orders
+	addrs := GenerateTestAddresses("", 1000)
 	for i := 0; i < 1000; i++ {
-		order := anteiltypes.NewOrder(
-			"cosmos1test"+string(rune(i)),
-			anteilv1.OrderType_ORDER_TYPE_LIMIT,
-			anteilv1.OrderSide_ORDER_SIDE_BUY,
-			"1000000",
-			"1.5",
-			"hash"+string(rune(i)),
-		)
+		order := anteiltypes.NewOrder(addrs[i], anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1000000", "1.5", fmt.Sprintf("hash%d", i))
 		keeper.CreateOrder(ctx, order)
 	}
 
@@ -349,23 +323,16 @@ func BenchmarkGetOrdersByOwner(b *testing.B) {
 	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
 	keeper.SetParams(ctx, anteiltypes.DefaultParams())
 
-	// Create many orders for same owner
+	ownerAddr := TestAddresses.Test1
 	for i := 0; i < 1000; i++ {
-		order := anteiltypes.NewOrder(
-			"cosmos1test",
-			anteilv1.OrderType_ORDER_TYPE_LIMIT,
-			anteilv1.OrderSide_ORDER_SIDE_BUY,
-			"1000000",
-			"1.5",
-			"hash"+string(rune(i)),
-		)
+		order := anteiltypes.NewOrder(ownerAddr, anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1000000", "1.5", fmt.Sprintf("hash%d", i))
 		keeper.CreateOrder(ctx, order)
 	}
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		keeper.GetOrdersByOwner(ctx, "cosmos1test")
+		keeper.GetOrdersByOwner(ctx, ownerAddr)
 	}
 }
 
@@ -387,13 +354,14 @@ func BenchmarkUpdateUserPosition(b *testing.B) {
 	keeper.SetParams(ctx, anteiltypes.DefaultParams())
 
 	// Create position
-	position := anteiltypes.NewUserPosition("cosmos1test", "10000000")
+	addr := TestAddresses.Test1
+	position := anteiltypes.NewUserPosition(addr, "10000000")
 	keeper.SetUserPosition(ctx, position)
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		keeper.UpdateUserPosition(ctx, "cosmos1test", "500000", 1)
+		keeper.UpdateUserPosition(ctx, addr, "500000", 1)
 	}
 }
 
@@ -451,12 +419,12 @@ func BenchmarkEndBlocker(b *testing.B) {
 	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
 	keeper.SetParams(ctx, anteiltypes.DefaultParams())
 
-	// Create some auctions
+	bidderAddr := TestAddresses.Validator
 	for i := 0; i < 100; i++ {
 		auction := anteiltypes.NewAuction(uint64(1000+i), "1000000", "1.0")
 		keeper.CreateAuction(ctx, auction)
 		auctionID := auction.AuctionId
-		keeper.PlaceBid(ctx, auctionID, "cosmos1bidder", "1000000")
+		keeper.PlaceBid(ctx, auctionID, bidderAddr, "1000000")
 	}
 
 	b.ResetTimer()
@@ -471,15 +439,9 @@ func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
 	// Test 1: Measure order creation performance
 	start := time.Now()
 
+	addrs := GenerateTestAddresses("", 1000)
 	for i := 0; i < 1000; i++ {
-		order := anteiltypes.NewOrder(
-			"cosmos1test"+string(rune(i)),
-			anteilv1.OrderType_ORDER_TYPE_LIMIT,
-			anteilv1.OrderSide_ORDER_SIDE_BUY,
-			"1000000",
-			"1.5",
-			"hash"+string(rune(i)),
-		)
+		order := anteiltypes.NewOrder(addrs[i], anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1000000", "1.5", fmt.Sprintf("hash%d", i))
 		suite.anteilKeeper.CreateOrder(suite.ctx, order)
 	}
 
@@ -488,9 +450,11 @@ func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
 	require.Less(suite.T(), duration, 5*time.Second, "Order creation should be fast")
 
 	// Test 2: Measure trade execution performance
-	// Create buy and sell orders
+	buyerAddr := TestAddresses.Buyer
+	sellerAddr := TestAddresses.Seller
+	suite.anteilKeeper.SetUserPosition(suite.ctx, anteiltypes.NewUserPosition(sellerAddr, "1000000"))
 	buyOrder := anteiltypes.NewOrder(
-		"cosmos1buyer",
+		buyerAddr,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_BUY,
 		"1000000",
@@ -499,7 +463,7 @@ func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
 	)
 
 	sellOrder := anteiltypes.NewOrder(
-		"cosmos1seller",
+		sellerAddr,
 		anteilv1.OrderType_ORDER_TYPE_LIMIT,
 		anteilv1.OrderSide_ORDER_SIDE_SELL,
 		"1000000",
@@ -533,7 +497,7 @@ func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
 		auction := anteiltypes.NewAuction(uint64(1000+i), "1000000", "1.0")
 		suite.anteilKeeper.CreateAuction(suite.ctx, auction)
 		auctionID := auction.AuctionId
-		suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, "cosmos1bidder", "1000000")
+		suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator, "1000000")
 		suite.anteilKeeper.SettleAuction(suite.ctx, auctionID)
 	}
 
@@ -558,16 +522,9 @@ func (suite *BenchmarkTestSuite) TestMemoryUsage() {
 	// Test 1: Measure memory usage for large number of orders
 	initialMem := getMemUsage()
 
-	// Create many orders
+	addrs := GenerateTestAddresses("", 10000)
 	for i := 0; i < 10000; i++ {
-		order := anteiltypes.NewOrder(
-			"cosmos1test"+string(rune(i)),
-			anteilv1.OrderType_ORDER_TYPE_LIMIT,
-			anteilv1.OrderSide_ORDER_SIDE_BUY,
-			"1000000",
-			"1.5",
-			"hash"+string(rune(i)),
-		)
+		order := anteiltypes.NewOrder(addrs[i], anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1000000", "1.5", fmt.Sprintf("hash%d", i))
 		suite.anteilKeeper.CreateOrder(suite.ctx, order)
 	}
 
@@ -580,13 +537,9 @@ func (suite *BenchmarkTestSuite) TestMemoryUsage() {
 	// Test 2: Measure memory usage for large number of accounts
 	initialMem = getMemUsage()
 
-	// Create many accounts
+	accAddrs := GenerateTestAddresses("", 10000)
 	for i := 0; i < 10000; i++ {
-		account := identtypes.NewVerifiedAccount(
-			"cosmos1test"+string(rune(i)),
-			identv1.Role_ROLE_CITIZEN,
-			"hash"+string(rune(i)),
-		)
+		account := identtypes.NewVerifiedAccount(accAddrs[i], identv1.Role_ROLE_CITIZEN, fmt.Sprintf("hash%d", i))
 		suite.identKeeper.SetVerifiedAccount(suite.ctx, account)
 	}
 
@@ -601,16 +554,17 @@ func (suite *BenchmarkTestSuite) TestConcurrentOperations() {
 	suite.T().Skip("Multi-store context issues - will be fixed in next iteration")
 
 	// Test 1: Concurrent order creation with proper synchronization
+	addrs := GenerateTestAddresses("", 100)
 	done := make(chan bool, 10)
 	var orderCount int32
 
 	for i := 0; i < 10; i++ {
 		go func(workerID int) {
 			defer func() { done <- true }()
-			
 			for j := 0; j < 10; j++ { // Reduced from 100 to 10 for stability
+				idx := workerID*10 + j
 				order := anteiltypes.NewOrder(
-					fmt.Sprintf("cosmos1test%d_%d", workerID, j),
+					addrs[idx],
 					anteilv1.OrderType_ORDER_TYPE_LIMIT,
 					anteilv1.OrderSide_ORDER_SIDE_BUY,
 					"1000000",

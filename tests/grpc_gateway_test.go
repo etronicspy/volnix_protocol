@@ -302,8 +302,8 @@ func (suite *GRPCGatewayTestSuite) TestGovernanceProposalsEndpoint() {
 
 func (suite *GRPCGatewayTestSuite) TestGovernanceProposalEndpoint() {
 	// First, create a proposal to query
-	proposer := sdk.AccAddress("cosmos1proposer").String()
-	
+	proposer := mustBech32("0000000000000000000000000000000000000050")
+
 	proposal := &governancev1.Proposal{
 		ProposalId:   1,
 		Proposer:     proposer,
@@ -346,8 +346,8 @@ func (suite *GRPCGatewayTestSuite) TestGovernanceProposalEndpoint_NotFound() {
 
 func (suite *GRPCGatewayTestSuite) TestGovernanceVotesEndpoint() {
 	// Create a proposal and vote first
-	proposer := sdk.AccAddress("cosmos1proposer").String()
-	voter := sdk.AccAddress("cosmos1voter").String()
+	proposer := mustBech32("0000000000000000000000000000000000000051")
+	voter := mustBech32("0000000000000000000000000000000000000052")
 	
 	proposal := &governancev1.Proposal{
 		ProposalId:   2,
@@ -389,8 +389,8 @@ func (suite *GRPCGatewayTestSuite) TestGovernanceVotesEndpoint() {
 
 func (suite *GRPCGatewayTestSuite) TestGovernanceVoteEndpoint() {
 	// Create a proposal and vote first
-	proposer := sdk.AccAddress("cosmos1proposer2").String()
-	voter := sdk.AccAddress("cosmos1voter2").String()
+	proposer := mustBech32("0000000000000000000000000000000000000053")
+	voter := mustBech32("0000000000000000000000000000000000000054")
 	
 	proposal := &governancev1.Proposal{
 		ProposalId:   3,

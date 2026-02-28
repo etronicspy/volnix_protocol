@@ -32,37 +32,24 @@ func NewMockIdentKeeperWithAccounts(accounts []*identv1.VerifiedAccount) *MockId
 
 func NewMockIdentKeeperWithRoles(citizens, validators, guests int) *MockIdentKeeper {
 	accounts := []*identv1.VerifiedAccount{}
-	
-	// Add citizens
+	addrs := GenerateTestAddresses("", citizens+validators+guests)
+	idx := 0
+
 	for i := 0; i < citizens; i++ {
-		acc := NewTestVerifiedAccountCustom(
-			fmt.Sprintf("cosmos1citizen%d", i),
-			identv1.Role_ROLE_CITIZEN,
-			fmt.Sprintf("hash-citizen-%d", i),
-		)
+		acc := NewTestVerifiedAccountCustom(addrs[idx], identv1.Role_ROLE_CITIZEN, fmt.Sprintf("hash-citizen-%d", i))
 		accounts = append(accounts, acc)
+		idx++
 	}
-	
-	// Add validators
 	for i := 0; i < validators; i++ {
-		acc := NewTestVerifiedAccountCustom(
-			fmt.Sprintf("cosmos1validator%d", i),
-			identv1.Role_ROLE_VALIDATOR,
-			fmt.Sprintf("hash-validator-%d", i),
-		)
+		acc := NewTestVerifiedAccountCustom(addrs[idx], identv1.Role_ROLE_VALIDATOR, fmt.Sprintf("hash-validator-%d", i))
 		accounts = append(accounts, acc)
+		idx++
 	}
-	
-	// Add guests
 	for i := 0; i < guests; i++ {
-		acc := NewTestVerifiedAccountCustom(
-			fmt.Sprintf("cosmos1guest%d", i),
-			identv1.Role_ROLE_GUEST,
-			fmt.Sprintf("hash-guest-%d", i),
-		)
+		acc := NewTestVerifiedAccountCustom(addrs[idx], identv1.Role_ROLE_GUEST, fmt.Sprintf("hash-guest-%d", i))
 		accounts = append(accounts, acc)
+		idx++
 	}
-	
 	return &MockIdentKeeper{Accounts: accounts}
 }
 

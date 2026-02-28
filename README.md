@@ -80,6 +80,22 @@ cat scripts/README-minimal-network.md
 - **🌱 Энергоэффективность** - 99.9% экономия энергии по сравнению с PoW
 - **🌐 Cosmos SDK** - совместимость с экосистемой Cosmos
 
+## 🔗 Demo Wallet и консенсус
+
+Действия demo wallet напрямую влияют на консенсус блокчейна:
+
+1. **Активация LZN** — при активации LZN через wallet-ui voting power валидатора увеличивается пропорционально сумме активированного LZN.
+2. **EndBlocker** — в конце каждого блока приложение суммирует активный LZN и возвращает `ValidatorUpdates` в CometBFT.
+3. **Без хардкода** — начальный валидатор берётся из genesis, но его мощность обновляется на основе экономической активности (LZN).
+
+Для локальной разработки используйте `volnixd-standalone`:
+```bash
+go build -o build/volnixd-standalone ./cmd/volnixd-standalone
+./build/volnixd-standalone -home testnet/node0
+```
+
+**gRPC**: Backend API подключается к gRPC на `localhost:9090`. Standalone-нода использует RPC fallback для validators. Для полной gRPC поддержки запускайте `volnixd` (полный узел с app.toml).
+
 ## 🏗️ Архитектура
 
 ### Модули

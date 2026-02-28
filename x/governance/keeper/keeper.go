@@ -223,6 +223,26 @@ func (k Keeper) GetVotes(ctx sdk.Context, proposalID uint64) ([]*Vote, error) {
 	return votes, nil
 }
 
+// GetAllVotes retrieves all votes across all proposals (for genesis export)
+func (k Keeper) GetAllVotes(ctx sdk.Context) ([]*Vote, error) {
+	store := ctx.KVStore(k.storeKey)
+	voteStore := prefix.NewStore(store, types.VoteKeyPrefix)
+
+	var votes []*Vote
+	iterator := voteStore.Iterator(nil, nil)
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		var vote Vote
+		if err := k.cdc.Unmarshal(iterator.Value(), &vote); err != nil {
+			continue // Skip invalid votes
+		}
+		votes = append(votes, &vote)
+	}
+
+	return votes, nil
+}
+
 // GetWRTBalance returns the WRT balance for an address
 // According to whitepaper: voting power is based on WRT holdings
 func (k Keeper) GetWRTBalance(ctx sdk.Context, addr sdk.AccAddress) uint64 {

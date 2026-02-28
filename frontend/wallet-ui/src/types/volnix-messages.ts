@@ -123,3 +123,149 @@ export const MsgChangeRoleType = {
   decode: decodeMsgChangeRole,
   create: createMsgChangeRole,
 };
+
+// ============================================================================
+// MsgActivateLZN (/volnix.lizenz.v1.MsgActivateLZN)
+// Fields: validator (1), amount (2), identity_hash (3)
+// ============================================================================
+
+export function encodeMsgActivateLZN(message: {
+  validator?: string;
+  amount?: string;
+  identityHash?: string;
+  identity_hash?: string;
+}, writer?: Writer): Writer {
+  if (!writer) writer = Writer.create();
+  if (message.validator) writer.uint32(10).string(message.validator);
+  if (message.amount) writer.uint32(18).string(message.amount);
+  const ih = message.identityHash || message.identity_hash;
+  if (ih) writer.uint32(26).string(ih);
+  return writer;
+}
+
+export function decodeMsgActivateLZN(input: Uint8Array | Reader, length?: number): any {
+  const reader = input instanceof Uint8Array ? Reader.create(input) : input;
+  const end = length === undefined ? reader.len : reader.pos + length;
+  const message: any = { validator: '', amount: '', identityHash: '' };
+  while (reader.pos < end) {
+    const tag = reader.uint32();
+    switch (tag >>> 3) {
+      case 1: message.validator = reader.string(); break;
+      case 2: message.amount = reader.string(); break;
+      case 3: message.identityHash = reader.string(); break;
+      default: reader.skipType(tag & 7); break;
+    }
+  }
+  return message;
+}
+
+export const MsgActivateLZNType = {
+  encode: encodeMsgActivateLZN,
+  decode: decodeMsgActivateLZN,
+  create: (p?: any) => ({
+    validator: p?.validator || '',
+    amount: p?.amount || '',
+    identityHash: p?.identityHash || p?.identity_hash || '',
+  }),
+};
+
+// ============================================================================
+// MsgDeactivateLZN (/volnix.lizenz.v1.MsgDeactivateLZN)
+// Fields: validator (1), amount (2), reason (3)
+// ============================================================================
+
+export function encodeMsgDeactivateLZN(message: {
+  validator?: string;
+  amount?: string;
+  reason?: string;
+}, writer?: Writer): Writer {
+  if (!writer) writer = Writer.create();
+  if (message.validator) writer.uint32(10).string(message.validator);
+  if (message.amount) writer.uint32(18).string(message.amount);
+  if (message.reason) writer.uint32(26).string(message.reason);
+  return writer;
+}
+
+export function decodeMsgDeactivateLZN(input: Uint8Array | Reader, length?: number): any {
+  const reader = input instanceof Uint8Array ? Reader.create(input) : input;
+  const end = length === undefined ? reader.len : reader.pos + length;
+  const message: any = { validator: '', amount: '', reason: '' };
+  while (reader.pos < end) {
+    const tag = reader.uint32();
+    switch (tag >>> 3) {
+      case 1: message.validator = reader.string(); break;
+      case 2: message.amount = reader.string(); break;
+      case 3: message.reason = reader.string(); break;
+      default: reader.skipType(tag & 7); break;
+    }
+  }
+  return message;
+}
+
+export const MsgDeactivateLZNType = {
+  encode: encodeMsgDeactivateLZN,
+  decode: decodeMsgDeactivateLZN,
+  create: (p?: any) => ({
+    validator: p?.validator || '',
+    amount: p?.amount || '',
+    reason: p?.reason || '',
+  }),
+};
+
+// ============================================================================
+// MsgPlaceOrder (/volnix.anteil.v1.MsgPlaceOrder)
+// Fields: owner (1), order_type (2), order_side (3), ant_amount (4), price (5), identity_hash (6)
+// OrderType: ORDER_TYPE_LIMIT=1, ORDER_TYPE_MARKET=2
+// OrderSide: ORDER_SIDE_BUY=1, ORDER_SIDE_SELL=2
+// ============================================================================
+
+export function encodeMsgPlaceOrder(message: {
+  owner?: string;
+  orderType?: number;
+  orderSide?: number;
+  antAmount?: string;
+  price?: string;
+  identityHash?: string;
+}, writer?: Writer): Writer {
+  if (!writer) writer = Writer.create();
+  if (message.owner) writer.uint32(10).string(message.owner);
+  if (message.orderType !== undefined) writer.uint32(16).int32(message.orderType);
+  if (message.orderSide !== undefined) writer.uint32(24).int32(message.orderSide);
+  if (message.antAmount) writer.uint32(34).string(message.antAmount);
+  if (message.price) writer.uint32(42).string(message.price);
+  const ih = message.identityHash;
+  if (ih) writer.uint32(50).string(ih);
+  return writer;
+}
+
+export function decodeMsgPlaceOrder(input: Uint8Array | Reader, length?: number): any {
+  const reader = input instanceof Uint8Array ? Reader.create(input) : input;
+  const end = length === undefined ? reader.len : reader.pos + length;
+  const message: any = { owner: '', orderType: 1, orderSide: 1, antAmount: '', price: '', identityHash: '' };
+  while (reader.pos < end) {
+    const tag = reader.uint32();
+    switch (tag >>> 3) {
+      case 1: message.owner = reader.string(); break;
+      case 2: message.orderType = reader.int32(); break;
+      case 3: message.orderSide = reader.int32(); break;
+      case 4: message.antAmount = reader.string(); break;
+      case 5: message.price = reader.string(); break;
+      case 6: message.identityHash = reader.string(); break;
+      default: reader.skipType(tag & 7); break;
+    }
+  }
+  return message;
+}
+
+export const MsgPlaceOrderType = {
+  encode: encodeMsgPlaceOrder,
+  decode: decodeMsgPlaceOrder,
+  create: (p?: any) => ({
+    owner: p?.owner || '',
+    orderType: p?.orderType ?? 1,
+    orderSide: p?.orderSide ?? 1,
+    antAmount: p?.antAmount || '',
+    price: p?.price || '',
+    identityHash: p?.identityHash || '',
+  }),
+};

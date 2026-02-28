@@ -11,6 +11,9 @@ var (
 	// ErrEmptyAntAmount indicates that the ANT amount field is empty
 	ErrEmptyAntAmount = errors.Register(ModuleName, 2, "ANT amount cannot be empty")
 
+	// ErrZeroAntAmount indicates that the ANT amount is zero
+	ErrZeroAntAmount = errors.Register(ModuleName, 41, "ANT amount must be greater than zero")
+
 	// ErrEmptyPrice indicates that the price field is empty
 	ErrEmptyPrice = errors.Register(ModuleName, 3, "price cannot be empty")
 
@@ -108,4 +111,9 @@ var (
 
 	// Order update errors
 	ErrOrderNotOpen = errors.Register(ModuleName, 40, "order is not open for updates")
+
+	// Account/role validation
+	ErrAccountNotFound     = errors.Register(ModuleName, 42, "account not found or not verified")
+	ErrInvalidRoleForOrder = errors.Register(ModuleName, 43, "only citizens and validators can create orders")
+	ErrPriceMismatch       = errors.Register(ModuleName, 44, "buy price must be >= sell price for trade execution")
 )
