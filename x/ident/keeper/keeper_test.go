@@ -142,7 +142,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_Duplicate() {
 	// Try to set duplicate
 	err = suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountAlreadyExists, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountAlreadyExists)
 }
 
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
@@ -158,7 +158,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
 
 	err := suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrEmptyAddress, err)
+	require.ErrorIs(suite.T(), err, types.ErrEmptyAddress)
 
 	// Empty identity hash
 	account = &identv1.VerifiedAccount{
@@ -172,7 +172,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
 
 	err = suite.keeper.SetVerifiedAccount(suite.ctx, account)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrEmptyIdentityHash, err)
+	require.ErrorIs(suite.T(), err, types.ErrEmptyIdentityHash)
 }
 
 // Test GetVerifiedAccount
@@ -199,7 +199,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount() {
 func (suite *KeeperTestSuite) TestGetVerifiedAccount_NotFound() {
 	_, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrNotFound)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 // Test UpdateVerifiedAccount
@@ -240,7 +240,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_NotFound() {
 
 	err := suite.keeper.UpdateVerifiedAccount(suite.ctx, account)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 // Test DeleteVerifiedAccount
@@ -265,7 +265,7 @@ func (suite *KeeperTestSuite) TestDeleteVerifiedAccount() {
 	// Verify deletion
 	_, err = suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 // Test GetAllVerifiedAccounts
@@ -379,7 +379,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRole() {
 	// Try to change to invalid role
 	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrTest, identv1.Role_ROLE_UNSPECIFIED)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrInvalidRole, err)
+	require.ErrorIs(suite.T(), err, types.ErrInvalidRole)
 }
 
 // Test UpdateAccountActivity
@@ -397,6 +397,9 @@ func (suite *KeeperTestSuite) TestUpdateAccountActivity() {
 	require.NoError(suite.T(), err)
 
 	oldTime := account.LastActive.AsTime()
+
+	// Set block time so UpdateAccountActivity (which uses ctx.BlockTime()) produces a timestamp after oldTime
+	suite.ctx = suite.ctx.WithBlockTime(time.Now())
 
 	// Update activity
 	err = suite.keeper.UpdateAccountActivity(suite.ctx, suite.addrTest)
@@ -557,7 +560,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_AlreadyCompleted() {
 	// Try to execute completed migration
 	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrInvalidMigrationStatus, err)
+	require.ErrorIs(suite.T(), err, types.ErrInvalidMigrationStatus)
 }
 
 // Test GetAllRoleMigrations
@@ -657,19 +660,19 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_SameRole() {
 func (suite *KeeperTestSuite) TestChangeAccountRole_NotFound() {
 	err := suite.keeper.ChangeAccountRole(suite.ctx, suite.addrNotFound, identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 func (suite *KeeperTestSuite) TestUpdateAccountActivity_NotFound() {
 	err := suite.keeper.UpdateAccountActivity(suite.ctx, suite.addrNotFound)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 func (suite *KeeperTestSuite) TestGetRoleMigration_NotFound() {
 	_, err := suite.keeper.GetRoleMigration(suite.ctx, suite.addrFrom, suite.addrTo)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrRoleMigrationNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrRoleMigrationNotFound)
 }
 
 func (suite *KeeperTestSuite) TestExecuteRoleMigration_SourceNotFound() {
@@ -690,7 +693,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SourceNotFound() {
 	// Try to execute migration
 	err = suite.keeper.ExecuteRoleMigration(suite.ctx, suite.addrNotFound, suite.addrTo)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole_Empty() {
@@ -702,7 +705,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole_Empty() {
 func (suite *KeeperTestSuite) TestDeleteVerifiedAccount_NotFound() {
 	err := suite.keeper.DeleteVerifiedAccount(suite.ctx, suite.addrNotFound)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts() {
@@ -1746,7 +1749,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRoleChange() {
 func (suite *KeeperTestSuite) TestChangeAccountRole_AccountNotFound() {
 	err := suite.keeper.ChangeAccountRole(suite.ctx, suite.addrNonexistent, identv1.Role_ROLE_VALIDATOR)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAccountNotFound, err)
+	require.ErrorIs(suite.T(), err, types.ErrAccountNotFound)
 }
 
 // TestGetVerifiedAccountsByRole_Error tests GetVerifiedAccountsByRole when GetAllVerifiedAccounts fails
@@ -1976,7 +1979,7 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_AlreadyVerified() {
 	// Try to validate role choice for already verified address
 	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_CITIZEN)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrAlreadyVerified, err)
+	require.ErrorIs(suite.T(), err, types.ErrAlreadyVerified)
 }
 
 // TestValidateRoleChoice_InvalidRole tests ValidateRoleChoice with invalid role
@@ -1984,12 +1987,12 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_InvalidRole() {
 	// Try to validate GUEST role (invalid)
 	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
+	require.ErrorIs(suite.T(), err, types.ErrInvalidRoleChoice)
 
 	// Try to validate UNSPECIFIED role (invalid)
 	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_UNSPECIFIED)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
+	require.ErrorIs(suite.T(), err, types.ErrInvalidRoleChoice)
 }
 
 // TestValidateRoleChoice_ValidRoles tests ValidateRoleChoice with valid roles
@@ -2251,12 +2254,12 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_EdgeCases() {
 	// Test with invalid GUEST role
 	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew3, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
+	require.ErrorIs(suite.T(), err, types.ErrInvalidRoleChoice)
 
 	// Test with invalid UNSPECIFIED role
 	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew4, identv1.Role_ROLE_UNSPECIFIED)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), types.ErrInvalidRoleChoice, err)
+	require.ErrorIs(suite.T(), err, types.ErrInvalidRoleChoice)
 }
 
 // TestSetRoleMigration_EdgeCases tests SetRoleMigration with various edge cases

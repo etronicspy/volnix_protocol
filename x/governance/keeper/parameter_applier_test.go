@@ -17,6 +17,7 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
 	"github.com/volnix-protocol/volnix-protocol/x/governance/types"
+	consensustypes "github.com/volnix-protocol/volnix-protocol/x/consensus/types"
 	governancev1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1"
 )
 
@@ -268,5 +269,122 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_ConsensusKeeper
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
 	require.Error(suite.T(), err)
 	require.Contains(suite.T(), err.Error(), "consensus keeper not set")
+}
+
+// =============================================================================
+// Consensus Parameter Change Tests (with mock keeper)
+// =============================================================================
+
+type mockConsensusKeeper struct {
+	params consensustypes.Params
+}
+
+func (m *mockConsensusKeeper) GetParams(_ sdk.Context) consensustypes.Params {
+	return m.params
+}
+
+func (m *mockConsensusKeeper) SetParams(_ sdk.Context, params consensustypes.Params) {
+	m.params = params
+}
+
+func (suite *ParameterApplierTestSuite) setupConsensusKeeper() *mockConsensusKeeper {
+	mock := &mockConsensusKeeper{
+		params: *consensustypes.DefaultParams(),
+	}
+	suite.keeper.SetConsensusKeeper(mock)
+	return mock
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_BaseBlockTime() {
+	mock := suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "base_block_time",
+		OldValue:  "5s",
+		NewValue:  "10s",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "10s", mock.params.BaseBlockTime)
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_BaseBlockTimeInvalid() {
+	suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "base_block_time",
+		NewValue:  "not-a-duration",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "invalid duration")
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_HighActivityThreshold() {
+	mock := suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "high_activity_threshold",
+		NewValue:  "5000",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), uint64(5000), mock.params.HighActivityThreshold)
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_HighActivityThresholdInvalid() {
+	suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "high_activity_threshold",
+		NewValue:  "not-a-number",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "invalid uint64")
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_LowActivityThreshold() {
+	mock := suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "low_activity_threshold",
+		NewValue:  "100",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), uint64(100), mock.params.LowActivityThreshold)
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_UnknownParam() {
+	suite.setupConsensusKeeper()
+
+	// Unknown params are caught by IsGovernable before reaching applyConsensusParameterChange
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "nonexistent_param",
+		NewValue:  "42",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "constitutional")
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_LowActivityThresholdInvalid() {
+	suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "low_activity_threshold",
+		NewValue:  "xyz",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "invalid uint64")
 }
 

@@ -56,8 +56,12 @@ func (sm *SnapshotManager) SetSnapshotDir(dir string) {
 	defer sm.mu.Unlock()
 	sm.snapshotDir = dir
 	if dir != "" {
-		_ = os.MkdirAll(dir, 0755)
-		_ = sm.loadFromDisk()
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return
+		}
+		if err := sm.loadFromDisk(); err != nil {
+			return
+		}
 	}
 }
 
@@ -71,13 +75,13 @@ func (sm *SnapshotManager) loadFromDisk() error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return err
+		return fmt.Errorf("snapshot: failed to read metadata: %w", err)
 	}
 	var meta struct {
 		Snapshots []*SnapshotInfo `json:"snapshots"`
 	}
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return err
+		return fmt.Errorf("snapshot: failed to unmarshal metadata: %w", err)
 	}
 	for _, s := range meta.Snapshots {
 		sm.snapshots[s.Height] = s
@@ -96,7 +100,9 @@ func (sm *SnapshotManager) persistToDisk() error {
 		return nil
 	}
 	chunksDir := filepath.Join(sm.snapshotDir, "chunks")
-	_ = os.MkdirAll(chunksDir, 0755)
+	if err := os.MkdirAll(chunksDir, 0755); err != nil {
+		return fmt.Errorf("snapshot: failed to create chunks dir: %w", err)
+	}
 	snapshots := make([]*SnapshotInfo, 0, len(sm.snapshots))
 	for _, s := range sm.snapshots {
 		snapshots = append(snapshots, s)
@@ -106,9 +112,12 @@ func (sm *SnapshotManager) persistToDisk() error {
 	}{Snapshots: snapshots}
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("snapshot: failed to marshal metadata: %w", err)
 	}
-	return os.WriteFile(filepath.Join(sm.snapshotDir, "metadata.json"), data, 0644)
+	if err := os.WriteFile(filepath.Join(sm.snapshotDir, "metadata.json"), data, 0644); err != nil {
+		return fmt.Errorf("snapshot: failed to write metadata: %w", err)
+	}
+	return nil
 }
 
 // CreateSnapshot creates a snapshot of the current application state
@@ -135,8 +144,12 @@ func (sm *SnapshotManager) CreateSnapshot(height uint64) (*SnapshotInfo, error) 
 		sm.chunks[hash] = chunks[i]
 		if sm.snapshotDir != "" {
 			chunksDir := filepath.Join(sm.snapshotDir, "chunks")
-			_ = os.MkdirAll(chunksDir, 0755)
-			_ = os.WriteFile(filepath.Join(chunksDir, hash), chunks[i], 0644)
+			if err := os.MkdirAll(chunksDir, 0755); err != nil {
+				return nil, fmt.Errorf("snapshot: failed to create chunks dir: %w", err)
+			}
+			if err := os.WriteFile(filepath.Join(chunksDir, hash), chunks[i], 0644); err != nil {
+				return nil, fmt.Errorf("snapshot: failed to write chunk %s: %w", hash, err)
+			}
 		}
 	}
 
@@ -151,7 +164,9 @@ func (sm *SnapshotManager) CreateSnapshot(height uint64) (*SnapshotInfo, error) 
 	sm.snapshots[height] = snapshot
 
 	if sm.snapshotDir != "" {
-		_ = sm.persistToDisk()
+		if err := sm.persistToDisk(); err != nil {
+			return nil, fmt.Errorf("snapshot: failed to persist to disk: %w", err)
+		}
 	}
 
 	return snapshot, nil

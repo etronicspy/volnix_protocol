@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -22,7 +23,7 @@ type StandaloneServer struct {
 func NewStandaloneServer(homeDir string, logger log.Logger) (*StandaloneServer, error) {
 	s, err := app.NewMinimalCometBFTServer(homeDir, logger)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create minimal server: %w", err)
 	}
 	return &StandaloneServer{MinimalVolnixServer: s}, nil
 }

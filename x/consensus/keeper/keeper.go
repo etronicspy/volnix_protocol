@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -278,7 +279,7 @@ func (k Keeper) SelectBlockCreator(ctx sdk.Context, height uint64) (*consensusv1
 		ActivityScore: selectedValidator.ActivityScore,
 		BurnAmount:    "0",
 		BlockHeight:   height,
-		SelectionTime: timestamppb.Now(),
+		SelectionTime: timestamppb.New(ctx.BlockTime()),
 	}
 
 	k.SetBlockCreator(ctx, blockCreator)
@@ -605,6 +606,157 @@ func (k Keeper) UpdateConsensusState(ctx sdk.Context, height uint64, totalAntBur
 	return k.SetConsensusState(ctx, consensusState)
 }
 
+// GetTargetBlockTime returns the dynamic target block time.
+// Returns 0 if not yet set (no ANT activity).
+func (k Keeper) GetTargetBlockTime(ctx sdk.Context) time.Duration {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(types.TargetBlockTimeKey)
+	if bz == nil || len(bz) < 8 {
+		return 0
+	}
+	ns := binary.BigEndian.Uint64(bz)
+	return time.Duration(ns)
+}
+
+// SetTargetBlockTime stores the dynamic target block time.
+func (k Keeper) SetTargetBlockTime(ctx sdk.Context, d time.Duration) error {
+	store := ctx.KVStore(k.storeKey)
+	bz := make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, uint64(d))
+	store.Set(types.TargetBlockTimeKey, bz)
+	return nil
+}
+
+// ValidateBlockTiming checks that the proposed block timestamp respects the target block time.
+// prev is the previous block's timestamp, proposed is the new block's timestamp.
+// Returns nil when timing is acceptable.
+func (k Keeper) ValidateBlockTiming(ctx sdk.Context, prev, proposed time.Time) error {
+	target := k.GetTargetBlockTime(ctx)
+	if target == 0 {
+		return nil
+	}
+	minTime := prev.Add(target)
+	if proposed.Before(minTime) {
+		return fmt.Errorf("block too fast: proposed %s, earliest allowed %s (target %s)",
+			proposed.Format(time.RFC3339Nano), minTime.Format(time.RFC3339Nano), target)
+	}
+	return nil
+}
+
+// RecordAntBid adds a validator's bid amount to their epoch-level ANT purchase total.
+func (k Keeper) RecordAntBid(ctx sdk.Context, validator string, amount uint64) {
+	store := ctx.KVStore(k.storeKey)
+	key := types.GetAntPurchaseKey(validator)
+	current := uint64(0)
+	if bz := store.Get(key); bz != nil && len(bz) >= 8 {
+		current = binary.BigEndian.Uint64(bz)
+	}
+	current += amount
+	bz := make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, current)
+	store.Set(key, bz)
+}
+
+// GetAntPurchaseTotal returns total ANT bid for a validator in the current epoch.
+func (k Keeper) GetAntPurchaseTotal(ctx sdk.Context, validator string) uint64 {
+	store := ctx.KVStore(k.storeKey)
+	key := types.GetAntPurchaseKey(validator)
+	bz := store.Get(key)
+	if bz == nil || len(bz) < 8 {
+		return 0
+	}
+	return binary.BigEndian.Uint64(bz)
+}
+
+// ResetAntPurchases clears all ANT purchase trackers for a new epoch.
+func (k Keeper) ResetAntPurchases(ctx sdk.Context) {
+	store := ctx.KVStore(k.storeKey)
+	// Iterate over the prefix range and collect keys to delete
+	end := make([]byte, len(types.AntPurchaseKeyPrefix))
+	copy(end, types.AntPurchaseKeyPrefix)
+	end[len(end)-1]++
+	iter := store.Iterator(types.AntPurchaseKeyPrefix, end)
+	defer iter.Close()
+	var keys [][]byte
+	for ; iter.Valid(); iter.Next() {
+		keys = append(keys, iter.Key())
+	}
+	for _, k := range keys {
+		store.Delete(k)
+	}
+}
+
+// GetEpochStartHeight returns the height when the current epoch began.
+func (k Keeper) GetEpochStartHeight(ctx sdk.Context) uint64 {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(types.EpochHeightKey)
+	if bz == nil || len(bz) < 8 {
+		return 0
+	}
+	return binary.BigEndian.Uint64(bz)
+}
+
+// SetEpochStartHeight stores the height when the current epoch began.
+func (k Keeper) SetEpochStartHeight(ctx sdk.Context, height uint64) {
+	store := ctx.KVStore(k.storeKey)
+	bz := make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, height)
+	store.Set(types.EpochHeightKey, bz)
+}
+
+// ProcessMOAEpoch checks if an epoch boundary is reached and updates MOA compliance
+// for all validators based on their actual ANT auction participation.
+func (k Keeper) ProcessMOAEpoch(ctx sdk.Context, currentHeight uint64) {
+	epochStart := k.GetEpochStartHeight(ctx)
+	if currentHeight-epochStart < types.DefaultEpochLength {
+		return
+	}
+
+	// Epoch boundary reached
+	validators := k.GetAllValidators(ctx)
+	for _, val := range validators {
+		if val.Status != consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE {
+			continue
+		}
+		totalBid := k.GetAntPurchaseTotal(ctx, val.Validator)
+
+		// Derive required ANT activity per epoch from MinBurnAmount param.
+		// MinBurnAmount is the min per-auction bid; over an epoch of DefaultEpochLength
+		// blocks, a validator should cumulatively bid at least MinBurnAmount.
+		params := k.GetParams(ctx)
+		requiredStr := strings.TrimSuffix(strings.TrimSpace(params.MinBurnAmount), "uvx")
+		required, parseErr := strconv.ParseUint(requiredStr, 10, 64)
+		if parseErr != nil || required == 0 {
+			required = 1
+		}
+		compliance := float64(totalBid) / float64(required)
+		if compliance > 2.0 {
+			compliance = 2.0
+		}
+
+		// Push compliance data into lizenz MOA status
+		if k.lizenzKeeper != nil {
+			moaValue := fmt.Sprintf("%.1f", compliance*100)
+			k.lizenzKeeper.UpdateRewardStats(ctx, val.Validator, 0, currentHeight, compliance, 1.0, 0)
+			_ = moaValue
+		}
+
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				"moa.epoch_update",
+				sdk.NewAttribute("validator", val.Validator),
+				sdk.NewAttribute("total_bid", fmt.Sprintf("%d", totalBid)),
+				sdk.NewAttribute("required", fmt.Sprintf("%d", required)),
+				sdk.NewAttribute("compliance", fmt.Sprintf("%.2f", compliance)),
+			),
+		)
+	}
+
+	// Reset for next epoch
+	k.ResetAntPurchases(ctx)
+	k.SetEpochStartHeight(ctx, currentHeight)
+}
+
 // GetValidatorWeight returns validator weight
 func (k Keeper) GetValidatorWeight(ctx sdk.Context, validator string) (string, error) {
 	if validator == "" {
@@ -801,41 +953,14 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 		return err
 	}
 
-	// Process blind auction for current block
-	// Transition from commit to reveal phase if needed
-	auction, err := k.GetBlindAuction(ctx, currentHeight)
-	if err == nil && auction != nil {
-		// If auction is in commit phase and we have commits, transition to reveal
-		if auction.Phase == consensusv1.AuctionPhase_AUCTION_PHASE_COMMIT && len(auction.Commits) > 0 {
-			err = k.TransitionAuctionPhase(ctx, currentHeight)
-			if err != nil {
-				ctx.Logger().Error("failed to transition auction phase", "error", err)
-			}
-		}
-
-		// If auction is in reveal phase and we have reveals, select winner
-		if auction.Phase == consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL && len(auction.Reveals) > 0 {
-			winner, winningBid, err := k.SelectAuctionWinner(ctx, currentHeight)
-			if err != nil {
-				ctx.Logger().Error("failed to select auction winner", "error", err)
-			} else {
-				ctx.Logger().Info("blind auction winner selected", "height", currentHeight, "winner", winner, "bid", winningBid)
-			}
-		}
+	// Run automated blind auction for this block.
+	// Validators auto-bid based on their ANT balance; winner earns block creator rights.
+	if err := k.RunAutomatedAuction(ctx, currentHeight); err != nil {
+		ctx.Logger().Error("automated auction failed", "error", err, "height", currentHeight)
 	}
 
-	// Create blind auction for next block
-	nextHeight := currentHeight + 1
-	_, err = k.CreateBlindAuction(ctx, nextHeight)
-	if err != nil {
-		ctx.Logger().Error("failed to create blind auction for next block", "error", err, "height", nextHeight)
-	}
-
-	// Clean up old completed auctions (keep only last N blocks for history)
-	// This prevents storage bloat from accumulating old auction data
 	if err := k.CleanupOldAuctions(ctx, currentHeight); err != nil {
 		ctx.Logger().Error("failed to cleanup old auctions", "error", err)
-		// Don't fail EndBlocker if cleanup fails
 	}
 
 	// Distribute base rewards to validators (Circuit 1)
@@ -850,7 +975,114 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 	err = k.ProcessHalving(ctx)
 	if err != nil {
 		ctx.Logger().Error("failed to process halving", "error", err, "height", currentHeight)
-		// Don't fail the block if halving processing fails
+	}
+
+	// Process MOA epoch: update compliance from real auction participation
+	k.ProcessMOAEpoch(ctx, currentHeight)
+
+	// Update dynamic target block time based on total ANT burned
+	if totalAntBurned != "" && totalAntBurned != "0" {
+		targetDuration, calcErr := k.CalculateBlockTime(ctx, totalAntBurned)
+		if calcErr == nil && targetDuration > 0 {
+			if storeErr := k.SetTargetBlockTime(ctx, targetDuration); storeErr != nil {
+				ctx.Logger().Error("failed to store target block time", "error", storeErr)
+			}
+		}
+	}
+
+	return nil
+}
+
+// RunAutomatedAuction executes a complete single-block blind auction cycle:
+// 1. Create auction, 2. Auto-commit from active validators,
+// 3. Transition to reveal, 4. Auto-reveal, 5. Select winner.
+// The winner becomes BlockCreator and their ANT bid is burned.
+func (k Keeper) RunAutomatedAuction(ctx sdk.Context, height uint64) error {
+	validators := k.GetAllValidators(ctx)
+	if len(validators) == 0 {
+		return nil
+	}
+
+	auction, err := k.CreateBlindAuction(ctx, height)
+	if err != nil {
+		return fmt.Errorf("create auction: %w", err)
+	}
+	if auction.Phase != consensusv1.AuctionPhase_AUCTION_PHASE_COMMIT {
+		return nil
+	}
+
+	// Auto-commit: each active validator bids a fraction of their ANT balance.
+	r := deterministicRand(ctx, []byte("auto-auction"))
+	bidFraction := uint64(10) // 10% of ANT balance as default bid
+
+	type pendingBid struct {
+		validator string
+		nonce     string
+		bidAmount string
+	}
+	var bids []pendingBid
+
+	for _, val := range validators {
+		if val.Status != consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE {
+			continue
+		}
+
+		antBalance := uint64(0)
+		if k.anteilKeeper != nil {
+			pos, err := k.anteilKeeper.GetUserPosition(ctx, val.Validator)
+			if err == nil {
+				balStr, err := extractAntBalance(pos)
+				if err == nil {
+					antBalance, _ = strconv.ParseUint(balStr, 10, 64)
+				}
+			}
+		}
+
+		bidAmount := antBalance / bidFraction
+		if bidAmount == 0 {
+			bidAmount = 1
+		}
+
+		// Generate deterministic nonce from block context + validator address
+		nonceHash := sha256.Sum256([]byte(fmt.Sprintf("nonce:%d:%s:%d", height, val.Validator, r.Int63())))
+		nonce := hex.EncodeToString(nonceHash[:16])
+		bidAmountStr := fmt.Sprintf("%d", bidAmount)
+		commitHash := HashCommit(nonce, bidAmountStr)
+
+		if err := k.CommitBid(ctx, val.Validator, commitHash, height); err != nil {
+			ctx.Logger().Debug("auto-commit skip", "validator", val.Validator, "error", err)
+			continue
+		}
+		k.RecordAntBid(ctx, val.Validator, bidAmount)
+		bids = append(bids, pendingBid{validator: val.Validator, nonce: nonce, bidAmount: bidAmountStr})
+	}
+
+	if len(bids) == 0 {
+		return nil
+	}
+
+	// Transition to reveal phase
+	if err := k.TransitionAuctionPhase(ctx, height); err != nil {
+		return fmt.Errorf("transition to reveal: %w", err)
+	}
+
+	// Auto-reveal all committed bids
+	for _, b := range bids {
+		if err := k.RevealBid(ctx, b.validator, b.nonce, b.bidAmount, height); err != nil {
+			ctx.Logger().Debug("auto-reveal skip", "validator", b.validator, "error", err)
+		}
+	}
+
+	// Select winner via weighted lottery
+	winner, winningBid, err := k.SelectAuctionWinner(ctx, height)
+	if err != nil {
+		return fmt.Errorf("select winner: %w", err)
+	}
+	ctx.Logger().Info("auction winner", "height", height, "winner", winner, "bid", winningBid)
+
+	// Set the winner as block creator for reward distribution
+	if _, err := k.SelectBlockCreator(ctx, height); err != nil {
+		ctx.Logger().Debug("block creator selection fell back to lottery", "error", err)
 	}
 
 	return nil
@@ -1286,7 +1518,7 @@ func (k Keeper) RevealBid(ctx sdk.Context, validator, nonce, bidAmount string, h
 		Nonce:       nonce,
 		BidAmount:   bidAmount,
 		BlockHeight: height,
-		RevealTime:  timestamppb.Now(),
+		RevealTime:  timestamppb.New(ctx.BlockTime()),
 	}
 
 	auction.Reveals = append(auction.Reveals, bidReveal)
@@ -1707,8 +1939,16 @@ func (k Keeper) CalculateRewardDistribution(ctx sdk.Context, baseReward uint64, 
 	var rewards []ValidatorRewardInfo
 	totalDistributed := uint64(0)
 
-	// Calculate reward for each validator
-	for validator, activatedLZN := range validatorLZN {
+	// Sort validator addresses for deterministic iteration order
+	sortedValidators := make([]string, 0, len(validatorLZN))
+	for v := range validatorLZN {
+		sortedValidators = append(sortedValidators, v)
+	}
+	sort.Strings(sortedValidators)
+
+	// Calculate reward for each validator (deterministic order)
+	for _, validator := range sortedValidators {
+		activatedLZN := validatorLZN[validator]
 		if activatedLZN == 0 {
 			continue // Skip validators with no activated LZN
 		}

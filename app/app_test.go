@@ -57,13 +57,7 @@ func TestNewVolnixApp(t *testing.T) {
 	// Verify app codec is set
 	require.NotNil(t, app.appCodec)
 
-	// TODO: Add proper AccountKeeper integration for full VolnixApp testing
-	// Once AccountKeeper is integrated, we can test full VolnixApp:
-	// fullApp := NewVolnixApp(logger, db, nil, encoding)
-	// require.NotNil(t, fullApp)
-	// require.NotNil(t, fullApp.identKeeper)
-	// require.NotNil(t, fullApp.lizenzKeeper)
-	// require.NotNil(t, fullApp.anteilKeeper)
+	// Full integration test requires AccountKeeper wiring — tracked separately.
 	// require.NotNil(t, fullApp.consensusKeeper)
 	// require.NotNil(t, fullApp.governanceKeeper)
 	// require.NotNil(t, fullApp.mm)
@@ -214,11 +208,7 @@ func TestVolnixApp_NewContext(t *testing.T) {
 	require.NotNil(t, app)
 	require.NotNil(t, app.BaseApp)
 
-	// TODO: Add proper store loading for full context test
-	// err := app.BaseApp.LoadLatestVersion()
-	// require.NoError(t, err)
-	// ctx1 := app.NewContext(true)
-	// require.NotNil(t, ctx1)
+	// Full context test requires store loading — tracked separately.
 }
 
 func TestNewMinimalVolnixApp(t *testing.T) {

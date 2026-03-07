@@ -47,8 +47,6 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 	// Generate identity hash from ZKP proof
 	identityHash := fmt.Sprintf("hash-%s", req.ZkpProof[:16])
 
-	// IMPROVED: Check for duplicate identity hash BEFORE creating account
-	// This prevents identity reuse attacks
 	if err := s.k.CheckDuplicateIdentityHash(sdkCtx, identityHash, req.Address); err != nil {
 		return nil, err
 	}
@@ -58,6 +56,7 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 		req.Address,
 		req.DesiredRole, // Use desired_role from request
 		identityHash,
+		sdkCtx.BlockTime(),
 	)
 
 	// Set verified account
@@ -246,7 +245,7 @@ func (s MsgServer) RegisterVerificationProvider(ctx context.Context, req *identv
 		ProviderPublicKey: req.ProviderPublicKey,
 		AccreditationHash: accreditationHash,
 		IsAccredited:      true,
-		AccreditationDate: timestamppb.Now(),
+		AccreditationDate: timestamppb.New(sdkCtx.BlockTime()),
 	}
 	if err := s.k.SetVerificationProvider(sdkCtx, provider); err != nil {
 		return nil, fmt.Errorf("failed to set verification provider: %w", err)

@@ -13,6 +13,11 @@ import (
 	"github.com/volnix-protocol/volnix-protocol/app"
 )
 
+var (
+	Version = "0.1.0-integrated"
+	Commit  = "unknown"
+)
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "volnixd",
@@ -26,16 +31,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			moniker := args[0]
-			homeDir, _ := cmd.Flags().GetString("home")
-			if homeDir == "" {
-				homeDir = os.Getenv("HOME")
-				if homeDir == "" {
-					homeDir = os.Getenv("USERPROFILE") // Windows
-				}
-				homeDir = filepath.Join(homeDir, ".volnix")
-			} else {
-				homeDir, _ = filepath.Abs(homeDir)
-			}
+			homeDir := getHomeDir(cmd)
 
 			fmt.Printf("🔧 Initializing Volnix Protocol node: %s\n", moniker)
 			fmt.Printf("📁 Home directory: %s\n", homeDir)
@@ -70,16 +66,7 @@ func main() {
 		Use:   "start",
 		Short: "Start the blockchain node",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			homeDir, _ := cmd.Flags().GetString("home")
-			if homeDir == "" {
-				homeDir = os.Getenv("HOME")
-				if homeDir == "" {
-					homeDir = os.Getenv("USERPROFILE") // Windows
-				}
-				homeDir = filepath.Join(homeDir, ".volnix")
-			} else {
-				homeDir, _ = filepath.Abs(homeDir)
-			}
+			homeDir := getHomeDir(cmd)
 
 			configDir := filepath.Join(homeDir, "config")
 			if _, err := os.Stat(configDir); os.IsNotExist(err) {
@@ -106,17 +93,8 @@ func main() {
 			Use:   "version",
 			Short: "Show version",
 			Run: func(cmd *cobra.Command, args []string) {
-				fmt.Println("🚀 Volnix Protocol (Integrated)")
-				fmt.Println("Version: 0.1.0-integrated")
-				fmt.Println("Status: Full Integration")
-				fmt.Println("")
-				fmt.Println("✅ Modules integrated:")
-				fmt.Println("  - ident: Identity verification with ZKP")
-				fmt.Println("  - lizenz: LZN license management")
-				fmt.Println("  - anteil: ANT market and trading")
-				fmt.Println("  - consensus: PoVB consensus algorithm")
-				fmt.Println("")
-				fmt.Println("🔥 Ready for blockchain operations!")
+				fmt.Printf("Volnix Protocol (Integrated)\nVersion: %s\nCommit: %s\n", Version, Commit)
+				fmt.Println("Modules: ident, lizenz, anteil, consensus")
 			},
 		},
 		createNetworkCommands(),
@@ -157,26 +135,15 @@ func main() {
 		startCmd,
 		&cobra.Command{
 			Use:   "status",
-			Short: "Query node status",
-			Run: func(cmd *cobra.Command, args []string) {
-				fmt.Println("📊 Volnix Protocol Node Status")
-				fmt.Println("=============================")
-				fmt.Println("Node ID: volnix-integrated-node")
-				fmt.Println("Version: 0.1.0-integrated")
-				fmt.Println("Network: volnix-mainnet")
-				fmt.Println("Latest Block: 12345")
-				fmt.Println("Sync Status: ✅ Synced")
-				fmt.Println("")
-				fmt.Println("🔧 Module Status:")
-				fmt.Println("  - ident: ✅ Active")
-				fmt.Println("  - lizenz: ✅ Active")
-				fmt.Println("  - anteil: ✅ Active")
-				fmt.Println("  - consensus: ✅ Active")
-				fmt.Println("")
-				fmt.Println("🌐 Network Info:")
-				fmt.Println("  - Peers: 8")
-				fmt.Println("  - Validators: 21")
-				fmt.Println("  - RPC: http://localhost:26657")
+			Short: "Query node status via RPC",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				homeDir := getHomeDir(cmd)
+				fmt.Printf("Volnix Protocol Node Status\n")
+				fmt.Printf("Home: %s\n", homeDir)
+				fmt.Printf("Version: %s\n", Version)
+				fmt.Println("RPC: http://localhost:26657")
+				fmt.Println("Use 'curl http://localhost:26657/status' for live node status")
+				return nil
 			},
 		},
 	)
@@ -188,15 +155,17 @@ func main() {
 }
 
 func getHomeDir(cmd *cobra.Command) string {
-	homeDir, _ := cmd.Flags().GetString("home")
-	if homeDir == "" {
+	homeDir, err := cmd.Flags().GetString("home")
+	if err != nil || homeDir == "" {
 		homeDir = os.Getenv("HOME")
 		if homeDir == "" {
 			homeDir = os.Getenv("USERPROFILE")
 		}
 		homeDir = filepath.Join(homeDir, ".volnix")
 	} else {
-		homeDir, _ = filepath.Abs(homeDir)
+		if abs, err := filepath.Abs(homeDir); err == nil {
+			homeDir = abs
+		}
 	}
 	return homeDir
 }

@@ -73,8 +73,8 @@ func TestSimplePerformance(t *testing.T) {
 	require.Equal(t, successCount, int64(totalOperations), "All operations should succeed")
 }
 
-// TestMemoryUsage tests memory usage patterns
-func TestMemoryUsage(t *testing.T) {
+// TestMapMemoryUsage tests memory usage patterns for large map allocations.
+func TestMapMemoryUsage(t *testing.T) {
 	t.Log("Testing memory usage patterns...")
 
 	// Force garbage collection

@@ -324,7 +324,7 @@ func (k Keeper) DeleteActivatedLizenz(ctx sdk.Context, validator string) error {
 			types.EventTypeLizenzDeactivated,
 			sdk.NewAttribute(types.AttributeKeyValidator, validator),
 			sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
-			sdk.NewAttribute(types.AttributeKeyDeactivationTime, timestamppb.Now().String()),
+			sdk.NewAttribute(types.AttributeKeyDeactivationTime, timestamppb.New(ctx.BlockTime()).String()),
 			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
 		),
 	)
@@ -751,7 +751,7 @@ func (k Keeper) GetAllMOAStatus(ctx sdk.Context) ([]*lizenzv1.MOAStatus, error) 
 func (k Keeper) UpdateLizenzActivity(ctx sdk.Context, validator string) error {
 	// Update activated LZN activity
 	if activatedLizenz, err := k.GetActivatedLizenz(ctx, validator); err == nil {
-		types.UpdateActivatedLizenzActivity(activatedLizenz)
+		types.UpdateActivatedLizenzActivity(activatedLizenz, ctx.BlockTime())
 		if err := k.UpdateActivatedLizenz(ctx, activatedLizenz); err != nil {
 			return err
 		}
@@ -765,7 +765,7 @@ func (k Keeper) UpdateLizenzActivity(ctx sdk.Context, validator string) error {
 		if err != nil {
 			return err
 		}
-		types.UpdateMOAStatusActivity(moaStatus, newMOA)
+		types.UpdateMOAStatusActivity(moaStatus, newMOA, ctx.BlockTime())
 		if err := k.SetMOAStatus(ctx, moaStatus); err != nil {
 			return err
 		}
@@ -903,6 +903,7 @@ func (k Keeper) CheckInactiveLizenz(ctx sdk.Context) error {
 				lizenz.Validator,
 				lizenz.Amount,
 				"inactivity",
+				ctx.BlockTime(),
 			)
 
 			if err := k.SetDeactivatingLizenz(ctx, deactivatingLizenz); err != nil {

@@ -8,7 +8,6 @@ cd "$(dirname "$0")/.."
 
 BIN="${BIN:-./build/volnixd}"
 NODES="0 1 2 3"
-P2P_PORTS="26656 26666 26676 26686"
 
 echo "=== P2P Configuration Verification ==="
 echo ""
@@ -71,6 +70,5 @@ done
 echo ""
 
 echo "=== Summary ==="
-echo "CometBFT: v0.38.19"
 echo "P2P ports: 26656 26666 26676 26686"
 echo "Run: VOLNIX_SKIP_VALIDATOR_UPDATES=1 ./build/volnixd start --home testnet/nodeN"

@@ -2,6 +2,7 @@ package tests
 
 import (
 	"fmt"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,7 +24,6 @@ import (
 	identkeeper "github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
 	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	lizenzkeeper "github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
-	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
@@ -52,47 +52,22 @@ type BenchmarkTestSuite struct {
 }
 
 func (suite *BenchmarkTestSuite) SetupTest() {
-	// Create codec
-	interfaceRegistry := cdctypes.NewInterfaceRegistry()
-	std.RegisterInterfaces(interfaceRegistry)
-	suite.cdc = codec.NewProtoCodec(interfaceRegistry)
+	tc := NewTestContext(suite.T())
 
-	// Create store keys
-	suite.identStoreKey = storetypes.NewKVStoreKey(identtypes.StoreKey)
-	suite.lizenzStoreKey = storetypes.NewKVStoreKey(lizenztypes.StoreKey)
-	suite.anteilStoreKey = storetypes.NewKVStoreKey(anteiltypes.StoreKey)
-	paramsStoreKey := storetypes.NewKVStoreKey(paramtypes.StoreKey)
-	tKey := storetypes.NewTransientStoreKey(paramtypes.TStoreKey)
+	suite.cdc = tc.Cdc
+	suite.ctx = tc.Ctx
 
-	// Create context - for now use single store, will create separate contexts per test
-	suite.ctx = testutil.DefaultContext(paramsStoreKey, tKey)
+	suite.identStoreKey = tc.IdentStoreKey.(*storetypes.KVStoreKey)
+	suite.lizenzStoreKey = tc.LizenzStoreKey.(*storetypes.KVStoreKey)
+	suite.anteilStoreKey = tc.AnteilStoreKey.(*storetypes.KVStoreKey)
 
-	// Create params keeper and subspaces
-	paramsKeeper := paramskeeper.NewKeeper(suite.cdc, codec.NewLegacyAmino(), paramsStoreKey, tKey)
-	suite.identParamStore = paramsKeeper.Subspace(identtypes.ModuleName)
-	suite.lizenzParamStore = paramsKeeper.Subspace(lizenztypes.ModuleName)
-	suite.anteilParamStore = paramsKeeper.Subspace(anteiltypes.ModuleName)
+	suite.identParamStore = tc.IdentParamStore
+	suite.lizenzParamStore = tc.LizenzParamStore
+	suite.anteilParamStore = tc.AnteilParamStore
 
-	// Set key tables
-	suite.identParamStore.WithKeyTable(identtypes.ParamKeyTable())
-	suite.lizenzParamStore.WithKeyTable(lizenztypes.ParamKeyTable())
-	suite.anteilParamStore.WithKeyTable(anteiltypes.ParamKeyTable())
-
-	// Create keepers
-	suite.identKeeper = identkeeper.NewKeeper(suite.cdc, suite.identStoreKey, suite.identParamStore)
-	suite.lizenzKeeper = lizenzkeeper.NewKeeper(suite.cdc, suite.lizenzStoreKey, suite.lizenzParamStore)
-	suite.anteilKeeper = anteilkeeper.NewKeeper(suite.cdc, suite.anteilStoreKey, suite.anteilParamStore)
-
-	// Set default params (only for params store)
-	suite.identKeeper.SetParams(suite.ctx, identtypes.DefaultParams())
-	suite.lizenzKeeper.SetParams(suite.ctx, lizenztypes.DefaultParams())
-	suite.anteilKeeper.SetParams(suite.ctx, anteiltypes.DefaultParams())
-}
-
-// createContextForKeeper creates a separate context for each keeper to avoid store conflicts
-func (suite *BenchmarkTestSuite) createContextForKeeper(storeKey *storetypes.KVStoreKey, paramStore paramtypes.Subspace) sdk.Context {
-	tKey := storetypes.NewTransientStoreKey("temp")
-	return testutil.DefaultContext(storeKey, tKey)
+	suite.identKeeper = tc.IdentKeeper
+	suite.lizenzKeeper = tc.LizenzKeeper
+	suite.anteilKeeper = tc.AnteilKeeper
 }
 
 func BenchmarkCreateVerifiedAccount(b *testing.B) {
@@ -382,15 +357,15 @@ func BenchmarkBeginBlocker(b *testing.B) {
 	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
 	keeper.SetParams(ctx, anteiltypes.DefaultParams())
 
-	// Create some orders
+	addrs := GenerateTestAddresses("", 100)
 	for i := 0; i < 100; i++ {
 		order := anteiltypes.NewOrder(
-			"cosmos1test"+string(rune(i)),
+			addrs[i],
 			anteilv1.OrderType_ORDER_TYPE_LIMIT,
 			anteilv1.OrderSide_ORDER_SIDE_BUY,
 			"1000000",
 			"1.5",
-			"hash"+string(rune(i)),
+			fmt.Sprintf("hash%d", i),
 		)
 		keeper.CreateOrder(ctx, order)
 	}
@@ -435,7 +410,6 @@ func BenchmarkEndBlocker(b *testing.B) {
 }
 
 func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
-	suite.T().Skip("Multi-store context issues - will be fixed in next iteration")
 	// Test 1: Measure order creation performance
 	start := time.Now()
 
@@ -518,7 +492,6 @@ func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
 }
 
 func (suite *BenchmarkTestSuite) TestMemoryUsage() {
-	suite.T().Skip("Multi-store context issues - will be fixed in next iteration")
 	// Test 1: Measure memory usage for large number of orders
 	initialMem := getMemUsage()
 
@@ -551,8 +524,6 @@ func (suite *BenchmarkTestSuite) TestMemoryUsage() {
 }
 
 func (suite *BenchmarkTestSuite) TestConcurrentOperations() {
-	suite.T().Skip("Multi-store context issues - will be fixed in next iteration")
-
 	// Test 1: Concurrent order creation with proper synchronization
 	addrs := GenerateTestAddresses("", 100)
 	done := make(chan bool, 10)
@@ -588,13 +559,13 @@ func (suite *BenchmarkTestSuite) TestConcurrentOperations() {
 	// Verify all orders were created
 	orders, err := suite.anteilKeeper.GetAllOrders(suite.ctx)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), 1000, len(orders), "All orders should be created")
+	require.Equal(suite.T(), 100, len(orders), "All orders should be created (10 workers × 10 each)")
 }
 
 func getMemUsage() int64 {
-	// This is a placeholder function - in a real implementation,
-	// you would use runtime.MemStats or similar to get actual memory usage
-	return 0
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return int64(m.Alloc)
 }
 
 func TestBenchmarkTestSuite(t *testing.T) {

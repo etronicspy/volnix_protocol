@@ -66,6 +66,7 @@ message MsgChangeRoleResponse {
 
 // MsgRegisterVerificationProvider defines a message for registering a new verification provider
 message MsgRegisterVerificationProvider {
+  option (cosmos.msg.v1.signer) = "provider_id";
   string provider_id = 1;
   string provider_name = 2;
   string provider_public_key = 3;

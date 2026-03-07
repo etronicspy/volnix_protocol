@@ -2,9 +2,9 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkquery "github.com/cosmos/cosmos-sdk/types/query"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -18,12 +18,15 @@ func NewQueryServer(k *Keeper) QueryServer { return QueryServer{k: *k} }
 
 var _ anteilv1.QueryServer = QueryServer{}
 
+// Params returns module parameters.
+// NOTE: After running `buf generate`, update to return `&anteilv1.QueryParamsResponse{Params: params}`
+// once the generated QueryParamsResponse uses a Params field instead of Json string.
 func (s QueryServer) Params(ctx context.Context, _ *anteilv1.QueryParamsRequest) (*anteilv1.QueryParamsResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	params := s.k.GetParams(sdkCtx).ToProto()
 	bz, err := protojson.Marshal(params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal params: %w", err)
 	}
 	return &anteilv1.QueryParamsResponse{Json: string(bz)}, nil
 }
@@ -44,8 +47,12 @@ func (s QueryServer) Orders(ctx context.Context, req *anteilv1.QueryOrdersReques
 }
 
 func (s QueryServer) Trades(ctx context.Context, req *anteilv1.QueryTradesRequest) (*anteilv1.QueryTradesResponse, error) {
-	_ = sdkquery.PageRequest{}
-	return &anteilv1.QueryTradesResponse{Trades: nil, Pagination: nil}, nil
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	trades, err := s.k.GetAllTrades(sdkCtx)
+	if err != nil {
+		return nil, err
+	}
+	return &anteilv1.QueryTradesResponse{Trades: trades, Pagination: nil}, nil
 }
 
 func (s QueryServer) Auctions(ctx context.Context, req *anteilv1.QueryAuctionsRequest) (*anteilv1.QueryAuctionsResponse, error) {

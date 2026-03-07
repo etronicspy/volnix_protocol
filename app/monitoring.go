@@ -9,22 +9,25 @@ import (
 
 	"cosmossdk.io/log"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	anteilkeeper "github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
 )
 
 // MonitoringService provides monitoring and metrics for Volnix Protocol
 type MonitoringService struct {
-	app    *VolnixApp
-	logger log.Logger
-	server *http.Server
+	app       *VolnixApp
+	logger    log.Logger
+	server    *http.Server
+	startedAt time.Time
 }
 
 // NewMonitoringService creates a new monitoring service
 func NewMonitoringService(app *VolnixApp, logger log.Logger) *MonitoringService {
 	return &MonitoringService{
-		app:    app,
-		logger: logger,
+		app:       app,
+		logger:    logger,
+		startedAt: time.Now(),
 	}
 }
 
@@ -44,7 +47,7 @@ func (ms *MonitoringService) Start(port string) error {
 		Handler: mux,
 	}
 
-	ms.logger.Info("Starting monitoring service", "port", port)
+	ms.logger.Info("starting monitoring service", "module", "monitoring", "port", port)
 	return ms.server.ListenAndServe()
 }
 
@@ -69,7 +72,9 @@ func (ms *MonitoringService) healthHandler(w http.ResponseWriter, r *http.Reques
 		"chain_id":  "volnix-1",
 	}
 
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		ms.logger.Error("failed to encode health response", "module", "monitoring", "error", err)
+	}
 }
 
 // metricsHandler provides Prometheus-style metrics
@@ -106,25 +111,33 @@ func (ms *MonitoringService) statusHandler(w http.ResponseWriter, r *http.Reques
 		},
 	}
 
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		ms.logger.Error("failed to encode status response", "module", "monitoring", "error", err)
+	}
 }
 
 // consensusHandler provides consensus-specific metrics
 func (ms *MonitoringService) consensusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ms.getConsensusMetrics())
+	if err := json.NewEncoder(w).Encode(ms.getConsensusMetrics()); err != nil {
+		ms.logger.Error("failed to encode consensus response", "module", "monitoring", "error", err)
+	}
 }
 
 // economicHandler provides economic metrics
 func (ms *MonitoringService) economicHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ms.getEconomicMetrics())
+	if err := json.NewEncoder(w).Encode(ms.getEconomicMetrics()); err != nil {
+		ms.logger.Error("failed to encode economic response", "module", "monitoring", "error", err)
+	}
 }
 
 // identityHandler provides identity system metrics
 func (ms *MonitoringService) identityHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ms.getIdentityMetrics())
+	if err := json.NewEncoder(w).Encode(ms.getIdentityMetrics()); err != nil {
+		ms.logger.Error("failed to encode identity response", "module", "monitoring", "error", err)
+	}
 }
 
 // collectAllMetrics collects metrics from all modules
@@ -132,7 +145,7 @@ func (ms *MonitoringService) collectAllMetrics() map[string]interface{} {
 	metrics := make(map[string]interface{})
 
 	ctx := ms.app.NewContext(true)
-	metrics["uptime_seconds"] = time.Now().Unix()
+	metrics["uptime_seconds"] = int64(time.Since(ms.startedAt).Seconds())
 	metrics["chain_height"] = ctx.BlockHeight()
 
 	consensusMetrics := ms.getConsensusMetrics()
@@ -173,7 +186,7 @@ func (ms *MonitoringService) getConsensusMetrics() map[string]interface{} {
 	metrics["total_validators"] = len(validators)
 	activeCount := 0
 	for _, v := range validators {
-		if v.Status == 1 { // ACTIVE
+		if v.Status == consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE {
 			activeCount++
 		}
 	}

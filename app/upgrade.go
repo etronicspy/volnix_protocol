@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"sync"
 
+	sdklog "cosmossdk.io/log"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	sdklog "cosmossdk.io/log"
 )
 
 // UpgradePlan represents an upgrade plan
@@ -30,10 +30,7 @@ type UpgradeManager struct {
 	mu           sync.RWMutex
 }
 
-var (
-	upgradeManagerOnce sync.Once
-	upgradeManagerMu   sync.RWMutex
-)
+var upgradeManagerMu sync.RWMutex
 
 // NewUpgradeManager creates a new upgrade manager
 func NewUpgradeManager(logger sdklog.Logger) *UpgradeManager {
@@ -74,29 +71,13 @@ func (um *UpgradeManager) ExecuteUpgrade(ctx sdk.Context, plan UpgradePlan, app 
 	return nil
 }
 
-// SetupUpgradeHandlers registers all upgrade handlers for the application
-func SetupUpgradeHandlers(um *UpgradeManager, app *VolnixApp) {
-	// Register upgrade handlers for different versions
-	// Example: v0.2.0 upgrade
-	um.RegisterUpgradeHandler("v0.2.0", func(ctx sdk.Context, plan UpgradePlan, app *VolnixApp) error {
-		return MigrateToV0_2_0(ctx, app)
-	})
-	
-	// Example: v0.3.0 upgrade (commented out, ready to use)
-	um.RegisterUpgradeHandler("v0.3.0", func(ctx sdk.Context, plan UpgradePlan, app *VolnixApp) error {
-		return MigrateToV0_3_0(ctx, app)
-	})
-	
-	// Add more upgrade handlers as needed
-}
-
 // SetupSDKUpgradeHandlers registers handlers in the standard Cosmos SDK x/upgrade keeper.
 // This path is used by the app runtime and supersedes the custom UpgradeManager scheduler.
 func SetupSDKUpgradeHandlers(uk *upgradekeeper.Keeper, app *VolnixApp) {
 	uk.SetUpgradeHandler("v0.2.0", func(goCtx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 		ctx := sdk.UnwrapSDKContext(goCtx)
 		if err := MigrateToV0_2_0(ctx, app); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("v0.2.0 upgrade migration failed: %w", err)
 		}
 		return fromVM, nil
 	})
@@ -104,7 +85,7 @@ func SetupSDKUpgradeHandlers(uk *upgradekeeper.Keeper, app *VolnixApp) {
 	uk.SetUpgradeHandler("v0.3.0", func(goCtx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 		ctx := sdk.UnwrapSDKContext(goCtx)
 		if err := MigrateToV0_3_0(ctx, app); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("v0.3.0 upgrade migration failed: %w", err)
 		}
 		return fromVM, nil
 	})

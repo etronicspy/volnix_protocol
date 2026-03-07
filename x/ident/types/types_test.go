@@ -66,6 +66,7 @@ func TestNewVerifiedAccount(t *testing.T) {
 
 func TestIsAccountActive(t *testing.T) {
 	params := types.DefaultParams()
+	now := time.Now()
 
 	tests := []struct {
 		name     string
@@ -77,7 +78,7 @@ func TestIsAccountActive(t *testing.T) {
 			account: &identv1.VerifiedAccount{
 				Address:      "cosmos1test",
 				Role:         identv1.Role_ROLE_CITIZEN,
-				LastActive:   timestamppb.Now(),
+				LastActive:   timestamppb.New(now),
 				IdentityHash: "hash123",
 			},
 			expected: true,
@@ -87,7 +88,7 @@ func TestIsAccountActive(t *testing.T) {
 			account: &identv1.VerifiedAccount{
 				Address:      "cosmos1test",
 				Role:         identv1.Role_ROLE_CITIZEN,
-				LastActive:   timestamppb.New(time.Now().Add(-400 * 24 * time.Hour)),
+				LastActive:   timestamppb.New(now.Add(-400 * 24 * time.Hour)),
 				IdentityHash: "hash123",
 			},
 			expected: false,
@@ -97,7 +98,7 @@ func TestIsAccountActive(t *testing.T) {
 			account: &identv1.VerifiedAccount{
 				Address:      "cosmos1validator",
 				Role:         identv1.Role_ROLE_VALIDATOR,
-				LastActive:   timestamppb.Now(),
+				LastActive:   timestamppb.New(now),
 				IdentityHash: "hash123",
 			},
 			expected: true,
@@ -107,7 +108,7 @@ func TestIsAccountActive(t *testing.T) {
 			account: &identv1.VerifiedAccount{
 				Address:      "cosmos1validator",
 				Role:         identv1.Role_ROLE_VALIDATOR,
-				LastActive:   timestamppb.New(time.Now().Add(-200 * 24 * time.Hour)),
+				LastActive:   timestamppb.New(now.Add(-200 * 24 * time.Hour)),
 				IdentityHash: "hash123",
 			},
 			expected: false,
@@ -117,7 +118,7 @@ func TestIsAccountActive(t *testing.T) {
 			account: &identv1.VerifiedAccount{
 				Address:      "cosmos1test",
 				Role:         identv1.Role_ROLE_UNSPECIFIED,
-				LastActive:   timestamppb.Now(),
+				LastActive:   timestamppb.New(now),
 				IdentityHash: "hash123",
 			},
 			expected: false,
@@ -126,7 +127,7 @@ func TestIsAccountActive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := types.IsAccountActive(tt.account, params)
+			result := types.IsAccountActive(tt.account, params, now)
 			require.Equal(t, tt.expected, result)
 		})
 	}

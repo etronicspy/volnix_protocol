@@ -2,6 +2,7 @@ package integration
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -34,6 +35,12 @@ func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 }
 
 func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
+	if len(bz) == 0 {
+		return fmt.Errorf("integration genesis cannot be empty")
+	}
+	if !json.Valid(bz) {
+		return fmt.Errorf("integration genesis is not valid JSON")
+	}
 	return nil
 }
 
@@ -70,7 +77,7 @@ func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) {
 	im := am.keeper.GetIntegrationManager()
 	for name := range im.Modules {
-		im.UpdateModuleHealth(name, 100, "")
+		im.UpdateModuleHealth(name, 100, "", ctx.BlockTime())
 	}
 	ctx.Logger().Info("integration module genesis initialized")
 }
@@ -90,7 +97,8 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 
 	bz, err := json.Marshal(export)
 	if err != nil {
-		return []byte("{}")
+		ctx.Logger().Error("failed to marshal integration genesis", "error", err)
+		return []byte("[]")
 	}
 	return bz
 }

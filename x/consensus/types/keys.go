@@ -53,7 +53,24 @@ var (
 	
 	// BidHistoryKeyPrefix defines the prefix for bid history keys (anti-manipulation)
 	BidHistoryKeyPrefix = []byte{0x11}
+
+	// TargetBlockTimeKey defines the key for the dynamic target block time (nanoseconds)
+	TargetBlockTimeKey = []byte("TargetBlockTime")
+
+	// AntPurchaseKeyPrefix stores cumulative ANT bid amounts per validator in the current epoch
+	AntPurchaseKeyPrefix = []byte{0x12}
+
+	// EpochHeightKey stores the block height when the current epoch started
+	EpochHeightKey = []byte("EpochHeight")
+
+	// DefaultEpochLength is the number of blocks per MOA epoch
+	DefaultEpochLength = uint64(100)
 )
+
+// GetAntPurchaseKey returns the key for a validator's ANT purchase tracker
+func GetAntPurchaseKey(validator string) []byte {
+	return append(AntPurchaseKeyPrefix, []byte(validator)...)
+}
 
 // Key prefixes
 var (

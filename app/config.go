@@ -207,7 +207,7 @@ func LoadConfig(configPath string) (*Config, error) {
 func SaveConfig(config *Config, configPath string) error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -297,8 +297,12 @@ type ConfigManager struct {
 	logger     log.Logger
 }
 
-// NewConfigManager creates a new configuration manager
+// NewConfigManager creates a new configuration manager.
+// If logger is nil, a no-op logger is used.
 func NewConfigManager(configPath string, logger log.Logger) *ConfigManager {
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
 	return &ConfigManager{
 		configPath: configPath,
 		logger:     logger,

@@ -304,7 +304,7 @@ func (k Keeper) updateUserPositionForTrade(ctx sdk.Context, trade *anteilv1.Trad
 			AntBalance:   "0",
 			TotalTrades:  "0",
 			TotalVolume:  "0",
-			LastActivity: timestamppb.Now(),
+			LastActivity: timestamppb.New(ctx.BlockTime()),
 		}
 	}
 
@@ -315,7 +315,7 @@ func (k Keeper) updateUserPositionForTrade(ctx sdk.Context, trade *anteilv1.Trad
 
 	buyerPosition.TotalTrades = fmt.Sprintf("%d", buyerTrades+1)
 	buyerPosition.TotalVolume = fmt.Sprintf("%d", buyerVolume+tradeAmount)
-	buyerPosition.LastActivity = timestamppb.Now()
+	buyerPosition.LastActivity = timestamppb.New(ctx.BlockTime())
 
 	if err := k.SetUserPosition(ctx, buyerPosition); err != nil {
 		return err
@@ -330,7 +330,7 @@ func (k Keeper) updateUserPositionForTrade(ctx sdk.Context, trade *anteilv1.Trad
 			AntBalance:   "0",
 			TotalTrades:  "0",
 			TotalVolume:  "0",
-			LastActivity: timestamppb.Now(),
+			LastActivity: timestamppb.New(ctx.BlockTime()),
 		}
 	}
 
@@ -340,7 +340,7 @@ func (k Keeper) updateUserPositionForTrade(ctx sdk.Context, trade *anteilv1.Trad
 
 	sellerPosition.TotalTrades = fmt.Sprintf("%d", sellerTrades+1)
 	sellerPosition.TotalVolume = fmt.Sprintf("%d", sellerVolume+tradeAmount)
-	sellerPosition.LastActivity = timestamppb.Now()
+	sellerPosition.LastActivity = timestamppb.New(ctx.BlockTime())
 
 	if err := k.SetUserPosition(ctx, sellerPosition); err != nil {
 		return err
@@ -632,7 +632,7 @@ func (k Keeper) PlaceBid(ctx sdk.Context, auctionID string, bidder string, amoun
 		BidId:       fmt.Sprintf("%s_%s_%d", auctionID, bidder, ctx.BlockHeight()),
 		Bidder:      bidder,
 		Amount:      amount,
-		SubmittedAt: timestamppb.Now(),
+		SubmittedAt: timestamppb.New(ctx.BlockTime()),
 	}
 
 	// Store bid
@@ -772,7 +772,7 @@ func (k Keeper) BurnAntFromUser(ctx sdk.Context, user string) error {
 	position.AntBalance = "0"
 	position.AvailableAnt = "0"
 	position.LockedAnt = "0"
-	position.LastActivity = timestamppb.Now()
+	position.LastActivity = timestamppb.New(ctx.BlockTime())
 
 	// Update position
 	if err := k.SetUserPosition(ctx, position); err != nil {
@@ -790,7 +790,7 @@ func (k Keeper) UpdateUserPosition(ctx sdk.Context, user string, antBalance stri
 		Owner:        user,
 		AntBalance:   antBalance,
 		TotalTrades:  fmt.Sprintf("%d", orderCount),
-		LastActivity: timestamppb.Now(),
+		LastActivity: timestamppb.New(ctx.BlockTime()),
 	}
 
 	return k.SetUserPosition(ctx, position)
@@ -856,7 +856,7 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 	distributedCount := 0
 	
 	// OPTIMIZATION: Cache timestamp to avoid repeated allocations
-	now := timestamppb.Now()
+	now := timestamppb.New(ctx.BlockTime())
 	
 	// OPTIMIZATION: Get store once for batch operations
 	store := ctx.KVStore(k.storeKey)
@@ -877,11 +877,11 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 			position = &anteilv1.UserPosition{}
 			if err := k.cdc.Unmarshal(positionBz, position); err != nil {
 				// If unmarshal fails, create new position
-				position = anteiltypes.NewUserPosition(account.Address, "0")
+				position = anteiltypes.NewUserPosition(account.Address, "0", ctx.BlockTime())
 			}
 		} else {
 			// Create new position if not found
-			position = anteiltypes.NewUserPosition(account.Address, "0")
+			position = anteiltypes.NewUserPosition(account.Address, "0", ctx.BlockTime())
 		}
 
 		// Check accumulation limit

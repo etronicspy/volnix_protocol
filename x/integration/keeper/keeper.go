@@ -1,13 +1,16 @@
 package keeper
 
 import (
+	"errors"
 	"fmt"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	anteilkeeper "github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
 	consensuskeeper "github.com/volnix-protocol/volnix-protocol/x/consensus/keeper"
 	identkeeper "github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	"github.com/volnix-protocol/volnix-protocol/x/integration/types"
 	lizenzkeeper "github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
 )
@@ -32,11 +35,12 @@ func NewKeeper(
 
 	im := types.NewIntegrationManager()
 
-	// Register all modules with their dependencies
-	im.RegisterModule("ident", []string{})
-	im.RegisterModule("lizenz", []string{"ident"})
-	im.RegisterModule("anteil", []string{"ident", "lizenz"})
-	im.RegisterModule("consensus", []string{"ident", "lizenz", "anteil"})
+	// Register all modules with their dependencies (zero time at init; updated on first block)
+	zeroTime := time.Time{}
+	im.RegisterModule("ident", []string{}, zeroTime)
+	im.RegisterModule("lizenz", []string{"ident"}, zeroTime)
+	im.RegisterModule("anteil", []string{"ident", "lizenz"}, zeroTime)
+	im.RegisterModule("consensus", []string{"ident", "lizenz", "anteil"}, zeroTime)
 
 	return &Keeper{
 		identKeeper:        identKeeper,
@@ -51,50 +55,50 @@ func NewKeeper(
 func (k Keeper) GetValidatorIntegrationStatus(ctx sdk.Context, validator string) (*types.ValidatorIntegrationStatus, error) {
 
 	// Get status from each module
+	bt := ctx.BlockTime()
+
 	identAccount, err := k.identKeeper.GetVerifiedAccount(ctx, validator)
 	if err != nil {
-		// Log error but continue
-		k.integrationManager.UpdateModuleHealth("ident", 50, err.Error())
+		if errors.Is(err, identtypes.ErrAccountNotFound) {
+			ctx.Logger().Debug("validator has no verified identity", "module", "integration", "validator", validator)
+		} else {
+			k.integrationManager.UpdateModuleHealth("ident", 50, err.Error(), bt)
+		}
 	}
 
 	lizenzLicense, err := k.lizenzKeeper.GetActivatedLizenz(ctx, validator)
 	if err != nil {
-		k.integrationManager.UpdateModuleHealth("lizenz", 50, err.Error())
+		k.integrationManager.UpdateModuleHealth("lizenz", 50, err.Error(), bt)
 	}
 
-	// Get user position from anteil module
 	anteilPosition, err := k.getAnteilUserPosition(ctx, validator)
 	if err != nil {
-		// Log error but continue with nil position
-		ctx.Logger().Error("failed to get anteil position", "validator", validator, "error", err)
+		ctx.Logger().Error("failed to get anteil position", "module", "integration", "validator", validator, "error", err)
 		anteilPosition = nil
 	}
-	// anteilPosition, err := k.anteilKeeper.GetUserPosition(ctx, validator)
-	// if err != nil {
-	//	k.integrationManager.UpdateModuleHealth("anteil", 50, err.Error())
-	// }
 
 	consensusValidator, err := k.consensusKeeper.GetValidator(ctx, validator)
-	if consensusValidator == nil {
-		k.integrationManager.UpdateModuleHealth("consensus", 50, "validator not found")
+	if err != nil {
+		k.integrationManager.UpdateModuleHealth("consensus", 50, fmt.Sprintf("validator lookup failed: %v", err), bt)
+	} else if consensusValidator == nil {
+		k.integrationManager.UpdateModuleHealth("consensus", 50, "validator not found", bt)
 	}
 
-	// Create integration status
 	status := types.GetValidatorIntegrationStatus(
 		validator,
 		identAccount,
 		lizenzLicense,
-		anteilPosition, // User position from anteil module
+		anteilPosition,
 		consensusValidator,
 	)
 
-	// Log cross-module event
 	k.integrationManager.AddCrossModuleEvent(
 		"validator_status_check",
 		"integration",
 		"all",
 		fmt.Sprintf("Status check for validator %s", validator),
 		validator,
+		bt,
 	)
 
 	return status, nil
@@ -142,13 +146,13 @@ func (k Keeper) ValidateCrossModuleOperation(ctx sdk.Context, operation string, 
 // ProcessCrossModuleEvent processes events that affect multiple modules
 func (k Keeper) ProcessCrossModuleEvent(ctx sdk.Context, event *types.CrossModuleEvent) error {
 
-	// Log the event
 	k.integrationManager.AddCrossModuleEvent(
 		event.EventType,
 		event.SourceModule,
 		event.TargetModule,
 		event.EventData,
 		event.Validator,
+		ctx.BlockTime(),
 	)
 
 	// Process based on event type
@@ -174,7 +178,7 @@ func (k Keeper) ProcessCrossModuleEvent(ctx sdk.Context, event *types.CrossModul
 // handleIdentityVerified handles identity verification events.
 // When identity is verified, check if validator is eligible for consensus participation.
 func (k Keeper) handleIdentityVerified(ctx sdk.Context, validator string) error {
-	k.integrationManager.UpdateModuleHealth("ident", 100, "")
+	k.integrationManager.UpdateModuleHealth("ident", 100, "", ctx.BlockTime())
 
 	lizenz, err := k.lizenzKeeper.GetActivatedLizenz(ctx, validator)
 	if err == nil && lizenz != nil {
@@ -196,7 +200,7 @@ func (k Keeper) handleIdentityVerified(ctx sdk.Context, validator string) error 
 // handleLizenzActivated handles LZN activation events.
 // When a lizenz is activated, verify identity is also active for consensus eligibility.
 func (k Keeper) handleLizenzActivated(ctx sdk.Context, validator string) error {
-	k.integrationManager.UpdateModuleHealth("lizenz", 100, "")
+	k.integrationManager.UpdateModuleHealth("lizenz", 100, "", ctx.BlockTime())
 
 	account, err := k.identKeeper.GetVerifiedAccount(ctx, validator)
 	if err == nil && account != nil && account.IsActive {
@@ -215,7 +219,7 @@ func (k Keeper) handleLizenzActivated(ctx sdk.Context, validator string) error {
 // handleConsensusParticipation handles consensus participation events.
 // Validates that the validator still meets all prerequisites.
 func (k Keeper) handleConsensusParticipation(ctx sdk.Context, validator string) error {
-	k.integrationManager.UpdateModuleHealth("consensus", 100, "")
+	k.integrationManager.UpdateModuleHealth("consensus", 100, "", ctx.BlockTime())
 
 	if err := k.ValidateCrossModuleOperation(ctx, "consensus_participation", validator); err != nil {
 		ctx.Logger().Warn("consensus participation validation failed",

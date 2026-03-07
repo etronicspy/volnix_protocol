@@ -37,6 +37,5 @@ var (
 	ErrInvalidRoleChoice = errors.Register(ModuleName, 10, "invalid role choice: must be ROLE_CITIZEN or ROLE_VALIDATOR")
 	ErrAlreadyVerified   = errors.Register(ModuleName, 11, "address already has a verified identity")
 	
-	// IMPROVED: Duplicate identity hash prevention
 	ErrDuplicateIdentityHash = errors.Register(ModuleName, 12, "identity hash already exists for another address")
 )

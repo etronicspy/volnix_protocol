@@ -7,6 +7,10 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
+// DefaultCitizenAntDistributionPeriod is the distribution period for citizen ANT rewards.
+// Set to 1 minute for testnet/dev. Override via governance for production (24h per whitepaper).
+const DefaultCitizenAntDistributionPeriod = 1 * time.Minute
+
 var (
 	// KeyMinAntAmount defines the key for minimum ANT amount
 	KeyMinAntAmount = []byte("MinAntAmount")
@@ -149,8 +153,7 @@ func DefaultParams() Params {
 		// Citizen ANT distribution parameters (default: 10 ANT per day, 1000 ANT limit)
 		CitizenAntRewardRate:       "10000000",        // 10 ANT in micro units (10 * 1,000,000)
 		CitizenAntAccumulationLimit: "1000000000",     // 1000 ANT in micro units (1000 * 1,000,000)
-		// TEMPORARY: 1 minute for testnet/dev. Production should use 24 * time.Hour per whitepaper.
-		CitizenAntDistributionPeriod: 1 * time.Minute,
+		CitizenAntDistributionPeriod: DefaultCitizenAntDistributionPeriod,
 		
 		// Market making parameters (default: 1% spread, 1000 ANT order size)
 		MarketMakingBuyDiscount: "0.99",  // 1% below market price

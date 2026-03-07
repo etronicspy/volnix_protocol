@@ -5,7 +5,7 @@
 # Proves late-joiner sync works. For multi-validator, genesis would need ValidatorUpdates.
 # Usage: ./scripts/testnet-sequential-start.sh
 
-set -e
+set -eu
 cd "$(dirname "$0")/.."
 
 if [ ! -f build/volnixd ]; then
@@ -43,8 +43,9 @@ VOLNIX_GRPC_PORT=9090 ./build/volnixd start --home testnet/node0 > testnet/logs/
 NODE0_PID=$!
 echo "   node0 PID: $NODE0_PID"
 
-echo "⏳ Waiting 25s for node0 to produce blocks..."
-sleep 25
+NODE0_WAIT="${NODE0_WAIT:-25}"
+echo "Waiting ${NODE0_WAIT}s for node0 to produce blocks..."
+sleep "$NODE0_WAIT"
 
 HEIGHT=$(curl -s http://localhost:26657/status 2>/dev/null | jq -r '.result.sync_info.latest_block_height // "0"')
 echo "   node0 block height: $HEIGHT"
@@ -53,7 +54,7 @@ if [ "$HEIGHT" = "0" ] || [ "$HEIGHT" = "1" ]; then
   echo "❌ node0 failed to produce blocks. Restoring genesis."
   mv "$GENESIS_BACKUP" "$GENESIS_FULL"
   cp "$GENESIS_FULL" testnet/node1/config/genesis.json
-  kill $NODE0_PID 2>/dev/null || true
+  kill "$NODE0_PID" 2>/dev/null || true
   exit 1
 fi
 
@@ -63,8 +64,9 @@ VOLNIX_GRPC_PORT=9091 ./build/volnixd start --home testnet/node1 > testnet/logs/
 NODE1_PID=$!
 echo "   node1 PID: $NODE1_PID"
 
-echo "⏳ Waiting 30s for node1 to sync..."
-sleep 30
+NODE1_WAIT="${NODE1_WAIT:-30}"
+echo "Waiting ${NODE1_WAIT}s for node1 to sync..."
+sleep "$NODE1_WAIT"
 
 HEIGHT0=$(curl -s http://localhost:26657/status 2>/dev/null | jq -r '.result.sync_info.latest_block_height // "0"')
 HEIGHT1=$(curl -s http://localhost:26667/status 2>/dev/null | jq -r '.result.sync_info.latest_block_height // "0"')

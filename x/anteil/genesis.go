@@ -37,7 +37,11 @@ func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *anteilv1.GenesisSt
 	if genState == nil {
 		genState = DefaultGenesis()
 	}
-	p, _ := atypes.ParamsFromProto(genState.Params)
+	p, err := atypes.ParamsFromProto(genState.Params)
+	if err != nil {
+		ctx.Logger().Error("failed to parse anteil genesis params, using defaults", "error", err)
+		p = atypes.DefaultParams()
+	}
 	k.SetParams(ctx, p)
 }
 

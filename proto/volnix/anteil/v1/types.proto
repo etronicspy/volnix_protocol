@@ -20,12 +20,22 @@ message Params {
   uint32 max_open_orders = 9; // Maximum number of open orders per user
   string price_precision = 10; // Price precision for orders
   
-  // New economic parameters
-  string market_maker_reward_rate = 11; // Reward rate for market makers
-  string staking_reward_rate = 12; // Reward rate for staking ANT
-  string liquidity_pool_fee = 13; // Fee for liquidity pool operations
-  string max_slippage = 14; // Maximum allowed slippage for trades
-  uint64 min_liquidity_threshold = 15; // Minimum liquidity threshold
+  // Economic parameters
+  string market_maker_reward_rate = 11;
+  string staking_reward_rate = 12;
+  string liquidity_pool_fee = 13;
+  string max_slippage = 14;
+  uint64 min_liquidity_threshold = 15;
+
+  // Citizen ANT distribution parameters
+  string citizen_ant_reward_rate = 16;
+  string citizen_ant_accumulation_limit = 17;
+  google.protobuf.Duration citizen_ant_distribution_period = 18;
+
+  // Market making parameters
+  string market_making_buy_discount = 19;
+  string market_making_sell_premium = 20;
+  string market_making_order_size = 21;
 }
 
 // Order represents a trading order on the ANT market

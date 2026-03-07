@@ -56,6 +56,7 @@ func NewMinimalCometBFTServer(homeDir string, logger log.Logger) (*MinimalVolnix
 	config.Consensus.TimeoutPrevote = 1 * time.Second
 	config.Consensus.TimeoutPrecommit = 1 * time.Second
 	config.Consensus.TimeoutCommit = 5 * time.Second
+	config.Consensus.SkipTimeoutCommit = false
 	config.Consensus.CreateEmptyBlocks = true
 	config.Consensus.CreateEmptyBlocksInterval = 5 * time.Second // Slower empty blocks to reduce block growth
 
@@ -66,7 +67,7 @@ func NewMinimalCometBFTServer(homeDir string, logger log.Logger) (*MinimalVolnix
 
 	// Configure RPC
 	config.RPC.ListenAddress = "tcp://0.0.0.0:26657"
-	config.RPC.CORSAllowedOrigins = []string{"*"}
+	config.RPC.CORSAllowedOrigins = []string{"http://localhost:3000", "http://localhost:8080"}
 
 	// Enable tx indexer for tx_search (transfer.sender, transfer.recipient queries)
 	config.TxIndex.Indexer = "kv"
@@ -136,7 +137,11 @@ func loadOrRecoverVolnixApp(homeDir, dbPath string, logger log.Logger, encodingC
 func newVolnixAppSafe(logger log.Logger, db cosmosdb.DB, encodingConfig EncodingConfig) (app *VolnixApp, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("failed to initialize volnix app: %v", r)
+			if rErr, ok := r.(error); ok {
+				err = fmt.Errorf("failed to initialize volnix app: %w", rErr)
+			} else {
+				err = fmt.Errorf("failed to initialize volnix app: %v", r)
+			}
 		}
 	}()
 	app = NewVolnixApp(logger, db, nil, encodingConfig, nil)
@@ -145,24 +150,20 @@ func newVolnixAppSafe(logger log.Logger, db cosmosdb.DB, encodingConfig Encoding
 
 // Start starts the minimal server with CometBFT node
 func (s *MinimalVolnixServer) Start(ctx context.Context) error {
-	s.logger.Info("🚀 Starting Minimal Volnix Protocol with CometBFT...")
+	s.logger.Info("starting minimal Volnix Protocol with CometBFT")
 
-	// Initialize files and configuration
 	if err := s.initializeFiles(); err != nil {
 		return fmt.Errorf("failed to initialize files: %w", err)
 	}
 
-	// Create CometBFT node
 	if err := s.createCometBFTNode(); err != nil {
 		return fmt.Errorf("failed to create CometBFT node: %w", err)
 	}
 
-	s.logger.Info("✅ CometBFT node created successfully")
-	s.logger.Info("🌐 Network configuration:")
-	s.logger.Info("   🔗 Chain ID: volnix-1")
-	s.logger.Info("   📁 Home: " + s.homeDir)
-	s.logger.Info("   💾 Database: GoLevelDB")
-	s.logger.Info("   🏗️  Framework: Minimal Cosmos SDK + CometBFT")
+	s.logger.Info("CometBFT node created",
+		"chain_id", "volnix-1",
+		"home", s.homeDir,
+	)
 
 	grpcPort := 9090
 	if p := os.Getenv("VOLNIX_GRPC_PORT"); p != "" {
@@ -172,25 +173,23 @@ func (s *MinimalVolnixServer) Start(ctx context.Context) error {
 			grpcPort = 9090
 		}
 	}
-	s.logger.Info("🌐 Network endpoints:")
-	s.logger.Info("   🔗 RPC: " + s.config.RPC.ListenAddress)
-	s.logger.Info("   📡 P2P: " + s.config.P2P.ListenAddress)
-	s.logger.Info("   📡 gRPC: tcp://0.0.0.0:" + fmt.Sprintf("%d", grpcPort))
+	s.logger.Info("network endpoints",
+		"rpc", s.config.RPC.ListenAddress,
+		"p2p", s.config.P2P.ListenAddress,
+		"grpc", fmt.Sprintf("tcp://0.0.0.0:%d", grpcPort),
+	)
 
-	// Start CometBFT node first (loads app state via InitChain/Info)
-	s.logger.Info("⚡ Starting CometBFT consensus...")
+	s.logger.Info("starting CometBFT consensus")
 	if err := s.node.Start(); err != nil {
 		return fmt.Errorf("failed to start CometBFT node: %w", err)
 	}
 
-	// Start gRPC server for REST API / backend clients
 	if err := s.app.StartGRPCServer(ctx, grpcPort); err != nil {
-		s.logger.Error("Failed to start gRPC server", "error", err)
+		s.logger.Error("failed to start gRPC server", "error", err)
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
-	s.logger.Info("🎯 Minimal Volnix Protocol node is running!")
-	s.logger.Info("✨ Ready for consensus, gRPC queries, and P2P networking!")
+	s.logger.Info("minimal Volnix Protocol node is running")
 
 	// Wait for context cancellation
 	<-ctx.Done()
@@ -200,17 +199,17 @@ func (s *MinimalVolnixServer) Start(ctx context.Context) error {
 
 // Stop stops the server and CometBFT node
 func (s *MinimalVolnixServer) Stop() error {
-	s.logger.Info("🛑 Stopping Minimal Volnix Protocol node...")
+	s.logger.Info("stopping minimal Volnix Protocol node")
 
 	if s.node != nil && s.node.IsRunning() {
 		if err := s.node.Stop(); err != nil {
 			s.logger.Error("Failed to stop CometBFT node", "error", err)
 			return err
 		}
-		s.logger.Info("✅ CometBFT node stopped")
+		s.logger.Info("CometBFT node stopped")
 	}
 
-	s.logger.Info("✅ Minimal Volnix Protocol node stopped successfully")
+	s.logger.Info("minimal Volnix Protocol node stopped")
 	return nil
 }
 
@@ -310,10 +309,10 @@ func (s *MinimalVolnixServer) initializeFiles() error {
 
 	// Ensure directories exist
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
 	// Re-apply CreateEmptyBlocks so config file and memory stay in sync
@@ -376,6 +375,9 @@ func (s *MinimalVolnixServer) loadConfigFromFile(configFile string) error {
 	// CosmJS compatibility: always enforce CreateEmptyBlocks
 	s.config.Consensus.CreateEmptyBlocks = true
 	s.config.Consensus.CreateEmptyBlocksInterval = 5 * time.Second
+	s.config.Consensus.TimeoutPropose = 3 * time.Second
+	s.config.Consensus.TimeoutCommit = 5 * time.Second
+	s.config.Consensus.SkipTimeoutCommit = false
 	if err := s.config.ValidateBasic(); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}

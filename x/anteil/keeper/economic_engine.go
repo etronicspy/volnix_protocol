@@ -163,7 +163,7 @@ func (ee *EconomicEngine) executeTrade(ctx sdk.Context, buyOrder, sellOrder *ant
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			"trade_executed",
+			types.EventTypeTradeExecuted,
 			sdk.NewAttribute("trade_id", trade.TradeId),
 			sdk.NewAttribute("buy_order_id", buyOrder.OrderId),
 			sdk.NewAttribute("sell_order_id", sellOrder.OrderId),

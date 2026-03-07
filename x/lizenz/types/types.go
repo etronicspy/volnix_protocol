@@ -13,9 +13,15 @@ func NewLizenz(validator string, amount string, identityHash string) *lizenzv1.A
 	return NewActivatedLizenz(validator, amount, identityHash)
 }
 
-// NewActivatedLizenz creates a new ActivatedLizenz instance
-func NewActivatedLizenz(validator string, amount string, identityHash string) *lizenzv1.ActivatedLizenz {
-	now := timestamppb.Now()
+// NewActivatedLizenz creates a new ActivatedLizenz instance.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func NewActivatedLizenz(validator string, amount string, identityHash string, blockTime ...time.Time) *lizenzv1.ActivatedLizenz {
+	var now *timestamppb.Timestamp
+	if len(blockTime) > 0 {
+		now = timestamppb.New(blockTime[0])
+	} else {
+		now = timestamppb.Now()
+	}
 	return &lizenzv1.ActivatedLizenz{
 		Validator:      validator,
 		Amount:         amount,
@@ -25,10 +31,16 @@ func NewActivatedLizenz(validator string, amount string, identityHash string) *l
 	}
 }
 
-// NewDeactivatingLizenz creates a new DeactivatingLizenz instance
-func NewDeactivatingLizenz(validator string, amount string, reason string) *lizenzv1.DeactivatingLizenz {
-	now := timestamppb.Now()
-	deactivationEnd := timestamppb.New(now.AsTime().Add(24 * time.Hour)) // Default 24h deactivation period
+// NewDeactivatingLizenz creates a new DeactivatingLizenz instance.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func NewDeactivatingLizenz(validator string, amount string, reason string, blockTime ...time.Time) *lizenzv1.DeactivatingLizenz {
+	var now *timestamppb.Timestamp
+	if len(blockTime) > 0 {
+		now = timestamppb.New(blockTime[0])
+	} else {
+		now = timestamppb.Now()
+	}
+	deactivationEnd := timestamppb.New(now.AsTime().Add(24 * time.Hour))
 
 	return &lizenzv1.DeactivatingLizenz{
 		Validator:         validator,
@@ -39,10 +51,16 @@ func NewDeactivatingLizenz(validator string, amount string, reason string) *lize
 	}
 }
 
-// NewMOAStatus creates a new MOAStatus instance
-func NewMOAStatus(validator string, currentMOA string, requiredMOA string) *lizenzv1.MOAStatus {
-	now := timestamppb.Now()
-	nextCheck := timestamppb.New(now.AsTime().Add(24 * time.Hour)) // Default 24h check interval
+// NewMOAStatus creates a new MOAStatus instance.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func NewMOAStatus(validator string, currentMOA string, requiredMOA string, blockTime ...time.Time) *lizenzv1.MOAStatus {
+	var now *timestamppb.Timestamp
+	if len(blockTime) > 0 {
+		now = timestamppb.New(blockTime[0])
+	} else {
+		now = timestamppb.Now()
+	}
+	nextCheck := timestamppb.New(now.AsTime().Add(24 * time.Hour))
 
 	return &lizenzv1.MOAStatus{
 		Validator:    validator,
@@ -97,16 +115,25 @@ func IsMOAStatusValid(status *lizenzv1.MOAStatus) error {
 	return nil
 }
 
-// UpdateActivatedLizenzActivity updates the last activity timestamp
-func UpdateActivatedLizenzActivity(lizenz *lizenzv1.ActivatedLizenz) {
-	lizenz.LastActivity = timestamppb.Now()
+// UpdateActivatedLizenzActivity updates the last activity timestamp.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func UpdateActivatedLizenzActivity(lizenz *lizenzv1.ActivatedLizenz, blockTime ...time.Time) {
+	if len(blockTime) > 0 {
+		lizenz.LastActivity = timestamppb.New(blockTime[0])
+	} else {
+		lizenz.LastActivity = timestamppb.Now()
+	}
 }
 
-// UpdateMOAStatusActivity updates the last activity timestamp and MOA values
-func UpdateMOAStatusActivity(status *lizenzv1.MOAStatus, currentMOA string) {
-	status.LastActivity = timestamppb.Now()
+// UpdateMOAStatusActivity updates the last activity timestamp and MOA values.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func UpdateMOAStatusActivity(status *lizenzv1.MOAStatus, currentMOA string, blockTime ...time.Time) {
+	if len(blockTime) > 0 {
+		status.LastActivity = timestamppb.New(blockTime[0])
+	} else {
+		status.LastActivity = timestamppb.Now()
+	}
 	status.CurrentMoa = currentMOA
-	// Simple string comparison for compliance - in real implementation this would be decimal comparison
 	status.IsCompliant = currentMOA >= status.RequiredMoa
 }
 

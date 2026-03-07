@@ -21,7 +21,7 @@ service Query {
 message QueryParamsRequest {}
 
 message QueryParamsResponse {
-  string json = 1; // JSON string of Params
+  Params params = 1;
 }
 
 message QueryOrderRequest {

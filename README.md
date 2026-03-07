@@ -112,7 +112,7 @@ go build -o build/volnixd-standalone ./cmd/volnixd-standalone
 ## 🚀 Быстрый старт
 
 ### Требования
-- Go 1.21+
+- Go 1.24+
 - Cosmos SDK v0.53.x
 - CometBFT v0.38.x
 

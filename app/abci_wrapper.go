@@ -17,9 +17,8 @@ import (
 
 var latestHeightPattern = regexp.MustCompile(`latest height:\s*(\d+)`)
 
-// DemoWalletAddress is derived from the well-known test mnemonic
-// "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-// with HD path m/44'/118'/0'/0/0 and bech32 prefix "volnix".
+// DemoWalletAddress is a test-only address derived from the well-known test mnemonic.
+// DO NOT use this address in production. It is pre-funded on testnet for development purposes.
 const DemoWalletAddress = "volnix19rl4cm2hmr8afy4kldpxz3fka4jguq0a9r0ces"
 
 // ABCIWrapper bridges CometBFT v0.38 context-aware ABCI interface
@@ -222,19 +221,29 @@ func (w *ABCIWrapper) InitChain(ctx context.Context, req *abci.RequestInitChain)
 }
 
 func (w *ABCIWrapper) PrepareProposal(ctx context.Context, req *abci.RequestPrepareProposal) (*abci.ResponsePrepareProposal, error) {
-	// DEBUG: PrepareProposal is only called on the proposer. Log to verify which node creates blocks.
-	w.GetBaseApp().Logger().Info("[CONSENSUS_DEBUG] PrepareProposal called",
-		"height", req.Height, "last_commit_round", req.LocalLastCommit.Round, "proposer_hex", fmt.Sprintf("%X", req.ProposerAddress), "txs_count", len(req.Txs))
+	w.GetBaseApp().Logger().Debug("PrepareProposal called",
+		"module", "consensus", "height", req.Height, "last_commit_round", req.LocalLastCommit.Round, "proposer_hex", fmt.Sprintf("%X", req.ProposerAddress), "txs_count", len(req.Txs))
 	resp, err := w.VolnixApp.PrepareProposal(req)
 	if err == nil && len(resp.Txs) > 0 {
-		w.GetBaseApp().Logger().Info("[CONSENSUS_DEBUG] PrepareProposal returning txs", "count", len(resp.Txs))
+		w.GetBaseApp().Logger().Debug("PrepareProposal returning txs", "module", "consensus", "count", len(resp.Txs))
 	}
 	return resp, err
 }
 
 func (w *ABCIWrapper) ProcessProposal(ctx context.Context, req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
+	// Validate dynamic block timing (PoVB: block speed adapts to ANT activity)
+	// Soft-check block timing: CometBFT controls final accept/reject,
+	// so we only warn on violations rather than returning an error.
+	if w.consensusKeeper != nil && req.Height > 2 {
+		queryCtx := w.VolnixApp.NewContext(true)
+		prevBlockTime := queryCtx.BlockTime()
+		if err := w.consensusKeeper.ValidateBlockTiming(queryCtx, prevBlockTime, req.Time); err != nil {
+			w.GetBaseApp().Logger().Warn("block timing violation",
+				"module", "consensus", "height", req.Height, "error", err)
+		}
+	}
+
 	resp, err := w.VolnixApp.ProcessProposal(req)
-	// DEBUG: Log when we process a proposal (called on all nodes when they receive a block)
 	blockHash := "nil"
 	if len(req.Hash) > 0 {
 		blockHash = fmt.Sprintf("%X", req.Hash)
@@ -243,8 +252,8 @@ func (w *ABCIWrapper) ProcessProposal(ctx context.Context, req *abci.RequestProc
 	if resp != nil && resp.Status == abci.ResponseProcessProposal_REJECT {
 		status = "REJECT"
 	}
-	w.GetBaseApp().Logger().Info("[CONSENSUS_DEBUG] ProcessProposal",
-		"height", req.Height, "block_hash", blockHash, "proposer_hex", fmt.Sprintf("%X", req.ProposerAddress), "status", status, "err", err)
+	w.GetBaseApp().Logger().Debug("ProcessProposal",
+		"module", "consensus", "height", req.Height, "block_hash", blockHash, "proposer_hex", fmt.Sprintf("%X", req.ProposerAddress), "status", status, "err", err)
 	return resp, err
 }
 

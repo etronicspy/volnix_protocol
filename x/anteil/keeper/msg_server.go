@@ -47,6 +47,7 @@ func (s MsgServer) PlaceOrder(ctx context.Context, req *anteilv1.MsgPlaceOrder) 
 		req.AntAmount,
 		req.Price,
 		req.IdentityHash,
+		sdkCtx.BlockTime(),
 	)
 
 	err := s.k.SetOrder(sdkCtx, order)
@@ -238,7 +239,7 @@ func (s MsgServer) RegisterMarketMaker(ctx context.Context, req *anteilv1.MsgReg
 		MinOrderSize: req.MinOrderSize,
 		MaxOrderSize: req.MaxOrderSize,
 		IsActive:     true,
-		LastActivity: timestamppb.Now(),
+		LastActivity: timestamppb.New(sdkCtx.BlockTime()),
 	}
 
 	mmBz, err := s.k.cdc.Marshal(mm)
@@ -294,7 +295,7 @@ func (s MsgServer) ProvideLiquidity(ctx context.Context, req *anteilv1.MsgProvid
 	position.AvailableAnt = availableAnt.Sub(depositAmount).String()
 	lockedAnt := mustParseDec(position.LockedAnt)
 	position.LockedAnt = lockedAnt.Add(depositAmount).String()
-	position.LastActivity = timestamppb.Now()
+	position.LastActivity = timestamppb.New(sdkCtx.BlockTime())
 
 	if err := s.k.SetUserPosition(sdkCtx, position); err != nil {
 		return nil, fmt.Errorf("failed to update user position: %w", err)
@@ -384,7 +385,7 @@ func (s MsgServer) WithdrawLiquidity(ctx context.Context, req *anteilv1.MsgWithd
 	availableAnt := mustParseDec(position.AvailableAnt)
 	position.LockedAnt = lockedAnt.Sub(antReturned).String()
 	position.AvailableAnt = availableAnt.Add(antReturned).String()
-	position.LastActivity = timestamppb.Now()
+	position.LastActivity = timestamppb.New(sdkCtx.BlockTime())
 
 	if err := s.k.SetUserPosition(sdkCtx, position); err != nil {
 		return nil, fmt.Errorf("failed to update user position: %w", err)
@@ -438,7 +439,7 @@ func (s MsgServer) StakeANT(ctx context.Context, req *anteilv1.MsgStakeANT) (*an
 	position.AvailableAnt = availableAnt.Sub(stakeAmount).String()
 	lockedAnt := mustParseDec(position.LockedAnt)
 	position.LockedAnt = lockedAnt.Add(stakeAmount).String()
-	position.LastActivity = timestamppb.Now()
+	position.LastActivity = timestamppb.New(sdkCtx.BlockTime())
 
 	if err := s.k.SetUserPosition(sdkCtx, position); err != nil {
 		return nil, fmt.Errorf("failed to update user position: %w", err)
@@ -520,7 +521,7 @@ func (s MsgServer) UnstakeANT(ctx context.Context, req *anteilv1.MsgUnstakeANT) 
 	availableAnt := mustParseDec(position.AvailableAnt)
 	position.LockedAnt = lockedAnt.Sub(unstakeAmount).String()
 	position.AvailableAnt = availableAnt.Add(unstakeAmount).String()
-	position.LastActivity = timestamppb.Now()
+	position.LastActivity = timestamppb.New(sdkCtx.BlockTime())
 
 	if err := s.k.SetUserPosition(sdkCtx, position); err != nil {
 		return nil, fmt.Errorf("failed to update user position: %w", err)
@@ -583,7 +584,7 @@ func (s MsgServer) ClaimRewards(ctx context.Context, req *anteilv1.MsgClaimRewar
 	balance := mustParseDec(position.AntBalance)
 	position.AvailableAnt = availableAnt.Add(rewardAmount).String()
 	position.AntBalance = balance.Add(rewardAmount).String()
-	position.LastActivity = timestamppb.Now()
+	position.LastActivity = timestamppb.New(sdkCtx.BlockTime())
 
 	if err := s.k.SetUserPosition(sdkCtx, position); err != nil {
 		return nil, fmt.Errorf("failed to update user position: %w", err)

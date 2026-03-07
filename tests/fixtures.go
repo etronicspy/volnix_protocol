@@ -2,6 +2,7 @@ package tests
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -15,12 +16,21 @@ import (
 	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
+var ensureBech32Once sync.Once
+
+// EnsureBech32Config sets the bech32 prefix for test addresses.
+// Call from TestMain or SetupSuite instead of init() to avoid mutating global state.
+func EnsureBech32Config() {
+	ensureBech32Once.Do(func() {
+		cfg := sdk.GetConfig()
+		if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
+			cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+		}
+	})
+}
+
 func init() {
-	// Ensure cosmos prefix for tests (valid bech32)
-	cfg := sdk.GetConfig()
-	if cfg.GetBech32AccountAddrPrefix() != "cosmos" {
-		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
-	}
+	EnsureBech32Config()
 }
 
 // mustBech32 creates a valid bech32 address from hex (20 bytes = 40 hex chars)

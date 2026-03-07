@@ -71,7 +71,7 @@ func (s MsgServer) SubmitProposal(ctx context.Context, req *governancev1.MsgSubm
 		Title:           req.Title,
 		Description:     req.Description,
 		Status:          governancev1.ProposalStatus_PROPOSAL_STATUS_SUBMITTED,
-		SubmitTime:      timestamppb.Now(),
+		SubmitTime:      timestamppb.New(sdkCtx.BlockTime()),
 		VotingStartTime: timestamppb.New(votingStartTime),
 		VotingPeriod:    durationpb.New(params.VotingPeriod),
 		VotingEndTime:   timestamppb.New(votingEndTime),
@@ -164,7 +164,7 @@ func (s MsgServer) Vote(ctx context.Context, req *governancev1.MsgVote) (*govern
 		Voter:       req.Voter,
 		Option:      req.Option,
 		VotingPower: votingPower,
-		VoteTime:    timestamppb.Now(),
+		VoteTime:    timestamppb.New(sdkCtx.BlockTime()),
 	}
 
 	// Store vote

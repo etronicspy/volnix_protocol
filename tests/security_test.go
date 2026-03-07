@@ -81,7 +81,7 @@ func (suite *SecurityTestSuite) TestZKPVerificationSecurity() {
 	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, emptyHashAccount)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), identtypes.ErrEmptyIdentityHash, err)
+	require.ErrorIs(suite.T(), err, identtypes.ErrEmptyIdentityHash)
 
 	// Test 2: Verify that duplicate identity hashes are REJECTED (Sybil attack prevention)
 	account1 := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "hash123")
@@ -150,7 +150,7 @@ func (suite *SecurityTestSuite) TestOrderSecurity() {
 	unspecifiedAccount := identtypes.NewVerifiedAccount(TestAddresses.Test3, identv1.Role_ROLE_UNSPECIFIED, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, unspecifiedAccount)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), identtypes.ErrInvalidRole, err)
+	require.ErrorIs(suite.T(), err, identtypes.ErrInvalidRole)
 
 	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
@@ -303,7 +303,7 @@ func (suite *SecurityTestSuite) TestSybilAttackPrevention() {
 	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test3, identv1.Role_ROLE_CITIZEN, "")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, emptyHashAccount)
 	require.Error(suite.T(), err)
-	require.Equal(suite.T(), identtypes.ErrEmptyIdentityHash, err)
+	require.ErrorIs(suite.T(), err, identtypes.ErrEmptyIdentityHash)
 
 	// Test 3: Verify that accounts cannot be created with invalid addresses
 	invalidAddressAccount := identtypes.NewVerifiedAccount(TestAddresses.Invalid, identv1.Role_ROLE_CITIZEN, "hash456")

@@ -97,7 +97,7 @@ func (m *MockAnteilKeeper) GetUserPosition(ctx sdk.Context, user string) (*antei
 	if pos, ok := m.Positions[user]; ok {
 		return pos, nil
 	}
-	return nil, fmt.Errorf("position not found")
+	return nil, fmt.Errorf("position not found for user %s", user)
 }
 
 func (m *MockAnteilKeeper) SetUserPosition(user string, position *anteilv1.UserPosition) {

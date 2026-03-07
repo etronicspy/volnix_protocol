@@ -8,9 +8,15 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// NewVerifiedAccount creates a new VerifiedAccount instance
-func NewVerifiedAccount(address string, role identv1.Role, identityHash string) *identv1.VerifiedAccount {
-	now := timestamppb.Now()
+// NewVerifiedAccount creates a new VerifiedAccount instance.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func NewVerifiedAccount(address string, role identv1.Role, identityHash string, blockTime ...time.Time) *identv1.VerifiedAccount {
+	var now *timestamppb.Timestamp
+	if len(blockTime) > 0 {
+		now = timestamppb.New(blockTime[0])
+	} else {
+		now = timestamppb.Now()
+	}
 	return &identv1.VerifiedAccount{
 		Address:      address,
 		Role:         role,
@@ -20,10 +26,10 @@ func NewVerifiedAccount(address string, role identv1.Role, identityHash string) 
 	}
 }
 
-// IsAccountActive checks if the account is active based on inactivity period
-func IsAccountActive(acc *identv1.VerifiedAccount, params Params) bool {
+// IsAccountActive checks if the account is active based on inactivity period.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func IsAccountActive(acc *identv1.VerifiedAccount, params Params, blockTime time.Time) bool {
 	lastActive := acc.LastActive.AsTime()
-	now := time.Now()
 
 	var inactivityPeriod time.Duration
 	switch acc.Role {
@@ -35,18 +41,26 @@ func IsAccountActive(acc *identv1.VerifiedAccount, params Params) bool {
 		return false
 	}
 
-	return now.Sub(lastActive) <= inactivityPeriod
+	return blockTime.Sub(lastActive) <= inactivityPeriod
 }
 
-// UpdateAccountActivity updates the last active timestamp
-func UpdateAccountActivity(acc *identv1.VerifiedAccount) {
-	acc.LastActive = timestamppb.Now()
+// UpdateAccountActivity updates the last active timestamp.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func UpdateAccountActivity(acc *identv1.VerifiedAccount, blockTime ...time.Time) {
+	var now *timestamppb.Timestamp
+	if len(blockTime) > 0 {
+		now = timestamppb.New(blockTime[0])
+	} else {
+		now = timestamppb.Now()
+	}
+	acc.LastActive = now
 }
 
-// ChangeAccountRole changes the role of the account
-func ChangeAccountRole(acc *identv1.VerifiedAccount, newRole identv1.Role) {
+// ChangeAccountRole changes the role of the account.
+// blockTime must come from ctx.BlockTime() for determinism across nodes.
+func ChangeAccountRole(acc *identv1.VerifiedAccount, newRole identv1.Role, blockTime ...time.Time) {
 	acc.Role = newRole
-	UpdateAccountActivity(acc)
+	UpdateAccountActivity(acc, blockTime...)
 }
 
 // ValidateAccount performs basic validation on the account

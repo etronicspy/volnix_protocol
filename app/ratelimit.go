@@ -81,7 +81,7 @@ func (rl *RateLimiter) Allow(ctx sdk.Context, tx sdk.Tx) error {
 	
 	// Check global rate limit
 	if !rl.globalLimiter.Allow() {
-		return fmt.Errorf("global rate limit exceeded: %v tx/sec", rl.globalRate)
+		return fmt.Errorf("global rate limit exceeded: %.0f tx/sec", float64(rl.globalRate))
 	}
 	
 	// Check per-address rate limit
@@ -112,7 +112,7 @@ func (rl *RateLimiter) Allow(ctx sdk.Context, tx sdk.Tx) error {
 				entry.lastSeen = time.Now()
 
 				if !entry.limiter.Allow() {
-					return fmt.Errorf("rate limit exceeded for address %s: %v tx/sec", addr, rl.perAddrRate)
+					return fmt.Errorf("rate limit exceeded for address %s: %.0f tx/sec", addr, float64(rl.perAddrRate))
 				}
 			}
 		}

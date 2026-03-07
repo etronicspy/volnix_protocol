@@ -28,7 +28,11 @@ import (
 	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
-// TestContext содержит все необходимые компоненты для тестирования
+// TestMaxIdentitiesPerAddress is an elevated limit for testing, avoiding
+// "Account limit exceeded" errors in integration and benchmark suites.
+const TestMaxIdentitiesPerAddress = 10_000
+
+// TestContext holds all components needed for multi-module integration testing.
 type TestContext struct {
 	Cdc        codec.Codec
 	Ctx        sdk.Context
@@ -50,8 +54,7 @@ type TestContext struct {
 	GovernanceParamStore paramtypes.Subspace
 }
 
-// NewTestContext создает новый тестовый контекст со всеми необходимыми компонентами
-// Это исправляет проблему "store does not exist" путем правильной инициализации всех stores
+// NewTestContext creates a new test context with all stores and keepers initialized.
 func NewTestContext(t require.TestingT) *TestContext {
 	// Ensure cosmos bech32 prefix for test addresses
 	cfg := sdk.GetConfig()
@@ -111,10 +114,8 @@ func NewTestContext(t require.TestingT) *TestContext {
 	consensusKeeper := consensuskeeper.NewKeeper(cdc, consensusStoreKey, consensusParamStore)
 	governanceKeeper := governancekeeper.NewKeeper(cdc, governanceStoreKey, governanceParamStore)
 
-	// Set default params with increased limits for testing
-	// Увеличиваем лимиты для исправления "Account limit exceeded"
 	identParams := identtypes.DefaultParams()
-	identParams.MaxIdentitiesPerAddress = 10000 // Значительно увеличиваем для тестов
+	identParams.MaxIdentitiesPerAddress = TestMaxIdentitiesPerAddress
 	identKeeper.SetParams(ctx, identParams)
 
 	lizenzKeeper.SetParams(ctx, lizenztypes.DefaultParams())

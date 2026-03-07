@@ -12,9 +12,17 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// getTimestamp returns timestamppb from blockTime if provided, otherwise timestamppb.Now()
+func getTimestamp(blockTime ...time.Time) *timestamppb.Timestamp {
+	if len(blockTime) > 0 {
+		return timestamppb.New(blockTime[0])
+	}
+	return timestamppb.Now()
+}
+
 // NewOrder creates a new Order instance
-func NewOrder(owner string, orderType anteilv1.OrderType, orderSide anteilv1.OrderSide, antAmount string, price string, identityHash string) *anteilv1.Order {
-	now := timestamppb.Now()
+func NewOrder(owner string, orderType anteilv1.OrderType, orderSide anteilv1.OrderSide, antAmount string, price string, identityHash string, blockTime ...time.Time) *anteilv1.Order {
+	now := getTimestamp(blockTime...)
 	expiresAt := timestamppb.New(now.AsTime().Add(24 * time.Hour)) // Default 24h expiry
 
 	return &anteilv1.Order{
@@ -32,8 +40,8 @@ func NewOrder(owner string, orderType anteilv1.OrderType, orderSide anteilv1.Ord
 }
 
 // NewTrade creates a new Trade instance
-func NewTrade(buyOrderID string, sellOrderID string, buyer string, seller string, antAmount string, price string, identityHash string) *anteilv1.Trade {
-	now := timestamppb.Now()
+func NewTrade(buyOrderID string, sellOrderID string, buyer string, seller string, antAmount string, price string, identityHash string, blockTime ...time.Time) *anteilv1.Trade {
+	now := getTimestamp(blockTime...)
 
 	return &anteilv1.Trade{
 		TradeId:      generateTradeID(buyOrderID, sellOrderID, now.AsTime()),
@@ -50,8 +58,8 @@ func NewTrade(buyOrderID string, sellOrderID string, buyer string, seller string
 }
 
 // NewUserPosition creates a new UserPosition instance
-func NewUserPosition(owner string, antBalance string) *anteilv1.UserPosition {
-	now := timestamppb.Now()
+func NewUserPosition(owner string, antBalance string, blockTime ...time.Time) *anteilv1.UserPosition {
+	now := getTimestamp(blockTime...)
 
 	return &anteilv1.UserPosition{
 		Owner:        owner,
@@ -66,8 +74,8 @@ func NewUserPosition(owner string, antBalance string) *anteilv1.UserPosition {
 }
 
 // NewAuction creates a new Auction instance
-func NewAuction(blockHeight uint64, antAmount string, reservePrice string) *anteilv1.Auction {
-	now := timestamppb.Now()
+func NewAuction(blockHeight uint64, antAmount string, reservePrice string, blockTime ...time.Time) *anteilv1.Auction {
+	now := getTimestamp(blockTime...)
 	endTime := timestamppb.New(now.AsTime().Add(1 * time.Hour)) // Default 1h auction duration
 
 	return &anteilv1.Auction{
@@ -84,8 +92,8 @@ func NewAuction(blockHeight uint64, antAmount string, reservePrice string) *ante
 }
 
 // NewBid creates a new Bid instance
-func NewBid(bidder string, auctionID string, amount string, identityHash string) *anteilv1.Bid {
-	now := timestamppb.Now()
+func NewBid(bidder string, auctionID string, amount string, identityHash string, blockTime ...time.Time) *anteilv1.Bid {
+	now := getTimestamp(blockTime...)
 
 	return &anteilv1.Bid{
 		BidId:        generateBidID(bidder, auctionID, now.AsTime()),
@@ -243,7 +251,7 @@ func UpdateOrderStatus(order *anteilv1.Order, status anteilv1.OrderStatus) {
 }
 
 // UpdateUserPosition updates user position based on trade
-func UpdateUserPosition(position *anteilv1.UserPosition, trade *anteilv1.Trade, isBuyer bool) {
+func UpdateUserPosition(position *anteilv1.UserPosition, trade *anteilv1.Trade, isBuyer bool, blockTime ...time.Time) {
 	// Update trade count
 	currentTrades, _ := strconv.ParseInt(position.TotalTrades, 10, 64)
 	position.TotalTrades = fmt.Sprintf("%d", currentTrades+1)
@@ -254,7 +262,7 @@ func UpdateUserPosition(position *anteilv1.UserPosition, trade *anteilv1.Trade, 
 	position.TotalVolume = fmt.Sprintf("%d", currentVolume+tradeVolume)
 
 	// Update last activity
-	position.LastActivity = timestamppb.Now()
+	position.LastActivity = getTimestamp(blockTime...)
 }
 
 // ParseUint64 safely parses a string to uint64, returning 0 on error

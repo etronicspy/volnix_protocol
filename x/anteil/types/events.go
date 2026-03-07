@@ -12,6 +12,9 @@ const (
 	
 	// EventTypePositionUpdated defines the event type for user position update
 	EventTypePositionUpdated = "anteil.position_updated"
+
+	// EventTypeTradeExecuted defines the event type for a completed trade
+	EventTypeTradeExecuted = "anteil.trade_executed"
 	
 	// Attribute keys
 	AttributeKeyOrderId      = "order_id"

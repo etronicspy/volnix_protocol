@@ -36,7 +36,7 @@ alwaysApply: true
 - Non-source categories:
   - Build artifacts: `build/`, `frontend/*/build/`, `*.exe`, `*.o`, `*.test`, `coverage/`
   - Generated code: `proto/gen/`, `.generated/`
-  - Dependencies: `vendor/`, `node_modules/`, lock files
+  - Dependencies: `vendor/`, `node_modules/` (lock files like `package-lock.json` are committed per `dependencies.mdc`)
   - Test data: `testnet/`, `tmp/`, `*.log`, `*.bak`
   - Local config: `.volnix/`, `.env`, `config.toml`, `*.db`, private keys
   - IDE/OS files: `.vscode/`, `.DS_Store`, `*.swp`

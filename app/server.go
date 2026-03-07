@@ -28,8 +28,7 @@ type VolnixServer struct {
 	cmtLogger cmtlog.Logger
 }
 
-// REMOVED: Old NewCometBFTServer function that was causing protobuf registration issues
-// Use NewMinimalCometBFTServer from minimal_server.go instead
+// NewMinimalCometBFTServer from minimal_server.go is the primary entry point.
 
 // Start starts the Volnix server with CometBFT node
 func (s *VolnixServer) Start(ctx context.Context) error {
@@ -83,8 +82,8 @@ func (s *VolnixServer) Stop() error {
 
 	if s.node != nil && s.node.IsRunning() {
 		if err := s.node.Stop(); err != nil {
-			s.logger.Error("Failed to stop CometBFT node", "error", err)
-			return err
+			s.logger.Error("Failed to stop CometBFT node", "module", "server", "error", err)
+			return fmt.Errorf("failed to stop CometBFT node: %w", err)
 		}
 		s.logger.Info("✅ CometBFT node stopped")
 	}
@@ -159,10 +158,10 @@ func (s *VolnixServer) initializeFiles() error {
 
 	// Ensure directories exist
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
 	// CosmJS compatibility: always reset priv_validator_state on startup
@@ -175,6 +174,9 @@ func (s *VolnixServer) initializeFiles() error {
 	if s.config != nil {
 		s.config.Consensus.CreateEmptyBlocks = true
 		s.config.Consensus.CreateEmptyBlocksInterval = 5 * time.Second
+		s.config.Consensus.TimeoutPropose = 3 * time.Second
+		s.config.Consensus.TimeoutCommit = 5 * time.Second
+		s.config.Consensus.SkipTimeoutCommit = false
 	}
 
 	// Create genesis file if it doesn't exist

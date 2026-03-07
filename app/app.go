@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 
 	sdklog "cosmossdk.io/log"
 	"cosmossdk.io/math"
@@ -57,7 +56,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Application name
 const Name = "volnix"
 
 // LizenzKeeperAdapter adapts lizenz keeper to consensus interface
@@ -326,16 +324,15 @@ type VolnixApp struct {
 	// module manager
 	mm *module.Manager
 
-	// IMPROVED: Rate limiter for DDoS protection
-	rateLimiter *RateLimiter
-
-	// IMPROVED: Snapshot manager for State Sync
+	rateLimiter     *RateLimiter
 	snapshotManager *SnapshotManager
 
-	// genesisValidatorPubKey stores the first validator's pubkey from InitChain.
-	// Used in EndBlocker to return ValidatorUpdates with correct pubkey when LZN is activated.
-	// In single-node demo: total LZN power is applied to this validator.
+	// genesisValidatorPubKey stores the first validator's pubkey from InitChain (legacy).
 	genesisValidatorPubKey *cmtcrypto.PublicKey
+
+	// genesisValidators stores ALL validator pubkeys from InitChain for multi-validator support.
+	// Key: hex-encoded validator address (first 20 bytes of SHA256 of pubkey), Value: pubkey.
+	genesisValidators []abci.ValidatorUpdate
 }
 
 func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, encoding EncodingConfig, paramStoreDB cosmosdb.DB) *VolnixApp {
@@ -498,7 +495,6 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		upgrade.NewAppModule(upgradeKeeper, authcodec.NewBech32Codec("volnix")),
 	)
 
-	// IMPROVED: Create rate limiter with default configuration
 	rateLimiter := NewRateLimiter(DefaultRateLimitConfig())
 
 	// Create app instance
@@ -528,7 +524,6 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		rateLimiter:      rateLimiter,
 	}
 
-	// IMPROVED: Create snapshot manager after app is created
 	app.snapshotManager = NewSnapshotManager(app)
 
 	// Register x/upgrade handlers with app migrations.
@@ -551,11 +546,10 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 	configurator := module.NewConfigurator(encoding.Codec, bapp.MsgServiceRouter(), bapp.GRPCQueryRouter())
 	if err := mm.RegisterServices(configurator); err != nil {
 		// Log critical error before panicking - this is a fatal initialization error
-		logger.Error("CRITICAL: Failed to register module services", "error", err)
+		logger.Error("failed to register module services", "module", "app", "operation", "RegisterServices", "error", err)
 		panic(fmt.Errorf("failed to register module services: %w", err))
 	}
 
-	// IMPROVED: Use AnteHandler with rate limiting support
 	bapp.SetAnteHandler(app.createAnteHandler())
 
 	// Run pre-block hooks so x/upgrade executes planned governance upgrades.
@@ -593,13 +587,12 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			return sdk.EndBlock{}, fmt.Errorf("consensus EndBlocker failed: %w", err)
 		}
 
-		// Build ValidatorUpdates from active LZN so CometBFT adjusts validator set.
-		// In single-node demo: sum all LZN power and apply to genesis validator.
-		// Skip for multi-validator testnet (VOLNIX_SKIP_VALIDATOR_UPDATES=1) to preserve
-		// genesis set and fix consensus divergence.
+		// Build ValidatorUpdates for ALL genesis validators.
+		// Total LZN power is distributed equally across all genesis validators,
+		// each getting at least power 1 to stay in the validator set.
 		var valUpdates []abci.ValidatorUpdate
-		if app.genesisValidatorPubKey != nil && os.Getenv("VOLNIX_SKIP_VALIDATOR_UPDATES") != "1" {
-			totalPower := int64(0)
+		if len(app.genesisValidators) > 0 {
+			totalLZNPower := int64(0)
 			allLizenz, err := lizenzKeeper.GetAllActivatedLizenz(ctx)
 			if err == nil {
 				for _, lz := range allLizenz {
@@ -609,16 +602,29 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 					if lz.Amount != "" && lz.Amount != "0" {
 						if amt, ok := math.NewIntFromString(lz.Amount); ok {
 							p := amt.Quo(math.NewInt(1_000_000)).Int64()
-							totalPower += p
+							totalLZNPower += p
 						}
 					}
 				}
 			}
-			if totalPower < 1 {
-				totalPower = 1
+
+			numValidators := int64(len(app.genesisValidators))
+			perValidatorPower := totalLZNPower / numValidators
+			if perValidatorPower < 1 {
+				perValidatorPower = 1
 			}
-			valUpdates = []abci.ValidatorUpdate{
-				{PubKey: *app.genesisValidatorPubKey, Power: totalPower},
+			remainder := totalLZNPower - (perValidatorPower * numValidators)
+
+			valUpdates = make([]abci.ValidatorUpdate, len(app.genesisValidators))
+			for i, gv := range app.genesisValidators {
+				power := perValidatorPower
+				if int64(i) < remainder {
+					power++
+				}
+				valUpdates[i] = abci.ValidatorUpdate{
+					PubKey: gv.PubKey,
+					Power:  power,
+				}
 			}
 		}
 
@@ -672,7 +678,14 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 				Power:  val.Power,
 			}
 		}
-		// Store first validator pubkey for EndBlocker (LZN → voting power)
+		// Store all validator pubkeys for EndBlocker (LZN → voting power)
+		app.genesisValidators = make([]abci.ValidatorUpdate, len(req.Validators))
+		for i, val := range req.Validators {
+			app.genesisValidators[i] = abci.ValidatorUpdate{
+				PubKey: val.PubKey,
+				Power:  val.Power,
+			}
+		}
 		if len(req.Validators) > 0 {
 			pk := req.Validators[0].PubKey
 			app.genesisValidatorPubKey = &pk
@@ -848,8 +861,6 @@ func (app *VolnixApp) LoadSnapshotChunk(ctx context.Context, req *abci.RequestLo
 // createAnteHandler creates an AnteHandler with rate limiting and activity tracking
 func (app *VolnixApp) createAnteHandler() sdk.AnteHandler {
 	return func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
-		// IMPROVED: Apply rate limiting first (before other validations)
-		// Skip rate limiting for simulation and recheck transactions
 		if !simulate && ctx.IsCheckTx() && app.rateLimiter != nil {
 			if err := app.rateLimiter.Allow(ctx, tx); err != nil {
 				return ctx, fmt.Errorf("rate limit check failed: %w", err)
@@ -868,7 +879,7 @@ func (app *VolnixApp) createAnteHandler() sdk.AnteHandler {
 			signers := getSignersFromTx(tx)
 			if len(signers) > 0 {
 				if err := app.identKeeper.UpdateActivityForSigners(newCtx, signers); err != nil {
-					ctx.Logger().Error("Failed to update activity for signers", "error", err)
+					ctx.Logger().Error("failed to update activity for signers", "module", "ante", "signers_count", len(signers), "height", ctx.BlockHeight(), "error", err)
 					// Don't fail the tx
 				}
 			}

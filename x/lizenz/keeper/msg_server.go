@@ -45,8 +45,8 @@ func (s MsgServer) ActivateLZN(ctx context.Context, req *lizenzv1.MsgActivateLZN
 	activatedLizenz := &lizenzv1.ActivatedLizenz{
 		Validator:      req.Validator,
 		Amount:         req.Amount,
-		ActivationTime: timestamppb.Now(),
-		LastActivity:   timestamppb.Now(),
+		ActivationTime: timestamppb.New(sdkCtx.BlockTime()),
+		LastActivity:   timestamppb.New(sdkCtx.BlockTime()),
 		IdentityHash:   req.IdentityHash,
 		IsEligibleForRewards: true,
 	}

@@ -516,11 +516,15 @@ func (suite *KeeperTestSuite) TestProcessDeactivatingLizenz() {
 
 // Test UpdateLizenzActivity
 func (suite *KeeperTestSuite) TestUpdateLizenzActivity() {
+	now := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(now)
+
+	pastTime := now.Add(-24 * time.Hour)
 	lizenz := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator",
 		Amount:               "1000000",
-		ActivationTime:       timestamppb.Now(),
-		LastActivity:         timestamppb.New(time.Now().Add(-24 * time.Hour)),
+		ActivationTime:       timestamppb.New(now),
+		LastActivity:         timestamppb.New(pastTime),
 		IsEligibleForRewards: true,
 		IdentityHash:         "hash123",
 	}
@@ -530,11 +534,11 @@ func (suite *KeeperTestSuite) TestUpdateLizenzActivity() {
 
 	oldTime := lizenz.LastActivity.AsTime()
 
-	// Update activity
+	// Update activity — uses ctx.BlockTime()
 	err = suite.keeper.UpdateLizenzActivity(suite.ctx, "cosmos1validator")
 	require.NoError(suite.T(), err)
 
-	// Verify activity was updated
+	// Verify activity was updated to block time
 	retrieved, err := suite.keeper.GetActivatedLizenz(suite.ctx, "cosmos1validator")
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.LastActivity.AsTime().After(oldTime))
@@ -778,12 +782,15 @@ func (suite *KeeperTestSuite) TestUpdateLizenzActivity_NotFound() {
 }
 
 func (suite *KeeperTestSuite) TestUpdateLizenzActivity_Success() {
-	// Create activated lizenz
+	now := time.Now()
+	suite.ctx = suite.ctx.WithBlockTime(now)
+
+	pastTime := now.Add(-24 * time.Hour)
 	lizenz := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator",
 		Amount:               "1000000",
-		ActivationTime:       timestamppb.Now(),
-		LastActivity:         timestamppb.New(time.Now().Add(-24 * time.Hour)),
+		ActivationTime:       timestamppb.New(now),
+		LastActivity:         timestamppb.New(pastTime),
 		IsEligibleForRewards: true,
 		IdentityHash:         "hash123",
 	}
@@ -796,7 +803,7 @@ func (suite *KeeperTestSuite) TestUpdateLizenzActivity_Success() {
 		Validator:    "cosmos1validator",
 		CurrentMoa:   "1000000",
 		RequiredMoa:  "500000",
-		LastActivity: timestamppb.New(time.Now().Add(-24 * time.Hour)),
+		LastActivity: timestamppb.New(pastTime),
 		IsCompliant:  true,
 	}
 
@@ -805,11 +812,11 @@ func (suite *KeeperTestSuite) TestUpdateLizenzActivity_Success() {
 
 	oldTime := lizenz.LastActivity.AsTime()
 
-	// Update activity
+	// Update activity — uses ctx.BlockTime()
 	err = suite.keeper.UpdateLizenzActivity(suite.ctx, "cosmos1validator")
 	require.NoError(suite.T(), err)
 
-	// Verify activity was updated
+	// Verify activity was updated to block time
 	retrieved, err := suite.keeper.GetActivatedLizenz(suite.ctx, "cosmos1validator")
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), retrieved.LastActivity.AsTime().After(oldTime))

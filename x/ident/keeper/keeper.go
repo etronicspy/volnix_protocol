@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -148,8 +149,6 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 		return types.ErrAccountAlreadyExists
 	}
 
-	// IMPROVED: Check for duplicate identity hash
-	// This prevents the same identity from being used by multiple addresses
 	identityHashKey := types.GetIdentityHashKey(account.IdentityHash)
 	if store.Has(identityHashKey) {
 		// Get the existing address that uses this identity hash
@@ -175,7 +174,6 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 
 	store.Set(accountKey, accountBz)
 	
-	// IMPROVED: Store identity hash mapping to prevent duplicates
 	store.Set(identityHashKey, []byte(account.Address))
 	
 	return nil
@@ -191,7 +189,7 @@ func (k Keeper) CreateAccountFromVerification(ctx sdk.Context, address, zkpProof
 	if err := k.CheckDuplicateIdentityHash(ctx, identityHash, address); err != nil {
 		return err
 	}
-	account := types.NewVerifiedAccount(address, desiredRole, identityHash)
+	account := types.NewVerifiedAccount(address, desiredRole, identityHash, ctx.BlockTime())
 	return k.SetVerifiedAccount(ctx, account)
 }
 
@@ -375,8 +373,6 @@ func (k Keeper) UpdateVerifiedAccount(ctx sdk.Context, account *identv1.Verified
 		return types.ErrAccountNotFound
 	}
 
-	// IMPROVED: Check for duplicate identity hash if identity hash changed
-	// Get existing account to compare identity hash
 	var existingAccount identv1.VerifiedAccount
 	existingAccountBz := store.Get(accountKey)
 	if err := k.cdc.Unmarshal(existingAccountBz, &existingAccount); err == nil {
@@ -447,7 +443,7 @@ func (k Keeper) GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.VerifiedAcco
 	return accounts, nil
 }
 
-// IMPROVED: CheckDuplicateIdentityHash checks if an identity hash is already used by another address
+// CheckDuplicateIdentityHash checks if an identity hash is already used by another address.
 func (k Keeper) CheckDuplicateIdentityHash(ctx sdk.Context, identityHash string, currentAddress string) error {
 	store := ctx.KVStore(k.storeKey)
 	identityHashKey := types.GetIdentityHashKey(identityHash)
@@ -521,7 +517,7 @@ func (k Keeper) UpdateAccountActivity(ctx sdk.Context, address string) error {
 		return err
 	}
 
-	types.UpdateAccountActivity(account)
+	types.UpdateAccountActivity(account, ctx.BlockTime())
 	return k.UpdateVerifiedAccount(ctx, account)
 }
 
@@ -544,7 +540,7 @@ func (k Keeper) ChangeAccountRole(ctx sdk.Context, address string, newRole ident
 	}
 
 	// Change role and update activity
-	types.ChangeAccountRole(account, newRole)
+	types.ChangeAccountRole(account, newRole, ctx.BlockTime())
 	return k.UpdateVerifiedAccount(ctx, account)
 }
 
@@ -629,9 +625,12 @@ func (k Keeper) ValidateRoleChangeProof(ctx sdk.Context, address string, identit
 // ValidateRoleChoice validates that the role choice during verification is valid
 // According to whitepaper, user must choose between ROLE_CITIZEN or ROLE_VALIDATOR
 func (k Keeper) ValidateRoleChoice(ctx sdk.Context, address string, desiredRole identv1.Role) error {
-	// Check if address already has a verified account
-	if _, err := k.GetVerifiedAccount(ctx, address); err == nil {
+	_, err := k.GetVerifiedAccount(ctx, address)
+	if err == nil {
 		return types.ErrAlreadyVerified
+	}
+	if !errors.Is(err, types.ErrAccountNotFound) {
+		return fmt.Errorf("failed to check existing account: %w", err)
 	}
 
 	// Validate that role is either CITIZEN or VALIDATOR
@@ -709,8 +708,8 @@ func (k Keeper) ExecuteRoleMigration(ctx sdk.Context, fromAddress, toAddress str
 	targetAccount := &identv1.VerifiedAccount{
 		Address:              toAddress,
 		Role:                 sourceAccount.Role,
-		VerificationDate:     timestamppb.Now(),
-		LastActive:           timestamppb.Now(),
+		VerificationDate:     timestamppb.New(ctx.BlockTime()),
+		LastActive:           timestamppb.New(ctx.BlockTime()),
 		IsActive:             true,
 		IdentityHash:         migration.MigrationHash,
 		VerificationProvider: sourceAccount.VerificationProvider,
@@ -729,7 +728,7 @@ func (k Keeper) ExecuteRoleMigration(ctx sdk.Context, fromAddress, toAddress str
 
 	// Update migration status
 	migration.IsCompleted = true
-	migration.MigrationDate = timestamppb.Now()
+	migration.MigrationDate = timestamppb.New(ctx.BlockTime())
 	return k.SetRoleMigration(ctx, migration)
 }
 

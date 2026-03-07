@@ -43,7 +43,7 @@ func (k Keeper) UpdateRewardStats(ctx sdk.Context, validator string, rewardAmoun
 	newTotal := currentTotal + rewardAmount
 	activatedLizenz.TotalRewardsEarned = fmt.Sprintf("%d", newTotal)
 	activatedLizenz.LastRewardBlock = fmt.Sprintf("%d", blockHeight)
-	activatedLizenz.LastRewardTime = timestamppb.Now()
+	activatedLizenz.LastRewardTime = timestamppb.New(ctx.BlockTime())
 
 	// Store updated activated LZN (use UpdateActivatedLizenz since it already exists)
 	if err := k.UpdateActivatedLizenz(ctx, activatedLizenz); err != nil {

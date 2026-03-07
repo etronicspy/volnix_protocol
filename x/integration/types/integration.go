@@ -59,23 +59,25 @@ func NewIntegrationManager() *IntegrationManager {
 	}
 }
 
-// RegisterModule registers a module for integration
-func (im *IntegrationManager) RegisterModule(name string, dependencies []string) {
+// RegisterModule registers a module for integration.
+// blockTime should come from ctx.BlockTime() for determinism.
+func (im *IntegrationManager) RegisterModule(name string, dependencies []string, blockTime time.Time) {
 	im.Modules[name] = &ModuleIntegration{
 		ModuleName:   name,
 		Status:       "active",
-		LastSync:     time.Now(),
+		LastSync:     blockTime,
 		Dependencies: dependencies,
 		HealthScore:  100,
 		ErrorCount:   0,
 	}
 }
 
-// UpdateModuleHealth updates the health status of a module
-func (im *IntegrationManager) UpdateModuleHealth(name string, healthScore int64, errorMsg string) {
+// UpdateModuleHealth updates the health status of a module.
+// blockTime should come from ctx.BlockTime() for determinism.
+func (im *IntegrationManager) UpdateModuleHealth(name string, healthScore int64, errorMsg string, blockTime time.Time) {
 	if module, exists := im.Modules[name]; exists {
 		module.HealthScore = healthScore
-		module.LastSync = time.Now()
+		module.LastSync = blockTime
 		if errorMsg != "" {
 			module.ErrorCount++
 			module.LastError = errorMsg
@@ -83,16 +85,17 @@ func (im *IntegrationManager) UpdateModuleHealth(name string, healthScore int64,
 	}
 }
 
-// AddCrossModuleEvent adds a new cross-module event
-func (im *IntegrationManager) AddCrossModuleEvent(eventType, sourceModule, targetModule, eventData, validator string) {
+// AddCrossModuleEvent adds a new cross-module event.
+// blockTime should come from ctx.BlockTime() for determinism.
+func (im *IntegrationManager) AddCrossModuleEvent(eventType, sourceModule, targetModule, eventData, validator string, blockTime time.Time) {
 	event := &CrossModuleEvent{
-		EventID:       generateEventID(),
-		EventType:     eventType,
-		SourceModule:  sourceModule,
-		TargetModule:  targetModule,
-		EventData:     eventData,
-		Timestamp:     time.Now(),
-		Validator:     validator,
+		EventID:        generateEventID(),
+		EventType:      eventType,
+		SourceModule:   sourceModule,
+		TargetModule:   targetModule,
+		EventData:      eventData,
+		Timestamp:      blockTime,
+		Validator:      validator,
 		RequiresAction: false,
 	}
 	im.Events = append(im.Events, event)
@@ -117,13 +120,16 @@ func GetValidatorIntegrationStatus(
 		AnteilAccess: anteilPosition,
 		ConsensusRole: consensusValidator,
 		OverallScore: overallScore,
-		LastUpdate:   time.Now(),
 	}
 }
 
-// calculateOverallScore calculates the overall integration score for a validator
+const (
+	scoreWeightFull    = 25.0
+	scoreWeightPartial = 10.0
+)
+
 // calculateOverallScore computes a 0-100 integration score.
-// Weights: identity 25, lizenz 25, anteil 25 (scaled by balance), consensus 25 (scaled by weight).
+// Each of the four modules (ident, lizenz, anteil, consensus) contributes up to 25 points.
 func calculateOverallScore(
 	identAccount *identv1.VerifiedAccount,
 	lizenzLicense *lizenzv1.ActivatedLizenz,
@@ -134,25 +140,25 @@ func calculateOverallScore(
 	score := 0.0
 
 	if identAccount != nil && identAccount.IsActive {
-		score += 25.0
+		score += scoreWeightFull
 	}
 
 	if lizenzLicense != nil {
-		score += 25.0
+		score += scoreWeightFull
 	}
 
 	if anteilPosition != nil {
-		antScore := 10.0
+		antScore := scoreWeightPartial
 		if anteilPosition.AntBalance != "" && anteilPosition.AntBalance != "0" {
-			antScore = 25.0
+			antScore = scoreWeightFull
 		}
 		score += antScore
 	}
 
 	if consensusValidator != nil {
-		consScore := 10.0
-		if consensusValidator.Status == 1 { // ACTIVE
-			consScore = 25.0
+		consScore := scoreWeightPartial
+		if consensusValidator.Status == consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE {
+			consScore = scoreWeightFull
 		}
 		score += consScore
 	}
@@ -160,9 +166,11 @@ func calculateOverallScore(
 	return fmt.Sprintf("%.2f", score)
 }
 
-// generateEventID generates a unique event ID
+// generateEventID generates a unique event ID using random bytes.
 func generateEventID() string {
-	randomBytes := make([]byte, 4)
-	rand.Read(randomBytes)
-	return time.Now().Format("20060102150405") + "-" + fmt.Sprintf("%x", randomBytes)
+	randomBytes := make([]byte, 8)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return fmt.Sprintf("evt-%d", randomBytes[0])
+	}
+	return fmt.Sprintf("%x", randomBytes)
 }

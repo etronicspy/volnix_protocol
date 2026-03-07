@@ -2,7 +2,7 @@ package types
 
 import (
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/codec/types"
+	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 
@@ -17,7 +17,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 }
 
 // RegisterInterfaces registers the consensus types on the interface registry.
-func RegisterInterfaces(registry types.InterfaceRegistry) {
+func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 	// Register all Msg types
 	registry.RegisterImplementations((*sdk.Msg)(nil),
 		&consensusv1.MsgSelectBlockCreator{},

@@ -2102,16 +2102,21 @@ func (suite *KeeperTestSuite) TestSelectAuctionWinner_MultipleRevealsWeighted() 
 	}
 	suite.keeper.SetAnteilKeeper(mockAnteilKeeper)
 
-	// Test multiple selections to verify weighted randomness
+	// Test multiple selections to verify weighted randomness.
+	// Vary block height to get different deterministic random seeds.
 	winners := make(map[string]int)
 	for i := 0; i < 20; i++ {
-		auction.Phase = consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL
-		auction.Winner = ""
-		auction.WinningBid = ""
-		err = suite.keeper.SetBlindAuction(suite.ctx, auction)
+		h := uint64(1000 + i)
+		auctionCopy := &consensusv1.BlindAuction{
+			BlockHeight: h,
+			Phase:       consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL,
+			Reveals:     auction.Reveals,
+		}
+		err = suite.keeper.SetBlindAuction(suite.ctx, auctionCopy)
 		require.NoError(suite.T(), err)
 
-		winner, bidAmount, err := suite.keeper.SelectAuctionWinner(suite.ctx, height)
+		testCtx := suite.ctx.WithBlockHeight(int64(h))
+		winner, bidAmount, err := suite.keeper.SelectAuctionWinner(testCtx, h)
 		require.NoError(suite.T(), err)
 		require.NotEmpty(suite.T(), winner)
 		require.NotEmpty(suite.T(), bidAmount)
@@ -2119,8 +2124,8 @@ func (suite *KeeperTestSuite) TestSelectAuctionWinner_MultipleRevealsWeighted() 
 		winners[winner]++
 	}
 
-	// All validators should have a chance to win (weighted by bid amount)
-	require.Greater(suite.T(), len(winners), 1, "should have multiple winners")
+	// With different block heights, weighted lottery should produce different winners
+	require.Greater(suite.T(), len(winners), 1, "should have multiple winners across different block heights")
 }
 
 // TestSelectAuctionWinner_FallbackPathWithMultipleReveals tests SelectAuctionWinner fallback path
@@ -3057,69 +3062,52 @@ func (suite *KeeperTestSuite) TestEndBlocker() {
 	state, err := suite.keeper.GetConsensusState(suite.ctx)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), uint64(1000), state.CurrentHeight)
-
-	// Verify auction was created for next block
-	nextAuction, err := suite.keeper.GetBlindAuction(suite.ctx, 1001)
-	require.NoError(suite.T(), err)
-	require.NotNil(suite.T(), nextAuction)
-	require.Equal(suite.T(), uint64(1001), nextAuction.BlockHeight)
 }
 
-// TestEndBlocker_WithAuctionTransition tests EndBlocker with auction phase transition
+// TestEndBlocker_WithAuctionTransition tests RunAutomatedAuction full cycle
 func (suite *KeeperTestSuite) TestEndBlocker_WithAuctionTransition() {
-	// Set block height
+	suite.keeper.SetValidator(suite.ctx, &consensusv1.Validator{
+		Validator:     "cosmos1validator1",
+		AntBalance:    "1000000",
+		ActivityScore: "500",
+		Status:        consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
+		LastActive:    timestamppb.Now(),
+	})
+
 	suite.ctx = suite.ctx.WithBlockHeight(1000)
 
-	// Create auction in commit phase with commits
-	_, err := suite.keeper.CreateBlindAuction(suite.ctx, 1000)
+	err := suite.keeper.RunAutomatedAuction(suite.ctx, 1000)
 	require.NoError(suite.T(), err)
 
-	// Add a commit
-	commitHash := keeper.HashCommit("nonce1", "1000000")
-	err = suite.keeper.CommitBid(suite.ctx, "cosmos1validator1", commitHash, 1000)
+	auction, err := suite.keeper.GetBlindAuction(suite.ctx, 1000)
 	require.NoError(suite.T(), err)
-
-	// Run EndBlocker
-	err = suite.keeper.EndBlocker(suite.ctx)
-	require.NoError(suite.T(), err)
-
-	// Verify auction was transitioned to reveal phase
-	updatedAuction, err := suite.keeper.GetBlindAuction(suite.ctx, 1000)
-	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), consensusv1.AuctionPhase_AUCTION_PHASE_REVEAL, updatedAuction.Phase)
+	require.Equal(suite.T(), consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE, auction.Phase)
 }
 
-// TestEndBlocker_WithAuctionWinner tests EndBlocker with auction winner selection
+// TestEndBlocker_WithAuctionWinner tests RunAutomatedAuction selects a winner
 func (suite *KeeperTestSuite) TestEndBlocker_WithAuctionWinner() {
-	// Set block height
+	for _, name := range []string{"cosmos1validator1", "cosmos1validator2"} {
+		suite.keeper.SetValidator(suite.ctx, &consensusv1.Validator{
+			Validator:     name,
+			AntBalance:    "1000000",
+			ActivityScore: "500",
+			Status:        consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
+			LastActive:    timestamppb.Now(),
+		})
+	}
+
 	suite.ctx = suite.ctx.WithBlockHeight(1000)
 
-	// Create auction in commit phase
-	_, err := suite.keeper.CreateBlindAuction(suite.ctx, 1000)
+	// Run automated auction directly (EndBlocker swallows errors)
+	err := suite.keeper.RunAutomatedAuction(suite.ctx, 1000)
 	require.NoError(suite.T(), err)
 
-	// Add a commit first (must be in commit phase)
-	commitHash := keeper.HashCommit("nonce1", "1000000")
-	err = suite.keeper.CommitBid(suite.ctx, "cosmos1validator1", commitHash, 1000)
+	auction, err := suite.keeper.GetBlindAuction(suite.ctx, 1000)
 	require.NoError(suite.T(), err)
-
-	// Transition to reveal phase
-	err = suite.keeper.TransitionAuctionPhase(suite.ctx, 1000)
-	require.NoError(suite.T(), err)
-
-	// Add reveal
-	err = suite.keeper.RevealBid(suite.ctx, "cosmos1validator1", "nonce1", "1000000", 1000)
-	require.NoError(suite.T(), err)
-
-	// Run EndBlocker
-	err = suite.keeper.EndBlocker(suite.ctx)
-	require.NoError(suite.T(), err)
-
-	// Verify auction winner was selected (may be nil if no winner selected due to random selection)
-	updatedAuction, err := suite.keeper.GetBlindAuction(suite.ctx, 1000)
-	require.NoError(suite.T(), err)
-	// Winner selection is probabilistic, so we just verify auction exists
-	require.NotNil(suite.T(), updatedAuction)
+	require.NotNil(suite.T(), auction)
+	require.Equal(suite.T(), consensusv1.AuctionPhase_AUCTION_PHASE_COMPLETE, auction.Phase)
+	require.NotEmpty(suite.T(), auction.Winner)
+	require.NotEmpty(suite.T(), auction.WinningBid)
 }
 
 // TestEndBlocker_CleanupOldAuctions tests EndBlocker cleanup of old auctions
@@ -3179,11 +3167,6 @@ func (suite *KeeperTestSuite) TestEndBlocker_NoValidators() {
 	state, err := suite.keeper.GetConsensusState(suite.ctx)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), uint64(100), state.CurrentHeight)
-
-	// Verify auction was created for next block
-	nextAuction, err := suite.keeper.GetBlindAuction(suite.ctx, 101)
-	require.NoError(suite.T(), err)
-	require.NotNil(suite.T(), nextAuction)
 }
 
 // TestInitGenesis tests InitGenesis functionality
@@ -3486,4 +3469,106 @@ func (suite *KeeperTestSuite) TestCalculateTotalBurnedTokens_InvalidWeights() {
 	state, err := suite.keeper.GetConsensusState(suite.ctx)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "0.00000000", state.TotalAntBurned)
+}
+
+// =============================================================================
+// Dynamic Block Time Tests
+// =============================================================================
+
+func (suite *KeeperTestSuite) TestGetSetTargetBlockTime() {
+	// Default should return 0 (no target set)
+	d := suite.keeper.GetTargetBlockTime(suite.ctx)
+	require.Equal(suite.T(), time.Duration(0), d)
+
+	// Set and retrieve
+	err := suite.keeper.SetTargetBlockTime(suite.ctx, 5*time.Second)
+	require.NoError(suite.T(), err)
+	d = suite.keeper.GetTargetBlockTime(suite.ctx)
+	require.Equal(suite.T(), 5*time.Second, d)
+
+	// Overwrite
+	err = suite.keeper.SetTargetBlockTime(suite.ctx, 3*time.Second)
+	require.NoError(suite.T(), err)
+	d = suite.keeper.GetTargetBlockTime(suite.ctx)
+	require.Equal(suite.T(), 3*time.Second, d)
+}
+
+func (suite *KeeperTestSuite) TestValidateBlockTiming_NoTarget() {
+	prev := time.Now()
+	proposed := prev.Add(1 * time.Second)
+	err := suite.keeper.ValidateBlockTiming(suite.ctx, prev, proposed)
+	require.NoError(suite.T(), err, "should pass when no target is set")
+}
+
+func (suite *KeeperTestSuite) TestValidateBlockTiming_ValidTiming() {
+	err := suite.keeper.SetTargetBlockTime(suite.ctx, 3*time.Second)
+	require.NoError(suite.T(), err)
+
+	prev := time.Now()
+	proposed := prev.Add(4 * time.Second)
+	err = suite.keeper.ValidateBlockTiming(suite.ctx, prev, proposed)
+	require.NoError(suite.T(), err, "proposed block after target should pass")
+}
+
+func (suite *KeeperTestSuite) TestValidateBlockTiming_TooFast() {
+	err := suite.keeper.SetTargetBlockTime(suite.ctx, 5*time.Second)
+	require.NoError(suite.T(), err)
+
+	prev := time.Now()
+	proposed := prev.Add(2 * time.Second)
+	err = suite.keeper.ValidateBlockTiming(suite.ctx, prev, proposed)
+	require.Error(suite.T(), err, "block arriving before target should fail")
+	require.Contains(suite.T(), err.Error(), "block too fast")
+}
+
+func (suite *KeeperTestSuite) TestValidateBlockTiming_ExactTarget() {
+	err := suite.keeper.SetTargetBlockTime(suite.ctx, 3*time.Second)
+	require.NoError(suite.T(), err)
+
+	prev := time.Now()
+	proposed := prev.Add(3 * time.Second)
+	err = suite.keeper.ValidateBlockTiming(suite.ctx, prev, proposed)
+	require.NoError(suite.T(), err, "block at exact target should pass")
+}
+
+// =============================================================================
+// ANT Bid Tracking Tests
+// =============================================================================
+
+func (suite *KeeperTestSuite) TestRecordAntBid() {
+	val := "cosmos1validator1"
+
+	require.Equal(suite.T(), uint64(0), suite.keeper.GetAntPurchaseTotal(suite.ctx, val))
+
+	suite.keeper.RecordAntBid(suite.ctx, val, 100)
+	require.Equal(suite.T(), uint64(100), suite.keeper.GetAntPurchaseTotal(suite.ctx, val))
+
+	suite.keeper.RecordAntBid(suite.ctx, val, 250)
+	require.Equal(suite.T(), uint64(350), suite.keeper.GetAntPurchaseTotal(suite.ctx, val))
+
+	// Different validator should be independent
+	val2 := "cosmos1validator2"
+	require.Equal(suite.T(), uint64(0), suite.keeper.GetAntPurchaseTotal(suite.ctx, val2))
+	suite.keeper.RecordAntBid(suite.ctx, val2, 500)
+	require.Equal(suite.T(), uint64(500), suite.keeper.GetAntPurchaseTotal(suite.ctx, val2))
+	require.Equal(suite.T(), uint64(350), suite.keeper.GetAntPurchaseTotal(suite.ctx, val))
+}
+
+func (suite *KeeperTestSuite) TestResetAntPurchases() {
+	suite.keeper.RecordAntBid(suite.ctx, "cosmos1v1", 100)
+	suite.keeper.RecordAntBid(suite.ctx, "cosmos1v2", 200)
+	require.Equal(suite.T(), uint64(100), suite.keeper.GetAntPurchaseTotal(suite.ctx, "cosmos1v1"))
+
+	suite.keeper.ResetAntPurchases(suite.ctx)
+	require.Equal(suite.T(), uint64(0), suite.keeper.GetAntPurchaseTotal(suite.ctx, "cosmos1v1"))
+	require.Equal(suite.T(), uint64(0), suite.keeper.GetAntPurchaseTotal(suite.ctx, "cosmos1v2"))
+}
+
+func (suite *KeeperTestSuite) TestGetSetEpochStartHeight() {
+	h := suite.keeper.GetEpochStartHeight(suite.ctx)
+	require.Equal(suite.T(), uint64(0), h)
+
+	suite.keeper.SetEpochStartHeight(suite.ctx, 500)
+	h = suite.keeper.GetEpochStartHeight(suite.ctx)
+	require.Equal(suite.T(), uint64(500), h)
 }
