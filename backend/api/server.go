@@ -14,6 +14,7 @@ import (
 	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Server represents the REST API server
@@ -265,7 +266,14 @@ func (s *Server) consensusValidatorsHandler(w http.ResponseWriter, r *http.Reque
 		resp, err := s.consensusClient.Validators(ctx, &consensusv1.QueryValidatorsRequest{})
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			// Use protojson so enums (e.g. VALIDATOR_STATUS_ACTIVE) serialize as strings for Explorer
+			bz, err := protojson.Marshal(resp)
+			if err != nil {
+				log.Printf("protojson marshal failed: %v", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			w.Write(bz)
 			return
 		}
 		log.Printf("gRPC query failed: %v, trying RPC fallback", err)

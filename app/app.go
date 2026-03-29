@@ -14,6 +14,7 @@ import (
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -628,6 +629,40 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			}
 		}
 
+		// Sync ValidatorUpdates into consensus module so Explorer and auctions
+		// always reflect the current CometBFT validator set (including late-joiners).
+		for _, vu := range valUpdates {
+			pk, err := cryptocodec.FromCmtProtoPublicKey(vu.PubKey)
+			if err != nil {
+				ctx.Logger().Error("failed to convert validator pubkey in EndBlock", "error", err)
+				continue
+			}
+			addr := sdk.AccAddress(pk.Address()).String()
+			status := consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE
+			if vu.Power == 0 {
+				status = consensusv1.ValidatorStatus_VALIDATOR_STATUS_INACTIVE
+			}
+			existing, _ := consensusKeeper.GetValidator(ctx, addr)
+			v := &consensusv1.Validator{
+				Validator:          addr,
+				AntBalance:         "0",
+				Status:             status,
+				LastActive:         timestamppb.New(ctx.BlockTime()),
+				LastBlockHeight:    uint64(ctx.BlockHeight()),
+				MoaScore:           "0",
+				ActivityScore:      "0",
+				TotalBlocksCreated: 0,
+				TotalBurnAmount:    "0",
+			}
+			if existing != nil {
+				v.AntBalance = existing.AntBalance
+				v.ActivityScore = existing.ActivityScore
+				v.TotalBlocksCreated = existing.TotalBlocksCreated
+				v.TotalBurnAmount = existing.TotalBurnAmount
+			}
+			consensusKeeper.SetValidator(ctx, v)
+		}
+
 		return sdk.EndBlock{ValidatorUpdates: valUpdates}, nil
 	})
 
@@ -668,6 +703,30 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		lizenzKeeper.SetParams(ctx, lizenztypes.DefaultParams())
 		anteilKeeper.SetParams(ctx, anteiltypes.DefaultParams())
 		consensusKeeper.SetParams(ctx, *consensustypes.DefaultParams())
+
+		// Sync CometBFT genesis validators into consensus module store so Explorer and
+		// EndBlocker (auctions, rewards) see them. InitChainer bypasses mm.InitGenesis,
+		// so consensus validators are never populated otherwise.
+		for _, val := range req.Validators {
+			pk, err := cryptocodec.FromCmtProtoPublicKey(val.PubKey)
+			if err != nil {
+				ctx.Logger().Error("failed to convert genesis validator pubkey", "error", err)
+				continue
+			}
+			addr := pk.Address()
+			validatorAddr := sdk.AccAddress(addr).String()
+			consensusKeeper.SetValidator(ctx, &consensusv1.Validator{
+				Validator:          validatorAddr,
+				AntBalance:         "0",
+				Status:             consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
+				LastActive:         timestamppb.New(ctx.BlockTime()),
+				LastBlockHeight:    0,
+				MoaScore:           "0",
+				ActivityScore:      "0",
+				TotalBlocksCreated: 0,
+				TotalBurnAmount:    "0",
+			})
+		}
 
 		// Return CometBFT genesis validators so the chain can start producing blocks.
 		// The EndBlocker will adjust the validator set based on LZN activations.

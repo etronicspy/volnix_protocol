@@ -83,8 +83,32 @@ frontend/blockchain-explorer/
 ## Требования
 
 Для полной функциональности необходимо:
-1. Запущенный блокчейн узел (RPC на порту 26657)
+1. Запущенный блокчейн узел (RPC на порту 26657, gRPC на 9090)
 2. Запущенный REST API сервер (порт 1317)
+
+## Проверка отображения валидаторов
+
+Валидаторы синхронизируются из genesis в consensus-модуль при InitChain и обновляются в EndBlock. Для проверки:
+
+1. **Сбросить и запустить ноду** (после сброса InitChain выполнится заново):
+   ```bash
+   ./scripts/testnet-reset-and-start.sh
+   # В отдельном терминале:
+   ./build/volnixd start --home testnet/node0
+   ```
+
+2. **Запустить REST API** (подключение к gRPC 9090):
+   ```bash
+   cd backend/api && go run main.go server.go -grpc-addr=localhost:9090 -http-addr=0.0.0.0:1317
+   ```
+
+3. **Проверить API**:
+   ```bash
+   curl -s http://localhost:1317/volnix/consensus/v1/validators | jq '.validators | length'
+   ```
+   Ожидается: `1` (один genesis-валидатор)
+
+4. **Запустить Explorer** и открыть вкладку Validators — должен отображаться активный валидатор.
 
 ## Миграция с HTML версии
 

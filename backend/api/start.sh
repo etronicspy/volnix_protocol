@@ -39,7 +39,7 @@ go mod download
 
 # Сборка
 echo "Сборка сервера..."
-go build -o volnix-rest-api main.go server.go
+go build -o volnix-rest-api .
 
 # Запуск
 echo -e "${GREEN}✅ Сервер готов к запуску${NC}"
