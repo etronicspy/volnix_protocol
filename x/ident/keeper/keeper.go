@@ -36,7 +36,7 @@ type (
 		cdc             codec.BinaryCodec
 		storeKey        storetypes.StoreKey
 		paramstore      paramtypes.Subspace
-		anteilKeeper    AnteilKeeperInterface    // Optional: for burning ANT on citizen deactivation
+		anteilKeeper    AnteilKeeperInterface    // Optional: for burning ANT on supplier deactivation
 		accountKeeper   AccountKeeperInterface   // Optional: to check blockchain account existence
 	}
 )
@@ -160,7 +160,7 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 	// OPTIMIZED: Check account limits (only if needed)
 	// Skip limit check for roles that don't have limits or if limit is very high
 	params := k.GetParams(ctx)
-	if params.MaxIdentitiesPerAddress < 10000 { // Only check if limit is reasonable
+	if params.MaxActiveSuppliers < 10000 { // Only check if limit is reasonable
 		if err := k.checkAccountLimits(ctx, account.Role, params); err != nil {
 			return err
 		}
@@ -180,7 +180,7 @@ func (k Keeper) SetVerifiedAccount(ctx sdk.Context, account *identv1.VerifiedAcc
 }
 
 // CreateAccountFromVerification creates a verified account from ZKP proof.
-// Used when a blockchain-registered wallet (has conducted transactions) upgrades to Citizen/Validator.
+	// Used when a blockchain-registered wallet (has conducted transactions) upgrades to Supplier/Validator.
 func (k Keeper) CreateAccountFromVerification(ctx sdk.Context, address, zkpProof, verificationProvider string, desiredRole identv1.Role) error {
 	if err := k.ValidateVerificationRequest(ctx, address, zkpProof, verificationProvider, desiredRole); err != nil {
 		return err
@@ -235,35 +235,32 @@ func (k Keeper) checkAccountActivity(ctx sdk.Context) error {
 
 		var activityPeriod time.Duration
 		switch account.GetRole() {
-		case identv1.Role_ROLE_CITIZEN:
-			activityPeriod = params.CitizenActivityPeriod
+		case identv1.Role_ROLE_SUPPLIER:
+			activityPeriod = params.MoaSupplierWindow
 		case identv1.Role_ROLE_VALIDATOR:
-			activityPeriod = params.ValidatorActivityPeriod
+			activityPeriod = params.MoaValidatorWindow
 		default:
 			continue // Skip guests
 		}
 
 		if currentTime.Sub(lastActivity) > activityPeriod {
-			// For citizens: burn ANT before deactivation
-			if account.Role == identv1.Role_ROLE_CITIZEN && k.anteilKeeper != nil {
+			// For suppliers: burn ANT before deactivation
+			if account.Role == identv1.Role_ROLE_SUPPLIER && k.anteilKeeper != nil {
 				if err := k.anteilKeeper.BurnAntFromUser(ctx, account.Address); err != nil {
-					// Log error but continue with deactivation
-					ctx.Logger().Error("Failed to burn ANT on citizen deactivation", "citizen", account.Address, "error", err)
+					ctx.Logger().Error("Failed to burn ANT on supplier deactivation", "supplier", account.Address, "error", err)
 					
-					// Emit event for failed burn (for monitoring)
 					ctx.EventManager().EmitEvent(
 						sdk.NewEvent(
 							"ident.ant_burn_failed",
-							sdk.NewAttribute("citizen", account.Address),
+							sdk.NewAttribute("supplier", account.Address),
 							sdk.NewAttribute("error", err.Error()),
 						),
 					)
 				} else {
-					// Emit event for successful burn
 					ctx.EventManager().EmitEvent(
 						sdk.NewEvent(
 							"ident.ant_burned_on_deactivation",
-							sdk.NewAttribute("citizen", account.Address),
+							sdk.NewAttribute("supplier", account.Address),
 							sdk.NewAttribute("reason", "inactivity"),
 						),
 					)
@@ -483,13 +480,13 @@ func (k Keeper) checkAccountLimits(ctx sdk.Context, role identv1.Role, params ty
 	var maxCount uint64
 
 	switch role {
-	case identv1.Role_ROLE_CITIZEN:
-		accounts, err := k.GetVerifiedAccountsByRole(ctx, identv1.Role_ROLE_CITIZEN)
+	case identv1.Role_ROLE_SUPPLIER:
+		accounts, err := k.GetVerifiedAccountsByRole(ctx, identv1.Role_ROLE_SUPPLIER)
 		if err != nil {
 			return err
 		}
 		currentCount = uint64(len(accounts))
-		maxCount = params.MaxIdentitiesPerAddress
+		maxCount = params.MaxActiveSuppliers
 
 	case identv1.Role_ROLE_VALIDATOR:
 		accounts, err := k.GetVerifiedAccountsByRole(ctx, identv1.Role_ROLE_VALIDATOR)
@@ -497,7 +494,7 @@ func (k Keeper) checkAccountLimits(ctx sdk.Context, role identv1.Role, params ty
 			return err
 		}
 		currentCount = uint64(len(accounts))
-		maxCount = params.MaxIdentitiesPerAddress
+		maxCount = params.MaxActiveSuppliers
 
 	default:
 		return types.ErrInvalidRole
@@ -562,10 +559,10 @@ func (k Keeper) validateRoleChange(ctx sdk.Context, oldRole, newRole identv1.Rol
 		return fmt.Errorf("direct downgrade from validator to guest is not allowed for security reasons")
 	}
 	
-	// SECURITY: Prevent downgrade from CITIZEN to GUEST without proper procedure
+	// SECURITY: Prevent downgrade from SUPPLIER to GUEST without proper procedure
 	// This should go through deactivation process
-	if oldRole == identv1.Role_ROLE_CITIZEN && newRole == identv1.Role_ROLE_GUEST {
-		return fmt.Errorf("direct downgrade from citizen to guest is not allowed, use deactivation process")
+	if oldRole == identv1.Role_ROLE_SUPPLIER && newRole == identv1.Role_ROLE_GUEST {
+		return fmt.Errorf("direct downgrade from supplier to guest is not allowed, use deactivation process")
 	}
 
 	return nil
@@ -623,7 +620,7 @@ func (k Keeper) ValidateRoleChangeProof(ctx sdk.Context, address string, identit
 }
 
 // ValidateRoleChoice validates that the role choice during verification is valid
-// According to whitepaper, user must choose between ROLE_CITIZEN or ROLE_VALIDATOR
+// According to whitepaper, user must choose between ROLE_SUPPLIER or ROLE_VALIDATOR
 func (k Keeper) ValidateRoleChoice(ctx sdk.Context, address string, desiredRole identv1.Role) error {
 	_, err := k.GetVerifiedAccount(ctx, address)
 	if err == nil {
@@ -633,8 +630,8 @@ func (k Keeper) ValidateRoleChoice(ctx sdk.Context, address string, desiredRole 
 		return fmt.Errorf("failed to check existing account: %w", err)
 	}
 
-	// Validate that role is either CITIZEN or VALIDATOR
-	if desiredRole != identv1.Role_ROLE_CITIZEN && desiredRole != identv1.Role_ROLE_VALIDATOR {
+	// Validate that role is either SUPPLIER or VALIDATOR
+	if desiredRole != identv1.Role_ROLE_SUPPLIER && desiredRole != identv1.Role_ROLE_VALIDATOR {
 		return types.ErrInvalidRoleChoice
 	}
 

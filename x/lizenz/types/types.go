@@ -53,7 +53,7 @@ func NewDeactivatingLizenz(validator string, amount string, reason string, block
 
 // NewMOAStatus creates a new MOAStatus instance.
 // blockTime must come from ctx.BlockTime() for determinism across nodes.
-func NewMOAStatus(validator string, currentMOA string, requiredMOA string, blockTime ...time.Time) *lizenzv1.MOAStatus {
+func NewMOAStatus(validator string, blockTime ...time.Time) *lizenzv1.MOAStatus {
 	var now *timestamppb.Timestamp
 	if len(blockTime) > 0 {
 		now = timestamppb.New(blockTime[0])
@@ -66,8 +66,7 @@ func NewMOAStatus(validator string, currentMOA string, requiredMOA string, block
 		Validator:    validator,
 		IsActive:     true,
 		LastActivity: now,
-		CurrentMoa:   currentMOA,
-		RequiredMoa:  requiredMOA,
+		LastBurnTime: now,
 		NextCheck:    nextCheck,
 		IsCompliant:  true,
 	}
@@ -106,12 +105,6 @@ func IsMOAStatusValid(status *lizenzv1.MOAStatus) error {
 	if status.Validator == "" {
 		return ErrEmptyValidator
 	}
-	if status.CurrentMoa == "" {
-		return ErrEmptyCurrentMOA
-	}
-	if status.RequiredMoa == "" {
-		return ErrEmptyRequiredMOA
-	}
 	return nil
 }
 
@@ -125,16 +118,14 @@ func UpdateActivatedLizenzActivity(lizenz *lizenzv1.ActivatedLizenz, blockTime .
 	}
 }
 
-// UpdateMOAStatusActivity updates the last activity timestamp and MOA values.
+// UpdateMOAStatusActivity updates the last activity timestamp.
 // blockTime must come from ctx.BlockTime() for determinism across nodes.
-func UpdateMOAStatusActivity(status *lizenzv1.MOAStatus, currentMOA string, blockTime ...time.Time) {
+func UpdateMOAStatusActivity(status *lizenzv1.MOAStatus, blockTime ...time.Time) {
 	if len(blockTime) > 0 {
 		status.LastActivity = timestamppb.New(blockTime[0])
 	} else {
 		status.LastActivity = timestamppb.Now()
 	}
-	status.CurrentMoa = currentMOA
-	status.IsCompliant = currentMOA >= status.RequiredMoa
 }
 
 // CalculateMOA calculates the MOA value based on activity data

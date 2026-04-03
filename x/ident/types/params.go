@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	KeyCitizenActivityPeriod        = []byte("CitizenActivityPeriod")
-	KeyValidatorActivityPeriod      = []byte("ValidatorActivityPeriod")
-	KeyMaxIdentitiesPerAddress      = []byte("MaxIdentitiesPerAddress")
+	KeyMoaSupplierWindow            = []byte("MoaSupplierWindow")
+	KeyMoaValidatorWindow           = []byte("MoaValidatorWindow")
+	KeyMaxActiveSuppliers           = []byte("MaxActiveSuppliers")
 	KeyRequireIdentityVerification  = []byte("RequireIdentityVerification")
 	KeyDefaultVerificationProvider  = []byte("DefaultVerificationProvider")
 	KeyVerificationCost             = []byte("VerificationCost")
@@ -25,9 +25,9 @@ var _ paramtypes.ParamSet = (*Params)(nil)
 
 // Params defines ident module parameters
 type Params struct {
-	CitizenActivityPeriod        time.Duration `json:"citizen_activity_period"`
-	ValidatorActivityPeriod      time.Duration `json:"validator_activity_period"`
-	MaxIdentitiesPerAddress      uint64        `json:"max_identities_per_address"`
+	MoaSupplierWindow            time.Duration `json:"moa_supplier_window"`
+	MoaValidatorWindow           time.Duration `json:"moa_validator_window"`
+	MaxActiveSuppliers           uint64        `json:"max_active_suppliers"`
 	RequireIdentityVerification  bool          `json:"require_identity_verification"`
 	DefaultVerificationProvider  string        `json:"default_verification_provider"`
 	VerificationCost             sdk.Coin      `json:"verification_cost"`
@@ -43,9 +43,9 @@ func ParamKeyTable() paramtypes.KeyTable {
 // ParamSetPairs returns the parameter set pairs
 func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyCitizenActivityPeriod, &p.CitizenActivityPeriod, validateDuration),
-		paramtypes.NewParamSetPair(KeyValidatorActivityPeriod, &p.ValidatorActivityPeriod, validateDuration),
-		paramtypes.NewParamSetPair(KeyMaxIdentitiesPerAddress, &p.MaxIdentitiesPerAddress, validateUint64),
+		paramtypes.NewParamSetPair(KeyMoaSupplierWindow, &p.MoaSupplierWindow, validateDuration),
+		paramtypes.NewParamSetPair(KeyMoaValidatorWindow, &p.MoaValidatorWindow, validateDuration),
+		paramtypes.NewParamSetPair(KeyMaxActiveSuppliers, &p.MaxActiveSuppliers, validateUint64),
 		paramtypes.NewParamSetPair(KeyRequireIdentityVerification, &p.RequireIdentityVerification, validateBool),
 		paramtypes.NewParamSetPair(KeyDefaultVerificationProvider, &p.DefaultVerificationProvider, validateString),
 		paramtypes.NewParamSetPair(KeyVerificationCost, &p.VerificationCost, validateCoin),
@@ -57,10 +57,10 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 // DefaultParams returns default parameters
 func DefaultParams() Params {
 	return Params{
-		// 10 minutes inactivity: wallet auto-downgrades to guest (testnet/dev)
-		CitizenActivityPeriod:        10 * time.Minute,
-		ValidatorActivityPeriod:      10 * time.Minute,
-		MaxIdentitiesPerAddress:      1,
+		// 10 minutes MOA window: supplier/validator auto-downgrades to guest (testnet/dev)
+		MoaSupplierWindow:            10 * time.Minute,
+		MoaValidatorWindow:           10 * time.Minute,
+		MaxActiveSuppliers:           1,
 		RequireIdentityVerification:  true,
 		DefaultVerificationProvider:  "",
 		VerificationCost:             sdk.NewCoin("uvx", sdkmath.NewInt(1000000)),
@@ -71,14 +71,14 @@ func DefaultParams() Params {
 
 // Validate performs basic validation of params
 func (p Params) Validate() error {
-	if err := validateDuration(p.CitizenActivityPeriod); err != nil {
-		return fmt.Errorf("invalid CitizenActivityPeriod: %w", err)
+	if err := validateDuration(p.MoaSupplierWindow); err != nil {
+		return fmt.Errorf("invalid MoaSupplierWindow: %w", err)
 	}
-	if err := validateDuration(p.ValidatorActivityPeriod); err != nil {
-		return fmt.Errorf("invalid ValidatorActivityPeriod: %w", err)
+	if err := validateDuration(p.MoaValidatorWindow); err != nil {
+		return fmt.Errorf("invalid MoaValidatorWindow: %w", err)
 	}
-	if err := validateUint64(p.MaxIdentitiesPerAddress); err != nil {
-		return fmt.Errorf("invalid MaxIdentitiesPerAddress: %w", err)
+	if err := validateUint64(p.MaxActiveSuppliers); err != nil {
+		return fmt.Errorf("invalid MaxActiveSuppliers: %w", err)
 	}
 	if err := validateBool(p.RequireIdentityVerification); err != nil {
 		return fmt.Errorf("invalid RequireIdentityVerification: %w", err)

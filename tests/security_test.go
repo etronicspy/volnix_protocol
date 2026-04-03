@@ -68,9 +68,8 @@ func (suite *SecurityTestSuite) SetupTest() {
 	suite.lizenzParamStore = testCtx.LizenzParamStore
 	suite.anteilParamStore = testCtx.AnteilParamStore
 	suite.consensusParamStore = testCtx.ConsensusParamStore
-	
-	// CRITICAL: Set identKeeper in anteilKeeper for role validation
-	// This is required for PlaceBid to validate bidder is a validator
+
+	// CRITICAL: Set identKeeper in anteilKeeper for role validation on orders/trades
 	suite.anteilKeeper.SetIdentKeeper(suite.identKeeper)
 	// CRITICAL: Set identKeeper in lizenzKeeper for validator-only LZN activation
 	suite.lizenzKeeper.SetIdentKeeper(suite.identKeeper)
@@ -78,71 +77,32 @@ func (suite *SecurityTestSuite) SetupTest() {
 
 func (suite *SecurityTestSuite) TestZKPVerificationSecurity() {
 	// Test 1: Verify that empty identity hash is rejected
-	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "")
+	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_SUPPLIER, "")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, emptyHashAccount)
 	require.Error(suite.T(), err)
 	require.ErrorIs(suite.T(), err, identtypes.ErrEmptyIdentityHash)
 
 	// Test 2: Verify that duplicate identity hashes are REJECTED (Sybil attack prevention)
-	account1 := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "hash123")
+	account1 := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, account1)
 	require.NoError(suite.T(), err)
 
-	account2 := identtypes.NewVerifiedAccount(TestAddresses.Test2, identv1.Role_ROLE_CITIZEN, "hash123")
+	account2 := identtypes.NewVerifiedAccount(TestAddresses.Test2, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, account2)
 	require.Error(suite.T(), err, "Duplicate identity hash should be rejected")
 	require.ErrorIs(suite.T(), err, identtypes.ErrDuplicateIdentityHash)
 
 	// Test 3: Verify that role escalation requires ZKP proof
-	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash456")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_SUPPLIER, "hash456")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
 	err = suite.identKeeper.ChangeAccountRole(suite.ctx, TestAddresses.Citizen, identv1.Role_ROLE_VALIDATOR)
 	require.NoError(suite.T(), err, "ChangeAccountRole should succeed with valid role transition")
-	
+
 	updatedAccount, err := suite.identKeeper.GetVerifiedAccount(suite.ctx, TestAddresses.Citizen)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, updatedAccount.Role)
-}
-
-func (suite *SecurityTestSuite) TestAuctionSecurity() {
-	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
-	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
-	require.NoError(suite.T(), err)
-
-	auction := anteiltypes.NewAuction(uint64(1000), "1000000", "1.0")
-	err = suite.anteilKeeper.CreateAuction(suite.ctx, auction)
-	require.NoError(suite.T(), err)
-	auctionID := auction.AuctionId
-
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Citizen, "1000000")
-	require.Error(suite.T(), err, "Citizens should not be able to place bids in auctions")
-	require.Contains(suite.T(), err.Error(), "only active validators can participate in auctions")
-
-	validatorAccount := identtypes.NewVerifiedAccount(TestAddresses.Validator, identv1.Role_ROLE_VALIDATOR, "hash456")
-	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, validatorAccount)
-	require.NoError(suite.T(), err)
-
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator, "0.5")
-	require.Error(suite.T(), err, "Bids below reserve price should be rejected")
-	require.Contains(suite.T(), err.Error(), "below reserve price")
-
-	pastAuction := anteiltypes.NewAuction(uint64(2000), "1000000", "1.0")
-	err = suite.anteilKeeper.CreateAuction(suite.ctx, pastAuction)
-	require.NoError(suite.T(), err)
-	pastAuctionID := pastAuction.AuctionId
-
-	pastAuctionRetrieved, err := suite.anteilKeeper.GetAuction(suite.ctx, pastAuctionID)
-	require.NoError(suite.T(), err)
-	pastAuctionRetrieved.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
-	err = suite.anteilKeeper.UpdateAuction(suite.ctx, pastAuctionRetrieved)
-	require.NoError(suite.T(), err)
-
-	err = suite.anteilKeeper.PlaceBid(suite.ctx, pastAuctionID, TestAddresses.Validator, "1000000")
-	require.Error(suite.T(), err)
-	// Note: The error is "auction is closed" not "auction expired" - both are valid security checks
-	require.Contains(suite.T(), err.Error(), "closed")
 }
 
 func (suite *SecurityTestSuite) TestOrderSecurity() {
@@ -152,7 +112,7 @@ func (suite *SecurityTestSuite) TestOrderSecurity() {
 	require.Error(suite.T(), err)
 	require.ErrorIs(suite.T(), err, identtypes.ErrInvalidRole)
 
-	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
@@ -200,7 +160,7 @@ func (suite *SecurityTestSuite) TestOrderSecurity() {
 }
 
 func (suite *SecurityTestSuite) TestLizenzSecurity() {
-	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
@@ -226,7 +186,7 @@ func (suite *SecurityTestSuite) TestLizenzSecurity() {
 	params := suite.lizenzKeeper.GetParams(suite.ctx)
 	params.MinLznAmount = "100000"
 	suite.lizenzKeeper.SetParams(suite.ctx, params)
-	
+
 	validLizenz := lizenztypes.NewLizenz(TestAddresses.Validator, "400000", "hash456")
 	err = suite.lizenzKeeper.SetLizenz(suite.ctx, validLizenz)
 	require.NoError(suite.T(), err)
@@ -240,14 +200,14 @@ func (suite *SecurityTestSuite) TestLizenzSecurity() {
 }
 
 func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
-	sourceAccount := identtypes.NewVerifiedAccount(TestAddresses.Source, identv1.Role_ROLE_CITIZEN, "hash123")
+	sourceAccount := identtypes.NewVerifiedAccount(TestAddresses.Source, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, sourceAccount)
 	require.NoError(suite.T(), err)
 
 	migration := &identv1.RoleMigration{
 		FromAddress:   TestAddresses.Source,
 		ToAddress:     TestAddresses.Target,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
 		ZkpProof:      "migration_zkp_proof",
@@ -260,7 +220,7 @@ func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
 	validMigration := &identv1.RoleMigration{
 		FromAddress:   TestAddresses.Source,
 		ToAddress:     TestAddresses.Target2,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash456",
 		ZkpProof:      "migration_zkp_proof",
@@ -276,7 +236,7 @@ func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
 	invalidProofMigration := &identv1.RoleMigration{
 		FromAddress:   TestAddresses.Source,
 		ToAddress:     TestAddresses.Target3,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash789",
 		ZkpProof:      "invalid_proof",
@@ -291,29 +251,29 @@ func (suite *SecurityTestSuite) TestRoleMigrationSecurity() {
 }
 
 func (suite *SecurityTestSuite) TestSybilAttackPrevention() {
-	account1 := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_CITIZEN, "hash123")
+	account1 := identtypes.NewVerifiedAccount(TestAddresses.Test1, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, account1)
 	require.NoError(suite.T(), err)
 
-	account2 := identtypes.NewVerifiedAccount(TestAddresses.Test2, identv1.Role_ROLE_CITIZEN, "hash123")
+	account2 := identtypes.NewVerifiedAccount(TestAddresses.Test2, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, account2)
 	require.Error(suite.T(), err)
 	require.ErrorIs(suite.T(), err, identtypes.ErrDuplicateIdentityHash)
 
-	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test3, identv1.Role_ROLE_CITIZEN, "")
+	emptyHashAccount := identtypes.NewVerifiedAccount(TestAddresses.Test3, identv1.Role_ROLE_SUPPLIER, "")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, emptyHashAccount)
 	require.Error(suite.T(), err)
 	require.ErrorIs(suite.T(), err, identtypes.ErrEmptyIdentityHash)
 
 	// Test 3: Verify that accounts cannot be created with invalid addresses
-	invalidAddressAccount := identtypes.NewVerifiedAccount(TestAddresses.Invalid, identv1.Role_ROLE_CITIZEN, "hash456")
+	invalidAddressAccount := identtypes.NewVerifiedAccount(TestAddresses.Invalid, identv1.Role_ROLE_SUPPLIER, "hash456")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, invalidAddressAccount)
 	require.Error(suite.T(), err)
 	require.ErrorIs(suite.T(), err, identtypes.ErrInvalidAddress)
 }
 
 func (suite *SecurityTestSuite) TestEconomicSecurity() {
-	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_CITIZEN, "hash123")
+	citizenAccount := identtypes.NewVerifiedAccount(TestAddresses.Citizen, identv1.Role_ROLE_SUPPLIER, "hash123")
 	err := suite.identKeeper.SetVerifiedAccount(suite.ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
@@ -335,8 +295,8 @@ func (suite *SecurityTestSuite) TestEconomicSecurity() {
 	require.ErrorIs(suite.T(), err, anteiltypes.ErrInsufficientBalance)
 
 	// Test 2: Verify that trades cannot be executed with mismatched prices
-	buyerAccount := identtypes.NewVerifiedAccount(TestAddresses.Buyer, identv1.Role_ROLE_CITIZEN, "hash_buyer")
-	sellerAccount := identtypes.NewVerifiedAccount(TestAddresses.Seller, identv1.Role_ROLE_CITIZEN, "hash_seller")
+	buyerAccount := identtypes.NewVerifiedAccount(TestAddresses.Buyer, identv1.Role_ROLE_SUPPLIER, "hash_buyer")
+	sellerAccount := identtypes.NewVerifiedAccount(TestAddresses.Seller, identv1.Role_ROLE_SUPPLIER, "hash_seller")
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, buyerAccount)
 	require.NoError(suite.T(), err)
 	err = suite.identKeeper.SetVerifiedAccount(suite.ctx, sellerAccount)

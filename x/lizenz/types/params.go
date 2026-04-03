@@ -32,6 +32,15 @@ var (
 
 	// KeyLznDenom defines the key for LZN denomination
 	KeyLznDenom = []byte("LznDenom")
+
+	// KeyActivationFreezePeriod defines the key for activation freeze period
+	KeyActivationFreezePeriod = []byte("ActivationFreezePeriod")
+
+	// KeyConsensusIntegrationEnabled defines the key for consensus integration flag
+	KeyConsensusIntegrationEnabled = []byte("ConsensusIntegrationEnabled")
+
+	// KeyIdentVerificationRequired defines the key for ident verification flag
+	KeyIdentVerificationRequired = []byte("IdentVerificationRequired")
 )
 
 // ParamKeyTable returns the parameter key table
@@ -43,12 +52,15 @@ func ParamKeyTable() paramtypes.KeyTable {
 type Params struct {
 	MaxActivatedPerValidator    uint32        `json:"max_activated_per_validator"`
 	ActivityCoefficient         string        `json:"activity_coefficient"`
+	ActivationFreezePeriod      time.Duration `json:"activation_freeze_period"`
 	DeactivationPeriod          time.Duration `json:"deactivation_period"`
 	InactivityPeriod            time.Duration `json:"inactivity_period"`
 	MinLznAmount                string        `json:"min_lzn_amount"`
 	MaxLznAmount                string        `json:"max_lzn_amount"`
 	RequireIdentityVerification bool          `json:"require_identity_verification"`
 	LznDenom                    string        `json:"lzn_denom"`
+	ConsensusIntegrationEnabled bool          `json:"consensus_integration_enabled"`
+	IdentVerificationRequired   bool          `json:"ident_verification_required"`
 }
 
 // ParamSetPairs returns the parameter set pairs
@@ -56,12 +68,15 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
 		paramtypes.NewParamSetPair(KeyMaxActivatedPerValidator, &p.MaxActivatedPerValidator, validateUint32),
 		paramtypes.NewParamSetPair(KeyActivityCoefficient, &p.ActivityCoefficient, validateString),
+		paramtypes.NewParamSetPair(KeyActivationFreezePeriod, &p.ActivationFreezePeriod, validateDuration),
 		paramtypes.NewParamSetPair(KeyDeactivationPeriod, &p.DeactivationPeriod, validateDuration),
 		paramtypes.NewParamSetPair(KeyInactivityPeriod, &p.InactivityPeriod, validateDuration),
 		paramtypes.NewParamSetPair(KeyMinLznAmount, &p.MinLznAmount, validateString),
 		paramtypes.NewParamSetPair(KeyMaxLznAmount, &p.MaxLznAmount, validateString),
 		paramtypes.NewParamSetPair(KeyRequireIdentityVerification, &p.RequireIdentityVerification, validateBool),
 		paramtypes.NewParamSetPair(KeyLznDenom, &p.LznDenom, validateString),
+		paramtypes.NewParamSetPair(KeyConsensusIntegrationEnabled, &p.ConsensusIntegrationEnabled, validateBool),
+		paramtypes.NewParamSetPair(KeyIdentVerificationRequired, &p.IdentVerificationRequired, validateBool),
 	}
 }
 
@@ -70,12 +85,15 @@ func DefaultParams() Params {
 	return Params{
 		MaxActivatedPerValidator:    10,
 		ActivityCoefficient:         "1.0",
-		DeactivationPeriod:          24 * time.Hour,     // 24 hours
-		InactivityPeriod:            7 * 24 * time.Hour, // 7 days
-		MinLznAmount:                "1000000",          // 1 LZN in micro units
-		MaxLznAmount:                "1000000000",       // 1000 LZN in micro units
+		ActivationFreezePeriod:      7 * 24 * time.Hour, // 7 days §4.1
+		DeactivationPeriod:          24 * time.Hour,      // 24 hours
+		InactivityPeriod:            7 * 24 * time.Hour,  // 7 days
+		MinLznAmount:                "1000000",           // 1 LZN in micro units
+		MaxLznAmount:                "1000000000",        // 1000 LZN in micro units
 		RequireIdentityVerification: true,
 		LznDenom:                    "ulzn",
+		ConsensusIntegrationEnabled: true,
+		IdentVerificationRequired:   true,
 	}
 }
 
@@ -94,6 +112,9 @@ func (p *Params) Validate() error {
 	}
 	if activityCoeff < 0 {
 		return fmt.Errorf("ActivityCoefficient must be >= 0, got %f", activityCoeff)
+	}
+	if p.ActivationFreezePeriod <= 0 {
+		return fmt.Errorf("ActivationFreezePeriod must be greater than 0")
 	}
 	if p.DeactivationPeriod <= 0 {
 		return fmt.Errorf("DeactivationPeriod must be greater than 0")

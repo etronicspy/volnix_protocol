@@ -47,6 +47,7 @@ type (
 		lizenzKeeper  LizenzKeeperForGovernance // Optional: for lizenz parameter updates
 		anteilKeeper   AnteilKeeperForGovernance // Optional: for anteil parameter updates
 		consensusKeeper ConsensusKeeperForGovernance // Optional: for consensus parameter updates
+		identKeeper     IdentKeeperForGovernance    // Optional: for ident parameter updates
 	}
 )
 
@@ -85,6 +86,11 @@ func (k *Keeper) SetAnteilKeeper(anteilKeeper AnteilKeeperForGovernance) {
 // SetConsensusKeeper sets the consensus keeper interface for parameter updates
 func (k *Keeper) SetConsensusKeeper(consensusKeeper ConsensusKeeperForGovernance) {
 	k.consensusKeeper = consensusKeeper
+}
+
+// SetIdentKeeper sets the ident keeper interface for parameter updates
+func (k *Keeper) SetIdentKeeper(identKeeper IdentKeeperForGovernance) {
+	k.identKeeper = identKeeper
 }
 
 // GetParams returns the current parameters for the governance module

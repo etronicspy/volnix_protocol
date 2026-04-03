@@ -8,11 +8,11 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	lizenzv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/lizenz/v1"
-	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
@@ -88,20 +88,20 @@ var TestAddresses = struct {
 
 // TestHashes provides standard identity hashes for consistency
 var TestHashes = struct {
-	Valid1   string
-	Valid2   string
-	Valid3   string
-	Valid4   string
-	Empty    string
-	Short    string
+	Valid1    string
+	Valid2    string
+	Valid3    string
+	Valid4    string
+	Empty     string
+	Short     string
 	Duplicate string
 }{
-	Valid1:   "hash123",
-	Valid2:   "hash456",
-	Valid3:   "hash789",
-	Valid4:   "hashabc",
-	Empty:    "",
-	Short:    "short",
+	Valid1:    "hash123",
+	Valid2:    "hash456",
+	Valid3:    "hash789",
+	Valid4:    "hashabc",
+	Empty:     "",
+	Short:     "short",
 	Duplicate: "duplicate",
 }
 
@@ -112,9 +112,9 @@ var TestAmounts = struct {
 	Large  string
 	Zero   string
 }{
-	Small:  "1000000",      // 1 token
-	Medium: "10000000",     // 10 tokens
-	Large:  "100000000",    // 100 tokens
+	Small:  "1000000",   // 1 token
+	Medium: "10000000",  // 10 tokens
+	Large:  "100000000", // 100 tokens
 	Zero:   "0",
 }
 
@@ -122,7 +122,7 @@ var TestAmounts = struct {
 func NewTestVerifiedAccount(role identv1.Role) *identv1.VerifiedAccount {
 	var address, hash string
 	switch role {
-	case identv1.Role_ROLE_CITIZEN:
+	case identv1.Role_ROLE_SUPPLIER:
 		address = TestAddresses.Citizen
 		hash = TestHashes.Valid1
 	case identv1.Role_ROLE_VALIDATOR:
@@ -132,7 +132,7 @@ func NewTestVerifiedAccount(role identv1.Role) *identv1.VerifiedAccount {
 		address = TestAddresses.Guest
 		hash = TestHashes.Valid3
 	}
-	
+
 	return identtypes.NewVerifiedAccount(address, role, hash)
 }
 
@@ -151,16 +151,6 @@ func NewTestOrder(owner string, orderType anteilv1.OrderType, orderSide anteilv1
 		"1.5",
 		TestHashes.Valid1,
 	)
-}
-
-// NewTestAuction creates a test auction with standard values
-func NewTestAuction(blockHeight uint64) *anteilv1.Auction {
-	return anteiltypes.NewAuction(blockHeight, TestAmounts.Medium, "10.0")
-}
-
-// NewTestAuctionCustom creates a test auction with custom values
-func NewTestAuctionCustom(blockHeight uint64, antAmount string, reservePrice string) *anteilv1.Auction {
-	return anteiltypes.NewAuction(blockHeight, antAmount, reservePrice)
 }
 
 // NewTestUserPosition creates a test user position
@@ -182,7 +172,6 @@ func NewTestTrade(buyer, seller string, antAmount, price string) *anteilv1.Trade
 		seller,
 		antAmount,
 		price,
-		TestHashes.Valid1,
 	)
 }
 

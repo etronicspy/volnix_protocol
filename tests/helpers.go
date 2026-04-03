@@ -8,10 +8,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
-	identkeeper "github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	anteilkeeper "github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
+	identkeeper "github.com/volnix-protocol/volnix-protocol/x/ident/keeper"
 	lizenzkeeper "github.com/volnix-protocol/volnix-protocol/x/lizenz/keeper"
 )
 
@@ -93,8 +93,8 @@ func CreateTestOrders(t *testing.T, keeper *anteilkeeper.Keeper, ctx sdk.Context
 	return orders
 }
 
-// SetupAuctionWithValidators creates auction and validator accounts
-func SetupAuctionWithValidators(t *testing.T, anteilKeeper *anteilkeeper.Keeper, identKeeper *identkeeper.Keeper, ctx sdk.Context, numValidators int) (string, []*identv1.VerifiedAccount) {
+// SetupTestValidators creates validator accounts for integration-style tests.
+func SetupTestValidators(t *testing.T, identKeeper *identkeeper.Keeper, ctx sdk.Context, numValidators int) []*identv1.VerifiedAccount {
 	addrs := GenerateTestAddresses("", numValidators)
 	validators := make([]*identv1.VerifiedAccount, numValidators)
 	for i := 0; i < numValidators; i++ {
@@ -103,13 +103,7 @@ func SetupAuctionWithValidators(t *testing.T, anteilKeeper *anteilkeeper.Keeper,
 		require.NoError(t, err, "Failed to create validator %d", i)
 		validators[i] = val
 	}
-	
-	// Create auction
-	auction := NewTestAuction(1000)
-	err := anteilKeeper.CreateAuction(ctx, auction)
-	require.NoError(t, err, "Failed to create auction")
-	
-	return auction.AuctionId, validators
+	return validators
 }
 
 // ============================================================================

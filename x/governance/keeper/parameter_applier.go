@@ -36,6 +36,8 @@ func (k Keeper) ApplyParameterChange(ctx sdk.Context, change *ParameterChange) e
 		return k.applyAnteilParameterChange(ctx, change)
 	case "consensus":
 		return k.applyConsensusParameterChange(ctx, change)
+	case "ident":
+		return k.applyIdentParameterChange(ctx, change)
 	case "governance":
 		return k.applyGovernanceParameterChange(ctx, change)
 	default:
@@ -99,10 +101,12 @@ func (k Keeper) applyAnteilParameterChange(ctx sdk.Context, change *ParameterCha
 
 	// Apply change based on parameter name
 	switch change.Parameter {
-	case "min_ant_amount":
-		currentParams.MinAntAmount = change.NewValue
-	case "max_ant_amount":
-		currentParams.MaxAntAmount = change.NewValue
+	case "supplier_epoch_ant_limit":
+		currentParams.SupplierEpochAntLimit = change.NewValue
+	case "epoch_coefficient_min":
+		currentParams.EpochCoefficientMin = change.NewValue
+	case "epoch_coefficient_max":
+		currentParams.EpochCoefficientMax = change.NewValue
 	case "trading_fee_rate":
 		currentParams.TradingFeeRate = change.NewValue
 	case "max_open_orders":
@@ -138,27 +142,27 @@ func (k Keeper) applyConsensusParameterChange(ctx sdk.Context, change *Parameter
 	// Apply change based on parameter name
 	switch change.Parameter {
 	case "base_block_time":
-		// BaseBlockTime is stored as a string (e.g., "5s")
-		// Validate it's a valid duration string
 		_, err := time.ParseDuration(change.NewValue)
 		if err != nil {
 			return fmt.Errorf("invalid duration format: %w", err)
 		}
 		currentParams.BaseBlockTime = change.NewValue
-	case "high_activity_threshold":
-		// HighActivityThreshold is uint64
+	case "burn_cap_lambda":
+		currentParams.BurnCapLambda = change.NewValue
+	case "fee_policy_b_zero":
+		currentParams.FeePolicyBZero = change.NewValue
+	case "max_block_gas":
 		value, err := strconv.ParseUint(change.NewValue, 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid uint64 value: %w", err)
 		}
-		currentParams.HighActivityThreshold = value
-	case "low_activity_threshold":
-		// LowActivityThreshold is uint64
+		currentParams.MaxBlockGas = value
+	case "max_block_bytes":
 		value, err := strconv.ParseUint(change.NewValue, 10, 64)
 		if err != nil {
 			return fmt.Errorf("invalid uint64 value: %w", err)
 		}
-		currentParams.LowActivityThreshold = value
+		currentParams.MaxBlockBytes = value
 	default:
 		return fmt.Errorf("unknown consensus parameter: %s", change.Parameter)
 	}
@@ -167,6 +171,47 @@ func (k Keeper) applyConsensusParameterChange(ctx sdk.Context, change *Parameter
 	k.consensusKeeper.SetParams(ctx, currentParams)
 
 	ctx.Logger().Info("consensus parameter updated successfully",
+		"parameter", change.Parameter,
+		"old_value", change.OldValue,
+		"new_value", change.NewValue)
+
+	return nil
+}
+
+// applyIdentParameterChange applies a parameter change to ident module
+func (k Keeper) applyIdentParameterChange(ctx sdk.Context, change *ParameterChange) error {
+	if k.identKeeper == nil {
+		return fmt.Errorf("ident keeper not set")
+	}
+
+	currentParams := k.identKeeper.GetParams(ctx)
+
+	switch change.Parameter {
+	case "moa_supplier_window":
+		duration, err := time.ParseDuration(change.NewValue)
+		if err != nil {
+			return fmt.Errorf("invalid duration format: %w", err)
+		}
+		currentParams.MoaSupplierWindow = duration
+	case "moa_validator_window":
+		duration, err := time.ParseDuration(change.NewValue)
+		if err != nil {
+			return fmt.Errorf("invalid duration format: %w", err)
+		}
+		currentParams.MoaValidatorWindow = duration
+	case "max_active_suppliers":
+		value, err := strconv.ParseUint(change.NewValue, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid uint64 value: %w", err)
+		}
+		currentParams.MaxActiveSuppliers = value
+	default:
+		return fmt.Errorf("unknown ident parameter: %s", change.Parameter)
+	}
+
+	k.identKeeper.SetParams(ctx, currentParams)
+
+	ctx.Logger().Info("ident parameter updated successfully",
 		"parameter", change.Parameter,
 		"old_value", change.OldValue,
 		"new_value", change.NewValue)

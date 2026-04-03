@@ -6,21 +6,11 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 
 import "volnix/consensus/v1/types.proto";
 
-// InitialValidator holds CometBFT validator pubkey and power for genesis.
-message InitialValidator {
-  bytes pub_key = 1;  // marshaled CometBFT PublicKey
-  int64 power = 2;
-}
-
-// GenesisState defines the consensus module's genesis state
 message GenesisState {
   Params params = 1;
   repeated Validator validators = 2;
-  repeated BlockCreator block_creators = 3;
-  repeated BurnProof burn_proofs = 4;
-  repeated ActivityScore activity_scores = 5;
-  HalvingInfo halving_info = 6;
-  ConsensusState consensus_state = 7;
-  repeated ValidatorWeight validator_weights = 8;
-  repeated InitialValidator initial_validators = 9;  // for ModuleManager HasABCIGenesis
+  HalvingInfo halving_info = 3;
+  ConsensusState consensus_state = 4;
+  repeated ValidatorWeight validator_weights = 5;
+  repeated InitialValidator initial_validators = 6;
 }

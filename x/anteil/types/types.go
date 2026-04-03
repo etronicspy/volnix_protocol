@@ -23,7 +23,7 @@ func getTimestamp(blockTime ...time.Time) *timestamppb.Timestamp {
 // NewOrder creates a new Order instance
 func NewOrder(owner string, orderType anteilv1.OrderType, orderSide anteilv1.OrderSide, antAmount string, price string, identityHash string, blockTime ...time.Time) *anteilv1.Order {
 	now := getTimestamp(blockTime...)
-	expiresAt := timestamppb.New(now.AsTime().Add(24 * time.Hour)) // Default 24h expiry
+	expiresAt := timestamppb.New(now.AsTime().Add(24 * time.Hour))
 
 	return &anteilv1.Order{
 		OrderId:      generateOrderID(owner, now.AsTime()),
@@ -40,20 +40,20 @@ func NewOrder(owner string, orderType anteilv1.OrderType, orderSide anteilv1.Ord
 }
 
 // NewTrade creates a new Trade instance
-func NewTrade(buyOrderID string, sellOrderID string, buyer string, seller string, antAmount string, price string, identityHash string, blockTime ...time.Time) *anteilv1.Trade {
+func NewTrade(buyOrderID string, sellOrderID string, buyer string, seller string, antAmount string, price string, blockTime ...time.Time) *anteilv1.Trade {
 	now := getTimestamp(blockTime...)
 
 	return &anteilv1.Trade{
-		TradeId:      generateTradeID(buyOrderID, sellOrderID, now.AsTime()),
-		BuyOrderId:   buyOrderID,
-		SellOrderId:  sellOrderID,
-		Buyer:        buyer,
-		Seller:       seller,
-		AntAmount:    antAmount,
-		Price:        price,
-		TotalValue:   calculateTotalValue(antAmount, price),
-		ExecutedAt:   now,
-		IdentityHash: identityHash,
+		TradeId:     generateTradeID(buyOrderID, sellOrderID, now.AsTime()),
+		BuyOrderId:  buyOrderID,
+		SellOrderId: sellOrderID,
+		Buyer:       buyer,
+		Seller:      seller,
+		AntAmount:   antAmount,
+		WrtAmount:   calculateWrtAmount(antAmount, price),
+		Price:       price,
+		ExecutedAt:  now,
+		TradingFee:  "0",
 	}
 }
 
@@ -68,39 +68,21 @@ func NewUserPosition(owner string, antBalance string, blockTime ...time.Time) *a
 		AvailableAnt: antBalance,
 		OpenOrderIds: []string{},
 		TotalTrades:  "0",
-		TotalVolume:  "0",
 		LastActivity: now,
 	}
 }
 
-// NewAuction creates a new Auction instance
-func NewAuction(blockHeight uint64, antAmount string, reservePrice string, blockTime ...time.Time) *anteilv1.Auction {
-	now := getTimestamp(blockTime...)
-	endTime := timestamppb.New(now.AsTime().Add(1 * time.Hour)) // Default 1h auction duration
-
-	return &anteilv1.Auction{
-		AuctionId:    generateAuctionID(blockHeight, now.AsTime()),
-		BlockHeight:  blockHeight,
-		StartTime:    now,
-		EndTime:      endTime,
-		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
-		Bids:         []*anteilv1.Bid{},
-		WinningBid:   "",
-		ReservePrice: reservePrice,
-		AntAmount:    antAmount,
-	}
-}
-
-// NewBid creates a new Bid instance
-func NewBid(bidder string, auctionID string, amount string, identityHash string, blockTime ...time.Time) *anteilv1.Bid {
-	now := getTimestamp(blockTime...)
-
-	return &anteilv1.Bid{
-		BidId:        generateBidID(bidder, auctionID, now.AsTime()),
-		Bidder:       bidder,
-		Amount:       amount,
-		SubmittedAt:  now,
-		IdentityHash: identityHash,
+// NewEpochState creates a new EpochState instance
+func NewEpochState(epochNumber uint64, start time.Time, end time.Time) *anteilv1.EpochState {
+	return &anteilv1.EpochState{
+		EpochNumber:           epochNumber,
+		EpochStart:            timestamppb.New(start),
+		EpochEnd:              timestamppb.New(end),
+		TotalBurnedPrevEpoch:  "0",
+		TotalBurnedCurrentEpoch: "0",
+		EmissionCoefficient:   "1.0",
+		TotalEmitted:          "0",
+		ActiveSuppliers:       0,
 	}
 }
 
@@ -127,7 +109,6 @@ func IsOrderValid(order *anteilv1.Order) error {
 	if order.OrderSide == anteilv1.OrderSide_ORDER_SIDE_UNSPECIFIED {
 		return ErrInvalidOrderSide
 	}
-	// Reject negative or zero price
 	if price, err := strconv.ParseFloat(order.Price, 64); err != nil || price <= 0 {
 		return ErrInvalidPrice
 	}
@@ -157,31 +138,6 @@ func IsTradeValid(trade *anteilv1.Trade) error {
 	return nil
 }
 
-// IsAuctionValid checks if the auction is valid
-func IsAuctionValid(auction *anteilv1.Auction) error {
-	if auction.AuctionId == "" {
-		return ErrEmptyAuctionID
-	}
-	if auction.ReservePrice == "" {
-		return ErrEmptyReservePrice
-	}
-	if auction.AntAmount == "" {
-		return ErrEmptyAntAmount
-	}
-	return nil
-}
-
-// IsBidValid checks if the bid is valid
-func IsBidValid(bid *anteilv1.Bid) error {
-	if bid.Bidder == "" {
-		return ErrEmptyBidder
-	}
-	if bid.Amount == "" {
-		return ErrEmptyBidAmount
-	}
-	return nil
-}
-
 // IsUserPositionValid checks if the user position is valid
 func IsUserPositionValid(position *anteilv1.UserPosition) error {
 	if position.Owner == "" {
@@ -203,11 +159,6 @@ func NewTradeStore(store storetypes.KVStore) storetypes.KVStore {
 	return prefix.NewStore(store, TradeKeyPrefix)
 }
 
-// NewAuctionStore creates a new auction store
-func NewAuctionStore(store storetypes.KVStore) storetypes.KVStore {
-	return prefix.NewStore(store, AuctionKeyPrefix)
-}
-
 // Helper functions
 
 func generateOrderID(owner string, timestamp time.Time) string {
@@ -218,30 +169,18 @@ func generateTradeID(buyOrderID, sellOrderID string, timestamp time.Time) string
 	return fmt.Sprintf("trade_%s_%s_%d", buyOrderID, sellOrderID, timestamp.Unix())
 }
 
-func generateAuctionID(blockHeight uint64, timestamp time.Time) string {
-	return fmt.Sprintf("auction_%d_%d", blockHeight, timestamp.Unix())
-}
-
-func generateBidID(bidder, auctionID string, timestamp time.Time) string {
-	return fmt.Sprintf("bid_%s_%s_%d", bidder, auctionID, timestamp.Unix())
-}
-
-func calculateTotalValue(antAmount, price string) string {
-	// Use simplified arithmetic for now (in production use decimal library)
+func calculateWrtAmount(antAmount, price string) string {
 	antFloat, err := strconv.ParseFloat(antAmount, 64)
 	if err != nil {
-		return "0" // Return zero on error
+		return "0"
 	}
 
 	priceFloat, err := strconv.ParseFloat(price, 64)
 	if err != nil {
-		return "0" // Return zero on error
+		return "0"
 	}
 
-	// Calculate total value = amount * price
 	totalValue := antFloat * priceFloat
-
-	// Return with proper precision (8 decimal places)
 	return fmt.Sprintf("%.8f", totalValue)
 }
 
@@ -252,16 +191,9 @@ func UpdateOrderStatus(order *anteilv1.Order, status anteilv1.OrderStatus) {
 
 // UpdateUserPosition updates user position based on trade
 func UpdateUserPosition(position *anteilv1.UserPosition, trade *anteilv1.Trade, isBuyer bool, blockTime ...time.Time) {
-	// Update trade count
 	currentTrades, _ := strconv.ParseInt(position.TotalTrades, 10, 64)
 	position.TotalTrades = fmt.Sprintf("%d", currentTrades+1)
 
-	// Update volume
-	currentVolume, _ := strconv.ParseInt(position.TotalVolume, 10, 64)
-	tradeVolume, _ := strconv.ParseInt(trade.AntAmount, 10, 64)
-	position.TotalVolume = fmt.Sprintf("%d", currentVolume+tradeVolume)
-
-	// Update last activity
 	position.LastActivity = getTimestamp(blockTime...)
 }
 

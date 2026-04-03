@@ -1,56 +1,57 @@
 package types
 
 const (
-	// EventTypeBlockCreatorSelected defines the event type for block creator selection
-	EventTypeBlockCreatorSelected = "consensus.block_creator_selected"
-	
-	// EventTypeValidatorPowerUpdated defines the event type for validator power updates
-	EventTypeValidatorPowerUpdated = "consensus.validator_power_updated"
-	
-	// EventTypeBlockTimeAdjusted defines the event type for block time adjustments
-	EventTypeBlockTimeAdjusted = "consensus.block_time_adjusted"
-	
-	// EventTypeHalving defines the event type for halving events
-	EventTypeHalving = "consensus.halving"
-	
-	// EventTypeConsensusStateUpdated defines the event type for consensus state updates
-	EventTypeConsensusStateUpdated = "consensus.consensus_state_updated"
-	
-	// EventTypeBurnExecuted defines the event type for ANT token burning
-	EventTypeBurnExecuted = "consensus.burn_executed"
-	
-	// EventTypeRewardDistributed defines the event type for WRT reward distribution
-	EventTypeRewardDistributed = "consensus.reward_distributed"
-	
-	// EventTypeAuctionStarted defines the event type for blind auction start
-	EventTypeAuctionStarted = "consensus.auction_started"
-	
-	// EventTypeAuctionCompleted defines the event type for blind auction completion
-	EventTypeAuctionCompleted = "consensus.auction_completed"
-	
-	// EventTypeBidCommitted defines the event type for bid commit in blind auction
-	EventTypeBidCommitted = "consensus.bid_committed"
-	
-	// EventTypeBidRevealed defines the event type for bid reveal in blind auction
-	EventTypeBidRevealed = "consensus.bid_revealed"
-	
-	// Attribute keys
-	AttributeKeyBlockCreator = "block_creator"
-	AttributeKeyBlockHeight  = "block_height"
-	AttributeKeyValidator    = "validator"
-	AttributeKeyPower        = "power"
-	AttributeKeyBlockTime    = "block_time"
-	AttributeKeyHeight       = "height"
-	AttributeKeyNextHalving  = "next_halving"
-	AttributeKeyBurnAmount   = "burn_amount"
-	AttributeKeyNewBalance   = "new_balance"
-	AttributeKeyAuctionWinner = "auction_winner"
-	AttributeKeyRewardAmount = "reward_amount"
-	AttributeKeyRewardShare   = "reward_share"
-	AttributeKeyMOACompliance = "moa_compliance"
-	AttributeKeyPenaltyMultiplier = "penalty_multiplier"
-	AttributeKeyAuctionHeight = "auction_height"
-	AttributeKeyCommitHash   = "commit_hash"
-	AttributeKeyBidAmount    = "bid_amount"
-	AttributeKeyNonce        = "nonce"
+	// §6.3 — consensus module events
+	EventTypeBurnExecuted         = "consensus.burn_executed"
+	EventTypeRewardDistributed    = "consensus.reward_distributed"
+	EventTypeHalving              = "consensus.halving"
+	EventTypeConsensusStateUpdate = "consensus.consensus_state_updated"
+	EventTypeValidatorPowerUpdate = "consensus.validator_power_updated"
+	EventTypeFeeDistributed       = "consensus.fee_distributed"
+	EventTypePerHeightBurn        = "consensus.per_height_burn"
+
+	// §6.3 mandatory attributes
+	AttributeKeyValidator           = "validator"
+	AttributeKeyBlockHeight         = "block_height"
+	AttributeKeyTxHash              = "tx_hash"
+	AttributeKeyAccount             = "account"
+	AttributeKeyConsensusAddress    = "consensus_address"
+	AttributeKeyPower               = "power"
+	AttributeKeyBurnAmount          = "burn_amount"
+	AttributeKeyBurnReason          = "burn_reason"
+	AttributeKeyRewardAmount        = "reward_amount"
+	AttributeKeyRewardShare         = "reward_share"
+	AttributeKeyMOACompliance       = "moa_compliance"
+	AttributeKeyHeight              = "height"
+	AttributeKeyNextHalving         = "next_halving"
+
+	// PoVB §5.4 specific attributes
+	AttributeKeySi    = "s_i"    // priority stake
+	AttributeKeyBi    = "b_i"    // burn for fee share
+	AttributeKeyIncI  = "inc_i"  // included after global cap
+	AttributeKeyLTot  = "l_tot"  // total activated LZN
+	AttributeKeyLambda = "lambda" // global burn cap coefficient
+	AttributeKeyTotalFees = "total_fees" // F
+	AttributeKeyTotalB    = "total_b"    // B = Σ inc_i
+
+	// §6.3 / Appendix A — consensus_change_reason values
+	ConsensusChangeReasonLZNActivated   = "lzn_activated"
+	ConsensusChangeReasonLZNDeactivated = "lzn_deactivated"
+	ConsensusChangeReasonMOAValidator   = "moa_validator"
+	ConsensusChangeReasonGovernance     = "governance"
+	ConsensusChangeReasonSlashingOther  = "slashing_other"
+	ConsensusChangeReasonGenesisInit    = "genesis_init"
+
+	AttributeKeyConsensusChangeReason = "consensus_change_reason"
+
+	// Shared burn_reason values
+	BurnReasonPerHeight          = "per_height"
+	BurnReasonMOASupplier        = "moa_supplier"
+	BurnReasonMOAValidator       = "moa_validator"
+	BurnReasonEpochSupplierReset = "epoch_supplier_reset"
+	BurnReasonProtocolOther      = "protocol_other"
+
+	// §7.2 п.6 — fee policy when B=0
+	FeePolicyBZeroCommunityPool = "community_pool"
+	FeePolicyBZeroCarryForward  = "carry_forward"
 )

@@ -34,7 +34,7 @@ var (
 	ErrInvalidMigrationStatus = errors.Register(ModuleName, 9, "invalid migration status")
 
 	// Verification errors
-	ErrInvalidRoleChoice = errors.Register(ModuleName, 10, "invalid role choice: must be ROLE_CITIZEN or ROLE_VALIDATOR")
+	ErrInvalidRoleChoice = errors.Register(ModuleName, 10, "invalid role choice: must be ROLE_SUPPLIER or ROLE_VALIDATOR")
 	ErrAlreadyVerified   = errors.Register(ModuleName, 11, "address already has a verified identity")
 	
 	ErrDuplicateIdentityHash = errors.Register(ModuleName, 12, "identity hash already exists for another address")

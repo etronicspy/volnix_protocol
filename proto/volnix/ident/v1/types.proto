@@ -8,29 +8,63 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 import "cosmos/base/v1beta1/coin.proto";
 
+// Roles per §4.2: Guest, Supplier (Поставщик), Validator
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_GUEST = 1;
-  ROLE_CITIZEN = 2;
+  ROLE_SUPPLIER = 2;   // Поставщик — verified ANT supplier (§4.2); NOT the same as DAO citizen (§4.1)
   ROLE_VALIDATOR = 3;
 }
 
+// BurnReason — closed enum per §6.3 / Appendix A (extension = hardfork)
+enum BurnReason {
+  BURN_REASON_UNSPECIFIED = 0;
+  BURN_REASON_PER_HEIGHT = 1;              // Validator per-height burn §5.4
+  BURN_REASON_MOA_SUPPLIER = 2;            // MOA sanction on Supplier §5.3(1)
+  BURN_REASON_MOA_VALIDATOR = 3;           // MOA sanction on Validator §5.3(2)
+  BURN_REASON_EPOCH_SUPPLIER_RESET = 4;    // End-of-epoch supplier reset §5.5
+  BURN_REASON_PROTOCOL_OTHER = 5;          // Other deterministic protocol rule
+}
+
+// RoleChangeReason — closed enum per §6.3 / Appendix A
+enum RoleChangeReason {
+  ROLE_CHANGE_REASON_UNSPECIFIED = 0;
+  ROLE_CHANGE_REASON_ZKP_VERIFY = 1;
+  ROLE_CHANGE_REASON_ROLE_CHANGE = 2;
+  ROLE_CHANGE_REASON_ROLE_MIGRATION = 3;
+  ROLE_CHANGE_REASON_MOA_SUPPLIER = 4;
+  ROLE_CHANGE_REASON_MOA_VALIDATOR = 5;
+  ROLE_CHANGE_REASON_GOVERNANCE = 6;
+  ROLE_CHANGE_REASON_DEACTIVATION_OTHER = 7;
+}
+
+// ConsensusChangeReason — closed enum per §6.3 / Appendix A
+enum ConsensusChangeReason {
+  CONSENSUS_CHANGE_REASON_UNSPECIFIED = 0;
+  CONSENSUS_CHANGE_REASON_LZN_ACTIVATED = 1;
+  CONSENSUS_CHANGE_REASON_LZN_DEACTIVATED = 2;
+  CONSENSUS_CHANGE_REASON_MOA_VALIDATOR = 3;
+  CONSENSUS_CHANGE_REASON_GOVERNANCE = 4;
+  CONSENSUS_CHANGE_REASON_SLASHING_OTHER = 5;
+  CONSENSUS_CHANGE_REASON_GENESIS_INIT = 6;
+}
+
 message Params {
-  // Inactivity periods
-  google.protobuf.Duration citizen_activity_period = 1; // e.g., 1 year
-  google.protobuf.Duration validator_activity_period = 2; // e.g., 6 months
-  
-  // Account limits
-  uint64 max_identities_per_address = 3; // Maximum number of identities per address
-  
+  // MOA windows §5.3 / §7.2 п.2-3 (DAO-tunable, code enforces min/max)
+  google.protobuf.Duration moa_supplier_window = 1;   // T_g — MOA window for Suppliers
+  google.protobuf.Duration moa_validator_window = 2;   // T_v — MOA window for Validators
+
+  // Supplier capacity §4.2 / §7.2 п.9
+  uint64 max_active_suppliers = 3;
+
   // Identity verification
-  bool require_identity_verification = 4; // Whether identity verification is required
-  string default_verification_provider = 5; // Default verification provider address
-  
+  bool require_identity_verification = 4;
+  string default_verification_provider = 5;
+
   // Fees
-  cosmos.base.v1beta1.Coin verification_cost = 6; // Cost for identity verification
-  cosmos.base.v1beta1.Coin migration_fee = 7; // Fee for role migration
-  cosmos.base.v1beta1.Coin role_change_fee = 8; // Fee for role change
+  cosmos.base.v1beta1.Coin verification_cost = 6;
+  cosmos.base.v1beta1.Coin migration_fee = 7;
+  cosmos.base.v1beta1.Coin role_change_fee = 8;
 }
 
 message VerifiedAccount {
@@ -42,6 +76,16 @@ message VerifiedAccount {
   string verification_provider = 6;
   google.protobuf.Timestamp verification_date = 7;
   bool is_active = 8;
+
+  // MOA tracking §5.3
+  google.protobuf.Timestamp last_moa_event = 9;  // last qualifying MOA event (sell order / burn)
+}
+
+// ConsensusAccountMapping — explicit mapping §4.2, §6.1
+message ConsensusAccountMapping {
+  string consensus_address = 1;  // CometBFT consensus address (hex)
+  string account_address = 2;    // Bech32 account address for LZN/role
+  bytes  consensus_pubkey = 3;   // Ed25519 pubkey of the consensus node
 }
 
 message ZKPProof {

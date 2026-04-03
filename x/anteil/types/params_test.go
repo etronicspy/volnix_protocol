@@ -13,8 +13,6 @@ func TestDefaultParams(t *testing.T) {
 	params := types.DefaultParams()
 
 	require.NotNil(t, params)
-	require.Equal(t, "1000000", params.MinAntAmount)
-	require.Equal(t, "1000000000", params.MaxAntAmount)
 	require.Equal(t, "0.001", params.TradingFeeRate)
 	require.Equal(t, "100000", params.MinOrderSize)
 	require.Equal(t, "100000000", params.MaxOrderSize)
@@ -23,11 +21,12 @@ func TestDefaultParams(t *testing.T) {
 	require.Equal(t, "uant", params.AntDenom)
 	require.Equal(t, uint32(10), params.MaxOpenOrders)
 	require.Equal(t, "0.000001", params.PricePrecision)
-	require.Equal(t, "0.002", params.MarketMakerRewardRate)
-	require.Equal(t, "0.05", params.StakingRewardRate)
-	require.Equal(t, "0.003", params.LiquidityPoolFee)
-	require.Equal(t, "0.05", params.MaxSlippage)
-	require.Equal(t, uint64(1000000), params.MinLiquidityThreshold)
+	require.Equal(t, types.DefaultEpochLength, params.EpochLength)
+	require.Equal(t, "1.0", params.EpochCoefficient)
+	require.Equal(t, "0.75", params.EpochCoefficientMin)
+	require.Equal(t, "1.50", params.EpochCoefficientMax)
+	require.Equal(t, "100000000", params.SupplierEpochAntLimit)
+	require.Equal(t, types.DefaultCitizenAntDistributionPeriod, params.CitizenAntDistributionPeriod)
 }
 
 func TestParamsValidate(t *testing.T) {
@@ -42,129 +41,75 @@ func TestParamsValidate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "empty min ant amount",
-			params: types.Params{
-				MinAntAmount:                "",
-				MaxAntAmount:                "1000000000",
-				TradingFeeRate:              "0.001",
-				MinOrderSize:                "100000",
-				MaxOrderSize:                "100000000",
-				OrderExpiry:                 24 * time.Hour,
-				RequireIdentityVerification: true,
-				AntDenom:                    "uant",
-				MaxOpenOrders:               10,
-				PricePrecision:              "0.000001",
-				MarketMakerRewardRate:       "0.002",
-				StakingRewardRate:           "0.05",
-				LiquidityPoolFee:            "0.003",
-				MaxSlippage:                 "0.05",
-				MinLiquidityThreshold:       1000000,
-			},
+			name: "empty min order size",
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.MinOrderSize = ""
+				return p
+			}(),
 			wantErr: true,
 		},
 		{
-			name: "empty max ant amount",
-			params: types.Params{
-				MinAntAmount:                "1000000",
-				MaxAntAmount:                "",
-				TradingFeeRate:              "0.001",
-				MinOrderSize:                "100000",
-				MaxOrderSize:                "100000000",
-				OrderExpiry:                 24 * time.Hour,
-				RequireIdentityVerification: true,
-				AntDenom:                    "uant",
-				MaxOpenOrders:               10,
-				PricePrecision:              "0.000001",
-				MarketMakerRewardRate:       "0.002",
-				StakingRewardRate:           "0.05",
-				LiquidityPoolFee:            "0.003",
-				MaxSlippage:                 "0.05",
-				MinLiquidityThreshold:       1000000,
-			},
+			name: "empty max order size",
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.MaxOrderSize = ""
+				return p
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "zero order expiry",
-			params: types.Params{
-				MinAntAmount:                "1000000",
-				MaxAntAmount:                "1000000000",
-				TradingFeeRate:              "0.001",
-				MinOrderSize:                "100000",
-				MaxOrderSize:                "100000000",
-				OrderExpiry:                 0,
-				RequireIdentityVerification: true,
-				AntDenom:                    "uant",
-				MaxOpenOrders:               10,
-				PricePrecision:              "0.000001",
-				MarketMakerRewardRate:       "0.002",
-				StakingRewardRate:           "0.05",
-				LiquidityPoolFee:            "0.003",
-				MaxSlippage:                 "0.05",
-				MinLiquidityThreshold:       1000000,
-			},
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.OrderExpiry = 0
+				return p
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "empty ant denom",
-			params: types.Params{
-				MinAntAmount:                "1000000",
-				MaxAntAmount:                "1000000000",
-				TradingFeeRate:              "0.001",
-				MinOrderSize:                "100000",
-				MaxOrderSize:                "100000000",
-				OrderExpiry:                 24 * time.Hour,
-				RequireIdentityVerification: true,
-				AntDenom:                    "",
-				MaxOpenOrders:               10,
-				PricePrecision:              "0.000001",
-				MarketMakerRewardRate:       "0.002",
-				StakingRewardRate:           "0.05",
-				LiquidityPoolFee:            "0.003",
-				MaxSlippage:                 "0.05",
-				MinLiquidityThreshold:       1000000,
-			},
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.AntDenom = ""
+				return p
+			}(),
 			wantErr: true,
 		},
 		{
 			name: "zero max open orders",
-			params: types.Params{
-				MinAntAmount:                "1000000",
-				MaxAntAmount:                "1000000000",
-				TradingFeeRate:              "0.001",
-				MinOrderSize:                "100000",
-				MaxOrderSize:                "100000000",
-				OrderExpiry:                 24 * time.Hour,
-				RequireIdentityVerification: true,
-				AntDenom:                    "uant",
-				MaxOpenOrders:               0,
-				PricePrecision:              "0.000001",
-				MarketMakerRewardRate:       "0.002",
-				StakingRewardRate:           "0.05",
-				LiquidityPoolFee:            "0.003",
-				MaxSlippage:                 "0.05",
-				MinLiquidityThreshold:       1000000,
-			},
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.MaxOpenOrders = 0
+				return p
+			}(),
 			wantErr: true,
 		},
 		{
-			name: "zero min liquidity threshold",
-			params: types.Params{
-				MinAntAmount:                "1000000",
-				MaxAntAmount:                "1000000000",
-				TradingFeeRate:              "0.001",
-				MinOrderSize:                "100000",
-				MaxOrderSize:                "100000000",
-				OrderExpiry:                 24 * time.Hour,
-				RequireIdentityVerification: true,
-				AntDenom:                    "uant",
-				MaxOpenOrders:               10,
-				PricePrecision:              "0.000001",
-				MarketMakerRewardRate:       "0.002",
-				StakingRewardRate:           "0.05",
-				LiquidityPoolFee:            "0.003",
-				MaxSlippage:                 "0.05",
-				MinLiquidityThreshold:       0,
-			},
+			name: "zero epoch length",
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.EpochLength = 0
+				return p
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "empty epoch coefficient",
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.EpochCoefficient = ""
+				return p
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "empty supplier epoch ant limit",
+			params: func() types.Params {
+				p := types.DefaultParams()
+				p.SupplierEpochAntLimit = ""
+				return p
+			}(),
 			wantErr: true,
 		},
 	}
@@ -186,58 +131,35 @@ func TestParamKeyTable(t *testing.T) {
 	require.NotNil(t, table)
 }
 
-// TestValidateString tests validateString function
-func TestValidateString(t *testing.T) {
-	// This is a private function, but we can test it through params validation
-	params := types.DefaultParams()
-	
-	// Valid params should pass
-	err := params.Validate()
-	require.NoError(t, err)
-	
-	// Test with empty string (should fail)
-	params.MinAntAmount = ""
-	err = params.Validate()
-	require.Error(t, err)
-}
-
-// TestValidateDuration tests validateDuration function
 func TestValidateDuration(t *testing.T) {
 	params := types.DefaultParams()
-	
-	// Valid duration should pass
+
 	err := params.Validate()
 	require.NoError(t, err)
-	
-	// Zero duration should fail
+
 	params.OrderExpiry = 0
 	err = params.Validate()
 	require.Error(t, err)
 }
 
-// TestValidateBool tests validateBool function
 func TestValidateBool(t *testing.T) {
 	params := types.DefaultParams()
-	
-	// Both true and false should be valid
+
 	params.RequireIdentityVerification = true
 	err := params.Validate()
 	require.NoError(t, err)
-	
+
 	params.RequireIdentityVerification = false
 	err = params.Validate()
 	require.NoError(t, err)
 }
 
-// TestValidateUint32 tests validateUint32 function
 func TestValidateUint32(t *testing.T) {
 	params := types.DefaultParams()
-	
-	// Valid uint32 should pass
+
 	err := params.Validate()
 	require.NoError(t, err)
-	
-	// Zero should fail for MaxOpenOrders
+
 	params.MaxOpenOrders = 0
 	err = params.Validate()
 	require.Error(t, err)

@@ -5,8 +5,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
+	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 )
 
 // ============================================================================
@@ -36,7 +36,7 @@ func NewMockIdentKeeperWithRoles(citizens, validators, guests int) *MockIdentKee
 	idx := 0
 
 	for i := 0; i < citizens; i++ {
-		acc := NewTestVerifiedAccountCustom(addrs[idx], identv1.Role_ROLE_CITIZEN, fmt.Sprintf("hash-citizen-%d", i))
+		acc := NewTestVerifiedAccountCustom(addrs[idx], identv1.Role_ROLE_SUPPLIER, fmt.Sprintf("hash-citizen-%d", i))
 		accounts = append(accounts, acc)
 		idx++
 	}

@@ -163,7 +163,7 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 		// Кошелёк зарегистрирован в блокчейне (проведены транзакции), но нет записи в ident.
 		// Создаём верифицированный аккаунт при апгрейде в Citizen/Validator.
 		// reqCtx (not sdkCtx) is required: auth keeper's GetAccount expects request context.
-		if (req.NewRole == identv1.Role_ROLE_CITIZEN || req.NewRole == identv1.Role_ROLE_VALIDATOR) &&
+		if (req.NewRole == identv1.Role_ROLE_SUPPLIER || req.NewRole == identv1.Role_ROLE_VALIDATOR) &&
 			s.k.HasBlockchainAccount(ctx, req.Address) {
 			if createErr := s.k.CreateAccountFromVerification(sdkCtx, req.Address, req.ZkpProof, "", req.NewRole); createErr != nil {
 				return nil, fmt.Errorf("failed to create verified account: %w", createErr)

@@ -4,9 +4,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/client/tx"
-	consensusv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1"
 )
 
 func GetTxCmd() *cobra.Command {
@@ -18,30 +15,32 @@ func GetTxCmd() *cobra.Command {
 		RunE:                       client.ValidateCmd,
 	}
 
-	cmd.AddCommand(CmdSelectBlockCreator())
+	cmd.AddCommand(CmdDeclarePerHeightBurn())
+	cmd.AddCommand(CmdRegisterConsensusMapping())
 
 	return cmd
 }
 
-func CmdSelectBlockCreator() *cobra.Command {
+func CmdDeclarePerHeightBurn() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "select-block-creator",
-		Short: "Select the next block creator",
-		Args:  cobra.NoArgs,
+		Use:   "declare-per-height-burn [s_i] [b_i]",
+		Short: "Declare per-height burn amounts (priority stake and fee-share burn)",
+		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clientCtx, err := client.GetClientTxContext(cmd)
-			if err != nil {
-				return err
-			}
-
-			msg := &consensusv1.MsgSelectBlockCreator{
-				Creator: clientCtx.GetFromAddress().String(),
-			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			return nil
 		},
 	}
+	return cmd
+}
 
-	flags.AddTxFlagsToCmd(cmd)
+func CmdRegisterConsensusMapping() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "register-consensus-mapping [consensus-pubkey-hex]",
+		Short: "Register consensus pubkey to account address mapping",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
 	return cmd
 }

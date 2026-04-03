@@ -7,106 +7,58 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-// Params defines the parameters for the lizenz module
+// Params for the lizenz (LZN license) module
 message Params {
-  uint32 max_activated_per_validator = 1;
-  string activity_coefficient = 2; // sdk.Dec string
-  google.protobuf.Duration deactivation_period = 3;
-  google.protobuf.Duration inactivity_period = 4;
-  
-  // Additional parameters for LZN management
-  string min_lzn_amount = 5; // Minimum amount of LZN required for activation
-  string max_lzn_amount = 6; // Maximum amount of LZN that can be activated
-  bool require_identity_verification = 7; // Whether identity verification is required
-  string lzn_denom = 8; // Denomination for LZN tokens (e.g., "ulzn")
-  
-  // Integration parameters
-  bool consensus_integration_enabled = 9;
-  bool ident_verification_required = 10;
-  bool anteil_market_access = 11;
-  string validator_performance_threshold = 12; // Performance threshold for validators
+  uint32 max_activated_per_validator = 1;   // kept for compat
+  string activity_coefficient = 2;
+
+  // Freeze period §4.1 / §7.2 п.1 — duration activated LZN stays locked
+  google.protobuf.Duration activation_freeze_period = 3;
+
+  // Deactivation / inactivity
+  google.protobuf.Duration deactivation_period = 4;
+  google.protobuf.Duration inactivity_period = 5;
+
+  string min_lzn_amount = 6;
+  string max_lzn_amount = 7;
+  bool require_identity_verification = 8;
+  string lzn_denom = 9;                   // "ulzn"
+
+  bool consensus_integration_enabled = 10;
+  bool ident_verification_required = 11;
 }
 
-// ActivatedLizenz represents an activated LZN license for a validator
+// ActivatedLizenz — activated LZN license for a validator §4.1
 message ActivatedLizenz {
-  string validator = 1;
-  string amount = 2; // sdk.Coin string
+  string validator = 1;                            // bech32 account address
+  string amount = 2;                               // activated LZN amount in min units
   google.protobuf.Timestamp activation_time = 3;
-  google.protobuf.Timestamp last_activity = 4;
-  string identity_hash = 5; // Link to identity verification
-  
-  // Integration fields
-  string consensus_participation = 6; // Consensus participation score
-  string ant_market_access = 7; // ANT market access level
-  string performance_rating = 8; // Overall performance rating
-  bool is_eligible_for_rewards = 9; // Whether eligible for rewards
-  
-  // Reward tracking fields
-  string total_rewards_earned = 10; // Total WRT rewards earned (cumulative) in micro WRT
-  string last_reward_block = 11; // Block height of last reward distribution
-  google.protobuf.Timestamp last_reward_time = 12; // Timestamp of last reward
+  google.protobuf.Timestamp freeze_until = 4;      // activation_time + activation_freeze_period
+  google.protobuf.Timestamp last_activity = 5;
+  string identity_hash = 6;
+  bool is_eligible_for_rewards = 7;
+
+  // Reward tracking
+  string total_rewards_earned = 8;
+  string last_reward_block = 9;
+  google.protobuf.Timestamp last_reward_time = 10;
 }
 
-// DeactivatingLizenz represents a LZN license in the process of deactivation
+// DeactivatingLizenz — LZN in process of deactivation
 message DeactivatingLizenz {
   string validator = 1;
-  string amount = 2; // sdk.Coin string
+  string amount = 2;
   google.protobuf.Timestamp deactivation_start = 3;
   google.protobuf.Timestamp deactivation_end = 4;
-  string reason = 5; // Reason for deactivation
-  
-  // Integration fields
-  string deactivation_impact_score = 6; // Impact on consensus and market
-  string replacement_validator = 7; // Suggested replacement validator
-  bool emergency_deactivation = 8; // Whether this is an emergency deactivation
+  string reason = 5;
 }
 
-// MOAStatus represents the Minimum Obligation of Activity status for a validator
+// MOAStatus — Minimum Obligation of Activity status for a validator §5.3
 message MOAStatus {
   string validator = 1;
   bool is_active = 2;
   google.protobuf.Timestamp last_activity = 3;
-  string current_moa = 4; // Current MOA value as string
-  string required_moa = 5; // Required MOA value as string
+  google.protobuf.Timestamp last_burn_time = 4;      // last qualifying ANT burn for MOA §5.3(2)
+  bool is_compliant = 5;
   google.protobuf.Timestamp next_check = 6;
-  bool is_compliant = 7;
-  
-  // Integration fields
-  string consensus_contribution = 8; // Contribution to consensus
-  string market_participation = 9; // Participation in ANT market
-  string overall_score = 10; // Overall performance score
-}
-
-// ValidatorIntegration represents the integration status of a validator
-message ValidatorIntegration {
-  string validator = 1;
-  string lzn_license_status = 2; // Status of LZN license
-  string ident_verification_status = 3; // Status of identity verification
-  string consensus_participation = 4; // Consensus participation level
-  string ant_market_access = 5; // ANT market access level
-  google.protobuf.Timestamp last_integration_check = 6;
-  string integration_score = 7; // Overall integration score
-  repeated string active_integrations = 8; // List of active integrations
-}
-
-// CrossModuleEvent represents events that affect multiple modules
-message CrossModuleEvent {
-  string event_id = 1;
-  string event_type = 2; // Type of cross-module event
-  string source_module = 3; // Source module
-  string target_module = 4; // Target module
-  string event_data = 5; // Event data as JSON string
-  google.protobuf.Timestamp timestamp = 6;
-  string validator = 7; // Affected validator if applicable
-  bool requires_action = 8; // Whether action is required
-}
-
-// ModuleDependency represents dependencies between modules
-message ModuleDependency {
-  string module_name = 1;
-  repeated string dependencies = 2; // List of module dependencies
-  repeated string dependents = 3; // List of modules that depend on this one
-  string dependency_type = 4; // Type of dependency (strong, weak, optional)
-  bool is_critical = 5; // Whether this dependency is critical
-  string health_status = 6; // Health status of the dependency
 }

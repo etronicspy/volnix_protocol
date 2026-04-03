@@ -7,57 +7,28 @@ import (
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
-// DefaultCitizenAntDistributionPeriod is the distribution period for citizen ANT rewards.
-// Set to 1 minute for testnet/dev. Override via governance for production (24h per whitepaper).
+// DefaultEpochLength is the default epoch duration (1 week).
+const DefaultEpochLength = 7 * 24 * time.Hour
+
+// DefaultCitizenAntDistributionPeriod kept for backward compat; semantics change to epoch.
 const DefaultCitizenAntDistributionPeriod = 1 * time.Minute
 
 var (
-	// KeyMinAntAmount defines the key for minimum ANT amount
-	KeyMinAntAmount = []byte("MinAntAmount")
-
-	// KeyMaxAntAmount defines the key for maximum ANT amount
-	KeyMaxAntAmount = []byte("MaxAntAmount")
-
-	// KeyTradingFeeRate defines the key for trading fee rate
-	KeyTradingFeeRate = []byte("TradingFeeRate")
-
-	// KeyMinOrderSize defines the key for minimum order size
-	KeyMinOrderSize = []byte("MinOrderSize")
-
-	// KeyMaxOrderSize defines the key for maximum order size
-	KeyMaxOrderSize = []byte("MaxOrderSize")
-
-	// KeyOrderExpiry defines the key for order expiry duration
-	KeyOrderExpiry = []byte("OrderExpiry")
-
-	// KeyRequireIdentityVerification defines the key for identity verification requirement
+	KeyMinOrderSize                = []byte("MinOrderSize")
+	KeyMaxOrderSize                = []byte("MaxOrderSize")
+	KeyTradingFeeRate              = []byte("TradingFeeRate")
+	KeyOrderExpiry                 = []byte("OrderExpiry")
 	KeyRequireIdentityVerification = []byte("RequireIdentityVerification")
+	KeyAntDenom                    = []byte("AntDenom")
+	KeyMaxOpenOrders               = []byte("MaxOpenOrders")
+	KeyPricePrecision              = []byte("PricePrecision")
 
-	// KeyAntDenom defines the key for ANT denomination
-	KeyAntDenom = []byte("AntDenom")
-
-	// KeyMaxOpenOrders defines the key for maximum open orders
-	KeyMaxOpenOrders = []byte("MaxOpenOrders")
-
-	// KeyPricePrecision defines the key for price precision
-	KeyPricePrecision = []byte("PricePrecision")
-	
-	// New economic parameter keys
-	KeyMarketMakerRewardRate = []byte("MarketMakerRewardRate")
-	KeyStakingRewardRate     = []byte("StakingRewardRate")
-	KeyLiquidityPoolFee      = []byte("LiquidityPoolFee")
-	KeyMaxSlippage           = []byte("MaxSlippage")
-	KeyMinLiquidityThreshold = []byte("MinLiquidityThreshold")
-	
-	// Citizen ANT distribution parameter keys
-	KeyCitizenAntRewardRate      = []byte("CitizenAntRewardRate")
-	KeyCitizenAntAccumulationLimit = []byte("CitizenAntAccumulationLimit")
-	KeyCitizenAntDistributionPeriod = []byte("CitizenAntDistributionPeriod")
-	
-	// Market making parameter keys
-	KeyMarketMakingBuyDiscount  = []byte("MarketMakingBuyDiscount")  // Buy price discount (e.g., "0.99" = 1% below)
-	KeyMarketMakingSellPremium  = []byte("MarketMakingSellPremium")  // Sell price premium (e.g., "1.01" = 1% above)
-	KeyMarketMakingOrderSize    = []byte("MarketMakingOrderSize")   // Order size in ANT (e.g., "1000.0")
+	KeyEpochLength                   = []byte("EpochLength")
+	KeyEpochCoefficient              = []byte("EpochCoefficient")
+	KeyEpochCoefficientMin           = []byte("EpochCoefficientMin")
+	KeyEpochCoefficientMax           = []byte("EpochCoefficientMax")
+	KeySupplierEpochAntLimit         = []byte("SupplierEpochAntLimit")
+	KeyCitizenAntDistributionPeriod  = []byte("CitizenAntDistributionPeriod")
 )
 
 // ParamKeyTable returns the parameter key table
@@ -67,117 +38,74 @@ func ParamKeyTable() paramtypes.KeyTable {
 
 // Params defines the parameters for the anteil module
 type Params struct {
-	MinAntAmount                string        `json:"min_ant_amount"`
-	MaxAntAmount                string        `json:"max_ant_amount"`
-	TradingFeeRate              string        `json:"trading_fee_rate"`
 	MinOrderSize                string        `json:"min_order_size"`
 	MaxOrderSize                string        `json:"max_order_size"`
+	TradingFeeRate              string        `json:"trading_fee_rate"`
 	OrderExpiry                 time.Duration `json:"order_expiry"`
 	RequireIdentityVerification bool          `json:"require_identity_verification"`
 	AntDenom                    string        `json:"ant_denom"`
 	MaxOpenOrders               uint32        `json:"max_open_orders"`
 	PricePrecision              string        `json:"price_precision"`
-	
-	// New economic parameters
-	MarketMakerRewardRate string `json:"market_maker_reward_rate"`
-	StakingRewardRate     string `json:"staking_reward_rate"`
-	LiquidityPoolFee      string `json:"liquidity_pool_fee"`
-	MaxSlippage           string `json:"max_slippage"`
-	MinLiquidityThreshold uint64 `json:"min_liquidity_threshold"`
-	
-	// Citizen ANT distribution parameters
-	CitizenAntRewardRate       string        `json:"citizen_ant_reward_rate"`        // Base rate (e.g., "10" ANT per day)
-	CitizenAntAccumulationLimit string        `json:"citizen_ant_accumulation_limit"` // Max accumulation (e.g., "1000" ANT)
-	CitizenAntDistributionPeriod time.Duration `json:"citizen_ant_distribution_period"` // Distribution period (e.g., 24 hours)
-	
-	// Market making parameters
-	MarketMakingBuyDiscount string `json:"market_making_buy_discount"`  // Buy price discount multiplier (e.g., "0.99" = 1% below market)
-	MarketMakingSellPremium string `json:"market_making_sell_premium"`  // Sell price premium multiplier (e.g., "1.01" = 1% above market)
-	MarketMakingOrderSize   string `json:"market_making_order_size"`    // Order size in ANT (e.g., "1000.0")
+
+	EpochLength                  time.Duration `json:"epoch_length"`
+	EpochCoefficient             string        `json:"epoch_coefficient"`
+	EpochCoefficientMin          string        `json:"epoch_coefficient_min"`
+	EpochCoefficientMax          string        `json:"epoch_coefficient_max"`
+	SupplierEpochAntLimit        string        `json:"supplier_epoch_ant_limit"`
+	CitizenAntDistributionPeriod time.Duration `json:"citizen_ant_distribution_period"`
 }
 
 // ParamSetPairs returns the parameter set pairs
 func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyMinAntAmount, &p.MinAntAmount, validateString),
-		paramtypes.NewParamSetPair(KeyMaxAntAmount, &p.MaxAntAmount, validateString),
-		paramtypes.NewParamSetPair(KeyTradingFeeRate, &p.TradingFeeRate, validateString),
 		paramtypes.NewParamSetPair(KeyMinOrderSize, &p.MinOrderSize, validateString),
 		paramtypes.NewParamSetPair(KeyMaxOrderSize, &p.MaxOrderSize, validateString),
+		paramtypes.NewParamSetPair(KeyTradingFeeRate, &p.TradingFeeRate, validateString),
 		paramtypes.NewParamSetPair(KeyOrderExpiry, &p.OrderExpiry, validateDuration),
 		paramtypes.NewParamSetPair(KeyRequireIdentityVerification, &p.RequireIdentityVerification, validateBool),
 		paramtypes.NewParamSetPair(KeyAntDenom, &p.AntDenom, validateString),
 		paramtypes.NewParamSetPair(KeyMaxOpenOrders, &p.MaxOpenOrders, validateUint32),
 		paramtypes.NewParamSetPair(KeyPricePrecision, &p.PricePrecision, validateString),
-		
-		// New economic parameter pairs
-		paramtypes.NewParamSetPair(KeyMarketMakerRewardRate, &p.MarketMakerRewardRate, validateString),
-		paramtypes.NewParamSetPair(KeyStakingRewardRate, &p.StakingRewardRate, validateString),
-		paramtypes.NewParamSetPair(KeyLiquidityPoolFee, &p.LiquidityPoolFee, validateString),
-		paramtypes.NewParamSetPair(KeyMaxSlippage, &p.MaxSlippage, validateString),
-		paramtypes.NewParamSetPair(KeyMinLiquidityThreshold, &p.MinLiquidityThreshold, validateUint64),
-		
-		// Citizen ANT distribution parameter pairs
-		paramtypes.NewParamSetPair(KeyCitizenAntRewardRate, &p.CitizenAntRewardRate, validateString),
-		paramtypes.NewParamSetPair(KeyCitizenAntAccumulationLimit, &p.CitizenAntAccumulationLimit, validateString),
+		paramtypes.NewParamSetPair(KeyEpochLength, &p.EpochLength, validateDuration),
+		paramtypes.NewParamSetPair(KeyEpochCoefficient, &p.EpochCoefficient, validateString),
+		paramtypes.NewParamSetPair(KeyEpochCoefficientMin, &p.EpochCoefficientMin, validateString),
+		paramtypes.NewParamSetPair(KeyEpochCoefficientMax, &p.EpochCoefficientMax, validateString),
+		paramtypes.NewParamSetPair(KeySupplierEpochAntLimit, &p.SupplierEpochAntLimit, validateString),
 		paramtypes.NewParamSetPair(KeyCitizenAntDistributionPeriod, &p.CitizenAntDistributionPeriod, validateDuration),
-		
-		// Market making parameter pairs
-		paramtypes.NewParamSetPair(KeyMarketMakingBuyDiscount, &p.MarketMakingBuyDiscount, validateString),
-		paramtypes.NewParamSetPair(KeyMarketMakingSellPremium, &p.MarketMakingSellPremium, validateString),
-		paramtypes.NewParamSetPair(KeyMarketMakingOrderSize, &p.MarketMakingOrderSize, validateString),
 	}
 }
 
 // DefaultParams returns the default parameters for the anteil module
 func DefaultParams() Params {
 	return Params{
-		MinAntAmount:                "1000000",      // 1 ANT in micro units
-		MaxAntAmount:                "1000000000",   // 1000 ANT in micro units
-		TradingFeeRate:              "0.001",        // 0.1%
-		MinOrderSize:                "100000",       // 0.1 ANT in micro units
-		MaxOrderSize:                "100000000",    // 100 ANT in micro units
-		OrderExpiry:                 24 * time.Hour, // 24 hours
+		MinOrderSize:                "100000",
+		MaxOrderSize:                "100000000",
+		TradingFeeRate:              "0.001",
+		OrderExpiry:                 24 * time.Hour,
 		RequireIdentityVerification: true,
 		AntDenom:                    "uant",
 		MaxOpenOrders:               10,
-		PricePrecision:              "0.000001", // 6 decimal places
-		
-		// New economic parameters
-		MarketMakerRewardRate: "0.002", // 0.2%
-		StakingRewardRate:     "0.05",  // 5%
-		LiquidityPoolFee:      "0.003", // 0.3%
-		MaxSlippage:           "0.05",  // 5%
-		MinLiquidityThreshold: 1000000, // 1 ANT in micro units
-		
-		// Citizen ANT distribution parameters (default: 10 ANT per day, 1000 ANT limit)
-		CitizenAntRewardRate:       "10000000",        // 10 ANT in micro units (10 * 1,000,000)
-		CitizenAntAccumulationLimit: "1000000000",     // 1000 ANT in micro units (1000 * 1,000,000)
+		PricePrecision:              "0.000001",
+
+		EpochLength:                  DefaultEpochLength,
+		EpochCoefficient:             "1.0",
+		EpochCoefficientMin:          "0.75",
+		EpochCoefficientMax:          "1.50",
+		SupplierEpochAntLimit:        "100000000",
 		CitizenAntDistributionPeriod: DefaultCitizenAntDistributionPeriod,
-		
-		// Market making parameters (default: 1% spread, 1000 ANT order size)
-		MarketMakingBuyDiscount: "0.99",  // 1% below market price
-		MarketMakingSellPremium: "1.01",  // 1% above market price
-		MarketMakingOrderSize:   "1000.0", // 1000 ANT per order
 	}
 }
 
 // Validate validates the parameters
 func (p *Params) Validate() error {
-	if p.MinAntAmount == "" {
-		return fmt.Errorf("MinAntAmount cannot be empty")
-	}
-	if p.MaxAntAmount == "" {
-		return fmt.Errorf("MaxAntAmount cannot be empty")
-	}
-	if p.TradingFeeRate == "" {
-		return fmt.Errorf("TradingFeeRate cannot be empty")
-	}
 	if p.MinOrderSize == "" {
 		return fmt.Errorf("MinOrderSize cannot be empty")
 	}
 	if p.MaxOrderSize == "" {
 		return fmt.Errorf("MaxOrderSize cannot be empty")
+	}
+	if p.TradingFeeRate == "" {
+		return fmt.Errorf("TradingFeeRate cannot be empty")
 	}
 	if p.OrderExpiry <= 0 {
 		return fmt.Errorf("OrderExpiry must be greater than 0")
@@ -191,30 +119,20 @@ func (p *Params) Validate() error {
 	if p.PricePrecision == "" {
 		return fmt.Errorf("PricePrecision cannot be empty")
 	}
-	
-	// Validate new economic parameters
-	if p.MarketMakerRewardRate == "" {
-		return fmt.Errorf("MarketMakerRewardRate cannot be empty")
+	if p.EpochLength <= 0 {
+		return fmt.Errorf("EpochLength must be greater than 0")
 	}
-	if p.StakingRewardRate == "" {
-		return fmt.Errorf("StakingRewardRate cannot be empty")
+	if p.EpochCoefficient == "" {
+		return fmt.Errorf("EpochCoefficient cannot be empty")
 	}
-	if p.LiquidityPoolFee == "" {
-		return fmt.Errorf("LiquidityPoolFee cannot be empty")
+	if p.EpochCoefficientMin == "" {
+		return fmt.Errorf("EpochCoefficientMin cannot be empty")
 	}
-	if p.MaxSlippage == "" {
-		return fmt.Errorf("MaxSlippage cannot be empty")
+	if p.EpochCoefficientMax == "" {
+		return fmt.Errorf("EpochCoefficientMax cannot be empty")
 	}
-	if p.MinLiquidityThreshold == 0 {
-		return fmt.Errorf("MinLiquidityThreshold must be greater than 0")
-	}
-	
-	// Validate citizen ANT distribution parameters
-	if p.CitizenAntRewardRate == "" {
-		return fmt.Errorf("CitizenAntRewardRate cannot be empty")
-	}
-	if p.CitizenAntAccumulationLimit == "" {
-		return fmt.Errorf("CitizenAntAccumulationLimit cannot be empty")
+	if p.SupplierEpochAntLimit == "" {
+		return fmt.Errorf("SupplierEpochAntLimit cannot be empty")
 	}
 	if p.CitizenAntDistributionPeriod <= 0 {
 		return fmt.Errorf("CitizenAntDistributionPeriod must be greater than 0")
@@ -251,17 +169,6 @@ func validateUint32(i interface{}) error {
 	u, ok := i.(uint32)
 	if !ok {
 		return fmt.Errorf("expected uint32, got %T", i)
-	}
-	if u == 0 {
-		return fmt.Errorf("value must be greater than 0")
-	}
-	return nil
-}
-
-func validateUint64(i interface{}) error {
-	u, ok := i.(uint64)
-	if !ok {
-		return fmt.Errorf("expected uint64, got %T", i)
 	}
 	if u == 0 {
 		return fmt.Errorf("value must be greater than 0")

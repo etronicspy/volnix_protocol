@@ -10,140 +10,77 @@ import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "volnix/lizenz/v1/types.proto";
 
-// Query defines the gRPC querier service for lizenz module
 service Query {
-  // Params queries the parameters of the lizenz module
   rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/params";
   }
-  
-  // ActivatedLizenz queries activated LZN for a validator
+
   rpc ActivatedLizenz(QueryActivatedLizenzRequest) returns (QueryActivatedLizenzResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/activated/{validator}";
   }
-  
-  // AllActivatedLizenz queries all activated LZN licenses
+
   rpc AllActivatedLizenz(QueryAllActivatedLizenzRequest) returns (QueryAllActivatedLizenzResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/activated";
   }
-  
-  // DeactivatingLizenz queries deactivating LZN for a validator
+
   rpc DeactivatingLizenz(QueryDeactivatingLizenzRequest) returns (QueryDeactivatingLizenzResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/deactivating/{validator}";
   }
-  
-  // MOAStatus queries MOA status for a validator
+
   rpc MOAStatus(QueryMOAStatusRequest) returns (QueryMOAStatusResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/moa_status/{validator}";
   }
-  
-  // ValidatorIntegration queries integration status for a validator
-  rpc ValidatorIntegration(QueryValidatorIntegrationRequest) returns (QueryValidatorIntegrationResponse) {
-    option (google.api.http).get = "/volnix/lizenz/v1/integration/{validator}";
-  }
-  
-  // GetRewardHistory returns reward history for a validator
+
   rpc GetRewardHistory(QueryRewardHistoryRequest) returns (QueryRewardHistoryResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/reward_history/{validator}";
   }
-  
-  // GetRewardStats returns comprehensive reward statistics for a validator
+
   rpc GetRewardStats(QueryRewardStatsRequest) returns (QueryRewardStatsResponse) {
     option (google.api.http).get = "/volnix/lizenz/v1/reward_stats/{validator}";
   }
 }
 
-// QueryParamsRequest is request type for the Query/Params RPC method
 message QueryParamsRequest {}
+message QueryParamsResponse { Params params = 1; }
 
-// QueryParamsResponse is response type for the Query/Params RPC method
-message QueryParamsResponse {
-  Params params = 1;
-}
+message QueryActivatedLizenzRequest { string validator = 1; }
+message QueryActivatedLizenzResponse { ActivatedLizenz activated_lizenz = 1; }
 
-// QueryActivatedLizenzRequest is request type for the Query/ActivatedLizenz RPC method
-message QueryActivatedLizenzRequest {
-  string validator = 1;
-}
-
-// QueryActivatedLizenzResponse is response type for the Query/ActivatedLizenz RPC method
-message QueryActivatedLizenzResponse {
-  ActivatedLizenz activated_lizenz = 1;
-}
-
-// QueryAllActivatedLizenzRequest is request type for the Query/AllActivatedLizenz RPC method
 message QueryAllActivatedLizenzRequest {
   cosmos.base.query.v1beta1.PageRequest pagination = 1;
 }
-
-// QueryAllActivatedLizenzResponse is response type for the Query/AllActivatedLizenz RPC method
 message QueryAllActivatedLizenzResponse {
   repeated ActivatedLizenz activated_lizenz = 1;
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
 
-// QueryDeactivatingLizenzRequest is request type for the Query/DeactivatingLizenz RPC method
-message QueryDeactivatingLizenzRequest {
-  string validator = 1;
-}
+message QueryDeactivatingLizenzRequest { string validator = 1; }
+message QueryDeactivatingLizenzResponse { DeactivatingLizenz deactivating_lizenz = 1; }
 
-// QueryDeactivatingLizenzResponse is response type for the Query/DeactivatingLizenz RPC method
-message QueryDeactivatingLizenzResponse {
-  DeactivatingLizenz deactivating_lizenz = 1;
-}
+message QueryMOAStatusRequest { string validator = 1; }
+message QueryMOAStatusResponse { MOAStatus moa_status = 1; }
 
-// QueryMOAStatusRequest is request type for the Query/MOAStatus RPC method
-message QueryMOAStatusRequest {
-  string validator = 1;
-}
-
-// QueryMOAStatusResponse is response type for the Query/MOAStatus RPC method
-message QueryMOAStatusResponse {
-  MOAStatus moa_status = 1;
-}
-
-// QueryValidatorIntegrationRequest is request type for the Query/ValidatorIntegration RPC method
-message QueryValidatorIntegrationRequest {
-  string validator = 1;
-}
-
-// QueryValidatorIntegrationResponse is response type for the Query/ValidatorIntegration RPC method
-message QueryValidatorIntegrationResponse {
-  ValidatorIntegration validator_integration = 1;
-}
-
-// QueryRewardHistoryRequest is request type for Query/GetRewardHistory
-message QueryRewardHistoryRequest {
-  string validator = 1; // Validator address
-}
-
-// QueryRewardHistoryResponse is response type for Query/GetRewardHistory
+message QueryRewardHistoryRequest { string validator = 1; }
 message QueryRewardHistoryResponse {
   string validator = 1;
   repeated RewardRecord reward_history = 2;
   uint64 total_records = 3;
 }
 
-// QueryRewardStatsRequest is request type for Query/GetRewardStats
-message QueryRewardStatsRequest {
-  string validator = 1; // Validator address
-}
-
-// QueryRewardStatsResponse is response type for Query/GetRewardStats
+message QueryRewardStatsRequest { string validator = 1; }
 message QueryRewardStatsResponse {
-  string total_rewards_earned = 1; // Total WRT rewards earned (cumulative)
-  string last_reward_block = 2; // Block height of last reward
-  google.protobuf.Timestamp last_reward_time = 3; // Timestamp of last reward
-  repeated RewardRecord reward_history = 4; // Recent reward history
-  uint64 total_rewards_count = 5; // Total number of reward distributions
+  string total_rewards_earned = 1;
+  string last_reward_block = 2;
+  google.protobuf.Timestamp last_reward_time = 3;
+  repeated RewardRecord reward_history = 4;
+  uint64 total_rewards_count = 5;
 }
 
-// RewardRecord represents a single reward distribution record
 message RewardRecord {
   uint64 block_height = 1;
-  string reward_amount = 2; // in micro WRT
+  string reward_amount = 2;
   int64 timestamp = 3;
-  string moa_compliance = 4; // MOA compliance ratio at time of reward
-  string penalty_applied = 5; // Penalty multiplier applied
-  string base_reward = 6; // Base reward before penalty
+  string moa_compliance = 4;
+  string penalty_applied = 5;
+  string base_reward = 6;
 }

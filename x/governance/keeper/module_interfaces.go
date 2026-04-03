@@ -2,9 +2,10 @@ package keeper
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	anteiltypes "github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 	consensustypes "github.com/volnix-protocol/volnix-protocol/x/consensus/types"
+	identtypes "github.com/volnix-protocol/volnix-protocol/x/ident/types"
 	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
@@ -24,5 +25,11 @@ type AnteilKeeperForGovernance interface {
 type ConsensusKeeperForGovernance interface {
 	GetParams(ctx sdk.Context) consensustypes.Params
 	SetParams(ctx sdk.Context, params consensustypes.Params)
+}
+
+// IdentKeeperForGovernance defines the interface for ident keeper used by governance
+type IdentKeeperForGovernance interface {
+	GetParams(ctx sdk.Context) identtypes.Params
+	SetParams(ctx sdk.Context, params identtypes.Params)
 }
 

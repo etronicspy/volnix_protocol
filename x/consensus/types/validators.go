@@ -19,9 +19,18 @@ func InitialValidatorsToAbci(initial []*consensusv1.InitialValidator) []abci.Val
 			continue
 		}
 		var pubKey cmtproto.PublicKey
-		if len(v.PubKey) > 0 {
-			if err := pubKey.Unmarshal(v.PubKey); err != nil {
-				continue
+		switch v.PubKeyType {
+		case "ed25519", "":
+			if len(v.PubKey) > 0 {
+				pubKey = cmtproto.PublicKey{
+					Sum: &cmtproto.PublicKey_Ed25519{Ed25519: v.PubKey},
+				}
+			}
+		default:
+			if len(v.PubKey) > 0 {
+				if err := pubKey.Unmarshal(v.PubKey); err != nil {
+					continue
+				}
 			}
 		}
 		out[i] = abci.ValidatorUpdate{
@@ -40,15 +49,22 @@ func AbciValidatorsToInitial(validators []abci.ValidatorUpdate) []*consensusv1.I
 	}
 	out := make([]*consensusv1.InitialValidator, len(validators))
 	for i, v := range validators {
-		var pubKeyBz []byte
-		if n := v.PubKey.Size(); n > 0 {
-			pubKeyBz = make([]byte, n)
-			v.PubKey.MarshalToSizedBuffer(pubKeyBz)
+		iv := &consensusv1.InitialValidator{
+			Power: v.Power,
 		}
-		out[i] = &consensusv1.InitialValidator{
-			PubKey: pubKeyBz,
-			Power:  v.Power,
+		switch k := v.PubKey.Sum.(type) {
+		case *cmtproto.PublicKey_Ed25519:
+			iv.PubKeyType = "ed25519"
+			iv.PubKey = k.Ed25519
+		default:
+			iv.PubKeyType = "unknown"
+			if n := v.PubKey.Size(); n > 0 {
+				bz := make([]byte, n)
+				v.PubKey.MarshalToSizedBuffer(bz)
+				iv.PubKey = bz
+			}
 		}
+		out[i] = iv
 	}
 	return out
 }

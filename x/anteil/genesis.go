@@ -9,15 +9,12 @@ import (
 
 func DefaultGenesis() *anteilv1.GenesisState {
 	return &anteilv1.GenesisState{
-		Params:           atypes.DefaultParams().ToProto(),
-		Orders:           []*anteilv1.Order{},
-		Trades:           []*anteilv1.Trade{},
-		UserPositions:    []*anteilv1.UserPosition{},
-		Auctions:         []*anteilv1.Auction{},
-		OrderBook:        &anteilv1.OrderBook{},
-		MarketMakers:     []*anteilv1.MarketMaker{},
-		LiquidityPools:   []*anteilv1.LiquidityPool{},
-		StakingRewards:   []*anteilv1.StakingReward{},
+		Params:        atypes.DefaultParams().ToProto(),
+		Orders:        []*anteilv1.Order{},
+		Trades:        []*anteilv1.Trade{},
+		UserPositions: []*anteilv1.UserPosition{},
+		OrderBook:     &anteilv1.OrderBook{},
+		EpochState:    &anteilv1.EpochState{},
 	}
 }
 
@@ -48,14 +45,11 @@ func InitGenesis(ctx sdk.Context, k *keeper.Keeper, genState *anteilv1.GenesisSt
 func ExportGenesis(ctx sdk.Context, k *keeper.Keeper) *anteilv1.GenesisState {
 	params := k.GetParams(ctx)
 	return &anteilv1.GenesisState{
-		Params:           params.ToProto(),
-		Orders:           []*anteilv1.Order{},
-		Trades:           []*anteilv1.Trade{},
-		UserPositions:    []*anteilv1.UserPosition{},
-		Auctions:         []*anteilv1.Auction{},
-		OrderBook:        &anteilv1.OrderBook{},
-		MarketMakers:     []*anteilv1.MarketMaker{},
-		LiquidityPools:   []*anteilv1.LiquidityPool{},
-		StakingRewards:   []*anteilv1.StakingReward{},
+		Params:        params.ToProto(),
+		Orders:        []*anteilv1.Order{},
+		Trades:        []*anteilv1.Trade{},
+		UserPositions: []*anteilv1.UserPosition{},
+		OrderBook:     &anteilv1.OrderBook{},
+		EpochState:    &anteilv1.EpochState{},
 	}
 }

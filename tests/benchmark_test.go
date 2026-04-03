@@ -91,7 +91,7 @@ func BenchmarkCreateVerifiedAccount(b *testing.B) {
 
 	addrs := GenerateTestAddresses("", b.N)
 	for i := 0; i < b.N; i++ {
-		account := identtypes.NewVerifiedAccount(addrs[i], identv1.Role_ROLE_CITIZEN, fmt.Sprintf("hash%d", i))
+		account := identtypes.NewVerifiedAccount(addrs[i], identv1.Role_ROLE_SUPPLIER, fmt.Sprintf("hash%d", i))
 		keeper.SetVerifiedAccount(ctx, account)
 	}
 }
@@ -159,95 +159,6 @@ func BenchmarkExecuteTrade(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		keeper.ExecuteTrade(ctx, buyOrderID, sellOrderID)
-	}
-}
-
-func BenchmarkCreateAuction(b *testing.B) {
-	// Setup
-	interfaceRegistry := cdctypes.NewInterfaceRegistry()
-	std.RegisterInterfaces(interfaceRegistry)
-	cdc := codec.NewProtoCodec(interfaceRegistry)
-
-	storeKey := storetypes.NewKVStoreKey("test_anteil")
-	tKey := storetypes.NewTransientStoreKey("test_transient_store")
-	ctx := testutil.DefaultContext(storeKey, tKey)
-
-	paramsKeeper := paramskeeper.NewKeeper(cdc, codec.NewLegacyAmino(), storeKey, tKey)
-	paramStore := paramsKeeper.Subspace(anteiltypes.ModuleName)
-	paramStore.WithKeyTable(anteiltypes.ParamKeyTable())
-
-	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
-	keeper.SetParams(ctx, anteiltypes.DefaultParams())
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		auction := anteiltypes.NewAuction(uint64(1000+i), "1000000", "1.0")
-		keeper.CreateAuction(ctx, auction)
-	}
-}
-
-func BenchmarkPlaceBid(b *testing.B) {
-	// Setup
-	interfaceRegistry := cdctypes.NewInterfaceRegistry()
-	std.RegisterInterfaces(interfaceRegistry)
-	cdc := codec.NewProtoCodec(interfaceRegistry)
-
-	storeKey := storetypes.NewKVStoreKey("test_anteil")
-	tKey := storetypes.NewTransientStoreKey("test_transient_store")
-	ctx := testutil.DefaultContext(storeKey, tKey)
-
-	paramsKeeper := paramskeeper.NewKeeper(cdc, codec.NewLegacyAmino(), storeKey, tKey)
-	paramStore := paramsKeeper.Subspace(anteiltypes.ModuleName)
-	paramStore.WithKeyTable(anteiltypes.ParamKeyTable())
-
-	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
-	keeper.SetParams(ctx, anteiltypes.DefaultParams())
-
-	// Create auction
-	auction := anteiltypes.NewAuction(uint64(1000), "1000000", "1.0")
-	keeper.CreateAuction(ctx, auction)
-	auctionID := auction.AuctionId
-
-	b.ResetTimer()
-
-	addrs := GenerateTestAddresses("", b.N)
-	for i := 0; i < b.N; i++ {
-		keeper.PlaceBid(ctx, auctionID, addrs[i], "1000000")
-	}
-}
-
-func BenchmarkSettleAuction(b *testing.B) {
-	// Setup
-	interfaceRegistry := cdctypes.NewInterfaceRegistry()
-	std.RegisterInterfaces(interfaceRegistry)
-	cdc := codec.NewProtoCodec(interfaceRegistry)
-
-	storeKey := storetypes.NewKVStoreKey("test_anteil")
-	tKey := storetypes.NewTransientStoreKey("test_transient_store")
-	ctx := testutil.DefaultContext(storeKey, tKey)
-
-	paramsKeeper := paramskeeper.NewKeeper(cdc, codec.NewLegacyAmino(), storeKey, tKey)
-	paramStore := paramsKeeper.Subspace(anteiltypes.ModuleName)
-	paramStore.WithKeyTable(anteiltypes.ParamKeyTable())
-
-	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
-	keeper.SetParams(ctx, anteiltypes.DefaultParams())
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		// Create auction
-		auction := anteiltypes.NewAuction(uint64(1000+i), "1000000", "1.0")
-		keeper.CreateAuction(ctx, auction)
-		auctionID := auction.AuctionId
-
-		// Place bids
-		keeper.PlaceBid(ctx, auctionID, TestAddresses.Validator, "1000000")
-		keeper.PlaceBid(ctx, auctionID, TestAddresses.Validator2, "1500000")
-
-		// Settle auction
-		keeper.SettleAuction(ctx, auctionID)
 	}
 }
 
@@ -394,12 +305,17 @@ func BenchmarkEndBlocker(b *testing.B) {
 	keeper := anteilkeeper.NewKeeper(cdc, storeKey, paramStore)
 	keeper.SetParams(ctx, anteiltypes.DefaultParams())
 
-	bidderAddr := TestAddresses.Validator
+	addrs := GenerateTestAddresses("", 100)
 	for i := 0; i < 100; i++ {
-		auction := anteiltypes.NewAuction(uint64(1000+i), "1000000", "1.0")
-		keeper.CreateAuction(ctx, auction)
-		auctionID := auction.AuctionId
-		keeper.PlaceBid(ctx, auctionID, bidderAddr, "1000000")
+		order := anteiltypes.NewOrder(
+			addrs[i],
+			anteilv1.OrderType_ORDER_TYPE_LIMIT,
+			anteilv1.OrderSide_ORDER_SIDE_BUY,
+			"1000000",
+			"1.5",
+			fmt.Sprintf("hash%d", i),
+		)
+		keeper.CreateOrder(ctx, order)
 	}
 
 	b.ResetTimer()
@@ -464,22 +380,7 @@ func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
 	suite.T().Logf("Executed 100 trades in %v", duration)
 	require.Less(suite.T(), duration, 2*time.Second, "Trade execution should be fast")
 
-	// Test 3: Measure auction settlement performance
-	start = time.Now()
-
-	for i := 0; i < 100; i++ {
-		auction := anteiltypes.NewAuction(uint64(1000+i), "1000000", "1.0")
-		suite.anteilKeeper.CreateAuction(suite.ctx, auction)
-		auctionID := auction.AuctionId
-		suite.anteilKeeper.PlaceBid(suite.ctx, auctionID, TestAddresses.Validator, "1000000")
-		suite.anteilKeeper.SettleAuction(suite.ctx, auctionID)
-	}
-
-	duration = time.Since(start)
-	suite.T().Logf("Created and settled 100 auctions in %v", duration)
-	require.Less(suite.T(), duration, 3*time.Second, "Auction settlement should be fast")
-
-	// Test 4: Measure query performance
+	// Test 3: Measure query performance
 	start = time.Now()
 
 	for i := 0; i < 1000; i++ {
@@ -512,7 +413,7 @@ func (suite *BenchmarkTestSuite) TestMemoryUsage() {
 
 	accAddrs := GenerateTestAddresses("", 10000)
 	for i := 0; i < 10000; i++ {
-		account := identtypes.NewVerifiedAccount(accAddrs[i], identv1.Role_ROLE_CITIZEN, fmt.Sprintf("hash%d", i))
+		account := identtypes.NewVerifiedAccount(accAddrs[i], identv1.Role_ROLE_SUPPLIER, fmt.Sprintf("hash%d", i))
 		suite.identKeeper.SetVerifiedAccount(suite.ctx, account)
 	}
 

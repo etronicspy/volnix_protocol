@@ -53,8 +53,8 @@ func (suite *FullTransactionCycleTestSuite) SetupTest() {
 }
 
 // TestCompleteUserJourney tests the full user journey:
-// 1. Identity Verification (Guest → Citizen)
-// 2. Role Change (Citizen → Validator) with ZKP
+// 1. Identity Verification (Guest → Supplier)
+// 2. Role Change (Supplier → Validator) with ZKP
 // 3. LZN Activation (Validator activates mining license)
 // 4. ANT Market Participation (Create orders, place bids)
 func (suite *FullTransactionCycleTestSuite) TestCompleteUserJourney() {
@@ -63,42 +63,42 @@ func (suite *FullTransactionCycleTestSuite) TestCompleteUserJourney() {
 
 	suite.T().Log("=== Phase 1: Identity Verification ===")
 
-	// Step 1: Verify identity as Guest (becomes Citizen)
+	// Step 1: Verify identity as Guest (becomes Supplier)
 	// Note: In real scenario, verification provider would be registered first
 	// For test, we'll use empty string or skip provider validation
 	verifyMsg := &identv1.MsgVerifyIdentity{
-		Address:            userAddr,
-		ZkpProof:           "zkp_proof_verification_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
-		VerificationProvider: "", // Empty for test (will be validated in keeper)
-		VerificationCost:   nil, // Optional
-		DesiredRole:        identv1.Role_ROLE_CITIZEN,
+		Address:              userAddr,
+		ZkpProof:             "zkp_proof_verification_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
+		VerificationProvider: "",                                                                                    // Empty for test (will be validated in keeper)
+		VerificationCost:     nil,                                                                                   // Optional
+		DesiredRole:          identv1.Role_ROLE_SUPPLIER,
 	}
 
 	verifyResp, err := suite.identMsgServer.VerifyIdentity(ctx, verifyMsg)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), verifyResp)
-	suite.T().Log("✓ Identity verified, user is now Citizen")
+	suite.T().Log("✓ Identity verified, user is now Supplier")
 
 	// Verify account was created
 	account, err := suite.identKeeper.GetVerifiedAccount(ctx, userAddr)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, account.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, account.Role)
 	require.True(suite.T(), account.IsActive)
 
-	suite.T().Log("=== Phase 2: Role Change (Citizen → Validator) ===")
+	suite.T().Log("=== Phase 2: Role Change (Supplier → Validator) ===")
 
-	// Step 2: Change role from Citizen to Validator (requires ZKP proof)
+	// Step 2: Change role from Supplier to Validator (requires ZKP proof)
 	changeRoleMsg := &identv1.MsgChangeRole{
-		Address:  userAddr,
-		NewRole:  identv1.Role_ROLE_VALIDATOR,
-		ZkpProof: "zkp_proof_role_change_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
-		ChangeFee: nil, // Optional
+		Address:   userAddr,
+		NewRole:   identv1.Role_ROLE_VALIDATOR,
+		ZkpProof:  "zkp_proof_role_change_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
+		ChangeFee: nil,                                                                                  // Optional
 	}
 
 	changeRoleResp, err := suite.identMsgServer.ChangeRole(ctx, changeRoleMsg)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), changeRoleResp)
-	suite.T().Log("✓ Role changed from Citizen to Validator")
+	suite.T().Log("✓ Role changed from Supplier to Validator")
 
 	// Verify role was changed
 	account, err = suite.identKeeper.GetVerifiedAccount(ctx, userAddr)
@@ -137,11 +137,11 @@ func (suite *FullTransactionCycleTestSuite) TestCompleteUserJourney() {
 
 	// Step 6: Create sell order (user selling ANT)
 	sellOrderMsg := &anteilv1.MsgPlaceOrder{
-		Owner:      userAddr,
-		OrderType:  anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		OrderSide:  anteilv1.OrderSide_ORDER_SIDE_SELL,
-		AntAmount:  "1000000", // 1M ANT
-		Price:      "1.5",     // 1.5 WRT per ANT
+		Owner:        userAddr,
+		OrderType:    anteilv1.OrderType_ORDER_TYPE_LIMIT,
+		OrderSide:    anteilv1.OrderSide_ORDER_SIDE_SELL,
+		AntAmount:    "1000000", // 1M ANT
+		Price:        "1.5",     // 1.5 WRT per ANT
 		IdentityHash: "hash_user_123",
 	}
 
@@ -156,34 +156,6 @@ func (suite *FullTransactionCycleTestSuite) TestCompleteUserJourney() {
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), anteilv1.OrderStatus_ORDER_STATUS_OPEN, order.Status)
 	require.Equal(suite.T(), userAddr, order.Owner)
-
-	// Step 7: Create auction and place bid (validator bidding for block creation)
-	auction := anteiltypes.NewAuction(uint64(1000), "1000000", "1.0")
-	err = suite.anteilKeeper.CreateAuction(ctx, auction)
-	require.NoError(suite.T(), err)
-	auctionID := auction.AuctionId
-	suite.T().Logf("✓ Auction created: %s", auctionID)
-
-	// Place bid in auction (only validators can bid)
-	placeBidMsg := &anteilv1.MsgPlaceBid{
-		Bidder:      userAddr,
-		AuctionId:   auctionID,
-		Amount:      "1000000", // 1M ANT bid
-		IdentityHash: "hash_user_123",
-	}
-
-	placeBidResp, err := suite.anteilMsgServer.PlaceBid(ctx, placeBidMsg)
-	require.NoError(suite.T(), err)
-	require.NotNil(suite.T(), placeBidResp)
-	suite.T().Log("✓ Bid placed in auction (validator-only operation verified)")
-
-	// Verify bid was placed
-	// Note: Bids might be stored separately, so we check that PlaceBid succeeded
-	// In real implementation, bids would be retrieved via GetBid or GetAllBids
-	auctionRetrieved, err := suite.anteilKeeper.GetAuction(ctx, auctionID)
-	require.NoError(suite.T(), err)
-	require.NotNil(suite.T(), auctionRetrieved)
-	// Bids are stored separately, so we just verify auction exists
 
 	suite.T().Log("=== Phase 5: Verification ===")
 
@@ -207,7 +179,7 @@ func (suite *FullTransactionCycleTestSuite) TestCompleteUserJourney() {
 
 	suite.T().Log("🎉 Complete user journey test passed!")
 	suite.T().Log("✓ Identity verified")
-	suite.T().Log("✓ Role changed (Citizen → Validator)")
+	suite.T().Log("✓ Role changed (Supplier → Validator)")
 	suite.T().Log("✓ LZN activated")
 	suite.T().Log("✓ ANT market operations completed")
 }
@@ -217,16 +189,16 @@ func (suite *FullTransactionCycleTestSuite) TestRoleChangeValidation() {
 	ctx := suite.testCtx.Ctx
 	userAddr := TestAddresses.Test2
 
-	// Step 1: Create Citizen account
-	citizenAccount := identtypes.NewVerifiedAccount(userAddr, identv1.Role_ROLE_CITIZEN, "hash_456")
+	// Step 1: Create Supplier account
+	citizenAccount := identtypes.NewVerifiedAccount(userAddr, identv1.Role_ROLE_SUPPLIER, "hash_456")
 	err := suite.identKeeper.SetVerifiedAccount(ctx, citizenAccount)
 	require.NoError(suite.T(), err)
 
 	// Step 2: Try to change role directly to Validator (should require ZKP)
 	changeRoleMsg := &identv1.MsgChangeRole{
-		Address:  userAddr,
-		NewRole:  identv1.Role_ROLE_VALIDATOR,
-		ZkpProof: "zkp_proof_valid_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
+		Address:   userAddr,
+		NewRole:   identv1.Role_ROLE_VALIDATOR,
+		ZkpProof:  "zkp_proof_valid_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
 		ChangeFee: nil,
 	}
 
@@ -241,9 +213,9 @@ func (suite *FullTransactionCycleTestSuite) TestRoleChangeValidation() {
 
 	// Step 3: Try invalid role change (Validator → Guest) - should fail
 	invalidChangeMsg := &identv1.MsgChangeRole{
-		Address:  userAddr,
-		NewRole:  identv1.Role_ROLE_GUEST,
-		ZkpProof: "zkp_proof_invalid_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
+		Address:   userAddr,
+		NewRole:   identv1.Role_ROLE_GUEST,
+		ZkpProof:  "zkp_proof_invalid_123456789012345678901234567890123456789012345678901234567890", // Must be >= 64 bytes
 		ChangeFee: nil,
 	}
 
@@ -255,54 +227,6 @@ func (suite *FullTransactionCycleTestSuite) TestRoleChangeValidation() {
 	account, err = suite.identKeeper.GetVerifiedAccount(ctx, userAddr)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_VALIDATOR, account.Role) // Still validator
-}
-
-// TestAuctionAccessControl tests that only validators can place bids in auctions
-func (suite *FullTransactionCycleTestSuite) TestAuctionAccessControl() {
-	ctx := suite.testCtx.Ctx
-	citizenAddr := TestAddresses.Test3
-	validatorAddr := TestAddresses.Validator2
-
-	// Step 1: Create Citizen account
-	citizenAccount := identtypes.NewVerifiedAccount(citizenAddr, identv1.Role_ROLE_CITIZEN, "hash_citizen")
-	err := suite.identKeeper.SetVerifiedAccount(ctx, citizenAccount)
-	require.NoError(suite.T(), err)
-
-	// Step 2: Create Validator account
-	validatorAccount := identtypes.NewVerifiedAccount(validatorAddr, identv1.Role_ROLE_VALIDATOR, "hash_validator")
-	err = suite.identKeeper.SetVerifiedAccount(ctx, validatorAccount)
-	require.NoError(suite.T(), err)
-
-	// Step 3: Create auction
-	auction := anteiltypes.NewAuction(uint64(2000), "1000000", "1.0")
-	err = suite.anteilKeeper.CreateAuction(ctx, auction)
-	require.NoError(suite.T(), err)
-	auctionID := auction.AuctionId
-
-	// Step 4: Citizen tries to place bid - should fail
-	citizenBidMsg := &anteilv1.MsgPlaceBid{
-		Bidder:      citizenAddr,
-		AuctionId:   auctionID,
-		Amount:      "1000000",
-		IdentityHash: "hash_citizen",
-	}
-
-	_, err = suite.anteilMsgServer.PlaceBid(ctx, citizenBidMsg)
-	require.Error(suite.T(), err) // Should fail - only validators can bid
-	suite.T().Log("✓ Citizen correctly rejected from auction bidding")
-
-	// Step 5: Validator places bid - should succeed
-	validatorBidMsg := &anteilv1.MsgPlaceBid{
-		Bidder:      validatorAddr,
-		AuctionId:   auctionID,
-		Amount:      "1000000",
-		IdentityHash: "hash_validator",
-	}
-
-	validatorBidResp, err := suite.anteilMsgServer.PlaceBid(ctx, validatorBidMsg)
-	require.NoError(suite.T(), err)
-	require.NotNil(suite.T(), validatorBidResp)
-	suite.T().Log("✓ Validator successfully placed bid")
 }
 
 func TestFullTransactionCycleTestSuite(t *testing.T) {

@@ -18,27 +18,17 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 
 // RegisterInterfaces registers the consensus types on the interface registry.
 func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
-	// Register all Msg types
 	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&consensusv1.MsgSelectBlockCreator{},
+		&consensusv1.MsgDeclarePerHeightBurn{},
 		&consensusv1.MsgUpdateConsensusState{},
 		&consensusv1.MsgSetValidatorWeight{},
-		&consensusv1.MsgProcessHalving{},
-		&consensusv1.MsgSelectBlockProducer{},
-		&consensusv1.MsgCalculateBlockTime{},
-		&consensusv1.MsgCommitBid{},
-		&consensusv1.MsgRevealBid{},
+		&consensusv1.MsgRegisterConsensusMapping{},
 	)
 
-	// Register all MsgResponse types
 	registry.RegisterImplementations((*txtypes.MsgResponse)(nil),
-		&consensusv1.MsgSelectBlockCreatorResponse{},
+		&consensusv1.MsgDeclarePerHeightBurnResponse{},
 		&consensusv1.MsgUpdateConsensusStateResponse{},
 		&consensusv1.MsgSetValidatorWeightResponse{},
-		&consensusv1.MsgProcessHalvingResponse{},
-		&consensusv1.MsgSelectBlockProducerResponse{},
-		&consensusv1.MsgCalculateBlockTimeResponse{},
-		&consensusv1.MsgCommitBidResponse{},
-		&consensusv1.MsgRevealBidResponse{},
+		&consensusv1.MsgRegisterConsensusMappingResponse{},
 	)
 }

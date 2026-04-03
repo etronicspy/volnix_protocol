@@ -34,14 +34,13 @@ func TestNewDeactivatingLizenz(t *testing.T) {
 }
 
 func TestNewMOAStatus(t *testing.T) {
-	status := types.NewMOAStatus("cosmos1validator", "1000000", "500000")
+	status := types.NewMOAStatus("cosmos1validator")
 
 	require.NotNil(t, status)
 	require.Equal(t, "cosmos1validator", status.Validator)
-	require.Equal(t, "1000000", status.CurrentMoa)
-	require.Equal(t, "500000", status.RequiredMoa)
 	require.True(t, status.IsCompliant)
 	require.NotNil(t, status.LastActivity)
+	require.NotNil(t, status.LastBurnTime)
 }
 
 func TestIsActivatedLizenzValid(t *testing.T) {
@@ -177,8 +176,6 @@ func TestIsMOAStatusValid(t *testing.T) {
 			name: "valid MOA status",
 			status: &lizenzv1.MOAStatus{
 				Validator:    "cosmos1validator",
-				CurrentMoa:   "1000000",
-				RequiredMoa:  "500000",
 				LastActivity: timestamppb.Now(),
 				IsCompliant:  true,
 			},
@@ -188,34 +185,10 @@ func TestIsMOAStatusValid(t *testing.T) {
 			name: "empty validator",
 			status: &lizenzv1.MOAStatus{
 				Validator:    "",
-				CurrentMoa:   "1000000",
-				RequiredMoa:  "500000",
 				LastActivity: timestamppb.Now(),
 				IsCompliant:  true,
 			},
 			wantErr: types.ErrEmptyValidator,
-		},
-		{
-			name: "empty current MOA",
-			status: &lizenzv1.MOAStatus{
-				Validator:    "cosmos1validator",
-				CurrentMoa:   "",
-				RequiredMoa:  "500000",
-				LastActivity: timestamppb.Now(),
-				IsCompliant:  true,
-			},
-			wantErr: types.ErrEmptyCurrentMOA,
-		},
-		{
-			name: "empty required MOA",
-			status: &lizenzv1.MOAStatus{
-				Validator:    "cosmos1validator",
-				CurrentMoa:   "1000000",
-				RequiredMoa:  "",
-				LastActivity: timestamppb.Now(),
-				IsCompliant:  true,
-			},
-			wantErr: types.ErrEmptyRequiredMOA,
 		},
 	}
 
@@ -252,17 +225,13 @@ func TestUpdateMOAStatusActivity(t *testing.T) {
 	oldTime := time.Now().Add(-24 * time.Hour)
 	status := &lizenzv1.MOAStatus{
 		Validator:    "cosmos1validator",
-		CurrentMoa:   "1000000",
-		RequiredMoa:  "500000",
 		LastActivity: timestamppb.New(oldTime),
 		IsCompliant:  true,
 	}
 
-	newMOA := "1500000"
-	types.UpdateMOAStatusActivity(status, newMOA)
+	types.UpdateMOAStatusActivity(status)
 
 	require.True(t, status.LastActivity.AsTime().After(oldTime))
-	require.Equal(t, newMOA, status.CurrentMoa)
 }
 
 func TestCalculateMOA(t *testing.T) {

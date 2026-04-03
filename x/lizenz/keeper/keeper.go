@@ -529,51 +529,21 @@ func (k Keeper) CheckMOA(ctx sdk.Context, validator string) (bool, error) {
 		return false, err
 	}
 
-	// Parse MOA values for comparison
-	currentMoa, err := strconv.ParseInt(status.CurrentMoa, 10, 64)
-	if err != nil {
-		return false, fmt.Errorf("invalid current MOA: %w", err)
-	}
-
-	requiredMoa, err := strconv.ParseInt(status.RequiredMoa, 10, 64)
-	if err != nil {
-		return false, fmt.Errorf("invalid required MOA: %w", err)
-	}
-
-	return currentMoa >= requiredMoa, nil
+	return status.IsCompliant, nil
 }
 
-// GetMOACompliance returns the MOA compliance ratio for a validator
-// Returns compliance ratio: current_moa / required_moa
-// Returns 1.0 if validator has no MOA status (assumes compliance)
-// Returns error if MOA status exists but is invalid
+// GetMOACompliance returns the MOA compliance ratio for a validator.
+// Returns 1.0 if compliant or no MOA status exists, 0.0 if non-compliant.
 func (k Keeper) GetMOACompliance(ctx sdk.Context, validator string) (float64, error) {
 	status, err := k.GetMOAStatus(ctx, validator)
 	if err != nil {
-		// If no MOA status exists, assume full compliance
 		return 1.0, nil
 	}
 
-	// Parse MOA values
-	currentMoa, err := strconv.ParseFloat(status.CurrentMoa, 64)
-	if err != nil {
-		return 0.0, fmt.Errorf("invalid current MOA: %w", err)
+	if status.IsCompliant {
+		return 1.0, nil
 	}
-
-	requiredMoa, err := strconv.ParseFloat(status.RequiredMoa, 64)
-	if err != nil {
-		return 0.0, fmt.Errorf("invalid required MOA: %w", err)
-	}
-
-	// Avoid division by zero
-	if requiredMoa == 0 {
-		return 1.0, nil // If no requirement, assume compliance
-	}
-
-	// Calculate compliance ratio
-	compliance := currentMoa / requiredMoa
-
-	return compliance, nil
+	return 0.0, nil
 }
 
 // BeginBlocker processes MOA violations and inactive LZN licenses
@@ -759,13 +729,7 @@ func (k Keeper) UpdateLizenzActivity(ctx sdk.Context, validator string) error {
 
 	// Update MOA status activity
 	if moaStatus, err := k.GetMOAStatus(ctx, validator); err == nil {
-		// Calculate new MOA based on activity
-		params := k.GetParams(ctx)
-		newMOA, err := types.CalculateMOA("activity_data", params)
-		if err != nil {
-			return err
-		}
-		types.UpdateMOAStatusActivity(moaStatus, newMOA, ctx.BlockTime())
+		types.UpdateMOAStatusActivity(moaStatus, ctx.BlockTime())
 		if err := k.SetMOAStatus(ctx, moaStatus); err != nil {
 			return err
 		}

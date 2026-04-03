@@ -8,9 +8,9 @@ import (
 // ToProto converts local Params to protobuf Params
 func (p Params) ToProto() *identv1.Params {
 	return &identv1.Params{
-		CitizenActivityPeriod:        durationpb.New(p.CitizenActivityPeriod),
-		ValidatorActivityPeriod:      durationpb.New(p.ValidatorActivityPeriod),
-		MaxIdentitiesPerAddress:      p.MaxIdentitiesPerAddress,
+		MoaSupplierWindow:            durationpb.New(p.MoaSupplierWindow),
+		MoaValidatorWindow:           durationpb.New(p.MoaValidatorWindow),
+		MaxActiveSuppliers:           p.MaxActiveSuppliers,
 		RequireIdentityVerification:  p.RequireIdentityVerification,
 		DefaultVerificationProvider:  p.DefaultVerificationProvider,
 		VerificationCost:             &p.VerificationCost,
@@ -25,9 +25,9 @@ func ParamsFromProto(pp *identv1.Params) Params {
 		return DefaultParams()
 	}
 	return Params{
-		CitizenActivityPeriod:        pp.CitizenActivityPeriod.AsDuration(),
-		ValidatorActivityPeriod:      pp.ValidatorActivityPeriod.AsDuration(),
-		MaxIdentitiesPerAddress:      pp.MaxIdentitiesPerAddress,
+		MoaSupplierWindow:            pp.MoaSupplierWindow.AsDuration(),
+		MoaValidatorWindow:           pp.MoaValidatorWindow.AsDuration(),
+		MaxActiveSuppliers:           pp.MaxActiveSuppliers,
 		RequireIdentityVerification:  pp.RequireIdentityVerification,
 		DefaultVerificationProvider:  pp.DefaultVerificationProvider,
 		VerificationCost:             *pp.VerificationCost,

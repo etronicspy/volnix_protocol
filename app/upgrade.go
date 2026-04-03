@@ -154,24 +154,20 @@ func migrateLizenzModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
 }
 
 // migrateAnteilModuleV0_3_0 migrates anteil module to v0.3.0
-// Updates module params to include new fields with defaults.
 func migrateAnteilModuleV0_3_0(ctx sdk.Context, app *VolnixApp) error {
 	params := app.anteilKeeper.GetParams(ctx)
 
-	if params.StakingRewardRate == "" {
-		params.StakingRewardRate = "0.05"
+	if params.EpochCoefficient == "" {
+		params.EpochCoefficient = "1.0"
 	}
-	if params.LiquidityPoolFee == "" {
-		params.LiquidityPoolFee = "0.003"
+	if params.EpochCoefficientMin == "" {
+		params.EpochCoefficientMin = "0.75"
 	}
-	if params.MarketMakingBuyDiscount == "" {
-		params.MarketMakingBuyDiscount = "0.99"
+	if params.EpochCoefficientMax == "" {
+		params.EpochCoefficientMax = "1.50"
 	}
-	if params.MarketMakingSellPremium == "" {
-		params.MarketMakingSellPremium = "1.01"
-	}
-	if params.MarketMakingOrderSize == "" {
-		params.MarketMakingOrderSize = "1000.0"
+	if params.SupplierEpochAntLimit == "" {
+		params.SupplierEpochAntLimit = "0"
 	}
 
 	app.anteilKeeper.SetParams(ctx, params)

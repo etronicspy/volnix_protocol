@@ -6,20 +6,11 @@ option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/vol
 
 import "volnix/anteil/v1/types.proto";
 
-// GenesisState defines the anteil module's genesis state.
 message GenesisState {
   Params params = 1;
   repeated Order orders = 2;
   repeated Trade trades = 3;
   repeated UserPosition user_positions = 4;
-  repeated Auction auctions = 5;
-  OrderBook order_book = 6;
-  
-  // New economic state
-  repeated MarketMaker market_makers = 7;
-  repeated LiquidityPool liquidity_pools = 8;
-  repeated StakingReward staking_rewards = 9;
+  OrderBook order_book = 5;
+  EpochState epoch_state = 6;
 }
-
-
-

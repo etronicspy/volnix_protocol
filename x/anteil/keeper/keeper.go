@@ -85,7 +85,7 @@ func (k Keeper) SetOrder(ctx sdk.Context, order *anteilv1.Order) error {
 			return anteiltypes.ErrAccountNotFound
 		}
 		switch account.Role {
-		case identv1.Role_ROLE_CITIZEN, identv1.Role_ROLE_VALIDATOR:
+		case identv1.Role_ROLE_SUPPLIER, identv1.Role_ROLE_VALIDATOR:
 			// Allowed
 		default:
 			return anteiltypes.ErrInvalidRoleForOrder
@@ -254,14 +254,18 @@ func (k Keeper) executeTrade(ctx sdk.Context, buyOrderID, sellOrderID string) er
 	}
 
 	// Execute the trade
+	antAmt := anteiltypes.ParseUint64(buyOrder.AntAmount)
+	wrtAmount := fmt.Sprintf("%d", antAmt*anteiltypes.ParseUint64(buyOrder.Price))
+
 	trade := &anteilv1.Trade{
 		TradeId:     fmt.Sprintf("trade_%s_%s", buyOrderID, sellOrderID),
 		BuyOrderId:  buyOrderID,
 		SellOrderId: sellOrderID,
 		Buyer:       buyOrder.Owner,
 		Seller:      sellOrder.Owner,
-		Price:       buyOrder.Price, // Use buy order price
+		Price:       buyOrder.Price,
 		AntAmount:   buyOrder.AntAmount,
+		WrtAmount:   wrtAmount,
 	}
 
 	// Store the trade
@@ -298,23 +302,16 @@ func (k Keeper) updateUserPositionForTrade(ctx sdk.Context, trade *anteilv1.Trad
 	// Update buyer position
 	buyerPosition, err := k.GetUserPosition(ctx, trade.Buyer)
 	if err != nil {
-		// Create new position if not found
 		buyerPosition = &anteilv1.UserPosition{
 			Owner:        trade.Buyer,
 			AntBalance:   "0",
 			TotalTrades:  "0",
-			TotalVolume:  "0",
 			LastActivity: timestamppb.New(ctx.BlockTime()),
 		}
 	}
 
-	// Update buyer stats
 	buyerTrades := anteiltypes.ParseUint64(buyerPosition.TotalTrades)
-	buyerVolume := anteiltypes.ParseUint64(buyerPosition.TotalVolume)
-	tradeAmount := anteiltypes.ParseUint64(trade.AntAmount)
-
 	buyerPosition.TotalTrades = fmt.Sprintf("%d", buyerTrades+1)
-	buyerPosition.TotalVolume = fmt.Sprintf("%d", buyerVolume+tradeAmount)
 	buyerPosition.LastActivity = timestamppb.New(ctx.BlockTime())
 
 	if err := k.SetUserPosition(ctx, buyerPosition); err != nil {
@@ -324,22 +321,16 @@ func (k Keeper) updateUserPositionForTrade(ctx sdk.Context, trade *anteilv1.Trad
 	// Update seller position
 	sellerPosition, err := k.GetUserPosition(ctx, trade.Seller)
 	if err != nil {
-		// Create new position if not found
 		sellerPosition = &anteilv1.UserPosition{
 			Owner:        trade.Seller,
 			AntBalance:   "0",
 			TotalTrades:  "0",
-			TotalVolume:  "0",
 			LastActivity: timestamppb.New(ctx.BlockTime()),
 		}
 	}
 
-	// Update seller stats
 	sellerTrades := anteiltypes.ParseUint64(sellerPosition.TotalTrades)
-	sellerVolume := anteiltypes.ParseUint64(sellerPosition.TotalVolume)
-
 	sellerPosition.TotalTrades = fmt.Sprintf("%d", sellerTrades+1)
-	sellerPosition.TotalVolume = fmt.Sprintf("%d", sellerVolume+tradeAmount)
 	sellerPosition.LastActivity = timestamppb.New(ctx.BlockTime())
 
 	if err := k.SetUserPosition(ctx, sellerPosition); err != nil {
@@ -417,134 +408,9 @@ func (k Keeper) GetAllTrades(ctx sdk.Context) ([]*anteilv1.Trade, error) {
 	return trades, nil
 }
 
-// Auction Management Methods
 
-// SetAuction stores an auction in the store
-func (k Keeper) SetAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
-	if err := anteiltypes.IsAuctionValid(auction); err != nil {
-		return err
-	}
-
-	store := ctx.KVStore(k.storeKey)
-	auctionKey := anteiltypes.GetAuctionKey(auction.AuctionId)
-
-	// Check if auction already exists
-	if store.Has(auctionKey) {
-		return anteiltypes.ErrAuctionAlreadyExists
-	}
-
-	// Store the auction
-	auctionBz, err := k.cdc.Marshal(auction)
-	if err != nil {
-		return fmt.Errorf("failed to marshal auction: %w", err)
-	}
-
-	store.Set(auctionKey, auctionBz)
-	return nil
-}
-
-// CreateAuction creates a new auction (alias for SetAuction)
-func (k Keeper) CreateAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
-	return k.SetAuction(ctx, auction)
-}
-
-// GetAuction retrieves an auction by ID
-func (k Keeper) GetAuction(ctx sdk.Context, auctionID string) (*anteilv1.Auction, error) {
-	store := ctx.KVStore(k.storeKey)
-	auctionKey := anteiltypes.GetAuctionKey(auctionID)
-
-	if !store.Has(auctionKey) {
-		return nil, anteiltypes.ErrAuctionNotFound
-	}
-
-	auctionBz := store.Get(auctionKey)
-	var auction anteilv1.Auction
-	if err := k.cdc.Unmarshal(auctionBz, &auction); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal auction: %w", err)
-	}
-
-	return &auction, nil
-}
-
-// UpdateAuction updates an existing auction
-func (k Keeper) UpdateAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
-	if err := anteiltypes.IsAuctionValid(auction); err != nil {
-		return err
-	}
-
-	store := ctx.KVStore(k.storeKey)
-	auctionKey := anteiltypes.GetAuctionKey(auction.AuctionId)
-
-	// Check if auction exists
-	if !store.Has(auctionKey) {
-		return anteiltypes.ErrAuctionNotFound
-	}
-
-	// Store the updated auction
-	auctionBz, err := k.cdc.Marshal(auction)
-	if err != nil {
-		return fmt.Errorf("failed to marshal auction: %w", err)
-	}
-
-	store.Set(auctionKey, auctionBz)
-	return nil
-}
-
-// GetAllAuctions retrieves all auctions
-func (k Keeper) GetAllAuctions(ctx sdk.Context) ([]*anteilv1.Auction, error) {
-	store := ctx.KVStore(k.storeKey)
-	auctionStore := anteiltypes.NewAuctionStore(store)
-
-	var auctions []*anteilv1.Auction
-	iterator := auctionStore.Iterator(nil, nil)
-	defer func() {
-		if err := iterator.Close(); err != nil {
-			// Log error instead of panicking - iterator close failures are non-critical
-			// but should be logged for debugging
-			ctx.Logger().Error("failed to close iterator", "error", err)
-		}
-	}()
-
-	for ; iterator.Valid(); iterator.Next() {
-		var auction anteilv1.Auction
-		if err := k.cdc.Unmarshal(iterator.Value(), &auction); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal auction: %w", err)
-		}
-		auctions = append(auctions, &auction)
-	}
-
-	return auctions, nil
-}
-
-// ProcessAuctions processes active auctions
-func (k Keeper) ProcessAuctions(ctx sdk.Context) error {
-	auctions, err := k.GetAllAuctions(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, auction := range auctions {
-		if auction.Status == anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
-			// Check if auction has ended
-			if ctx.BlockTime().After(auction.EndTime.AsTime()) {
-				auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED
-				if err := k.UpdateAuction(ctx, auction); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// BeginBlocker processes auctions and trades, and distributes ANT to citizens
+// BeginBlocker distributes ANT to citizens on schedule
 func (k Keeper) BeginBlocker(ctx sdk.Context) error {
-	// Process active auctions
-	if err := k.ProcessAuctions(ctx); err != nil {
-		return err
-	}
-
 	// Check if it's time to distribute ANT to citizens
 	params := k.GetParams(ctx)
 	lastDistributionTime, err := k.GetLastDistributionTime(ctx)
@@ -572,146 +438,6 @@ func (k Keeper) BeginBlocker(ctx sdk.Context) error {
 	return nil
 }
 
-// PlaceBid places a bid on an auction
-// According to whitepaper: Only validators can participate in block auctions
-func (k Keeper) PlaceBid(ctx sdk.Context, auctionID string, bidder string, amount string) error {
-	// SECURITY: Verify bidder is a validator
-	// According to whitepaper: "Валидаторы конкурируют за право создания блока"
-	if k.identKeeper != nil {
-		allAccounts, err := k.identKeeper.GetAllVerifiedAccounts(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to verify bidder role: %w", err)
-		}
-		
-		isValidator := false
-		for _, account := range allAccounts {
-			if account.Address == bidder && account.Role == identv1.Role_ROLE_VALIDATOR && account.IsActive {
-				isValidator = true
-				break
-			}
-		}
-		
-		if !isValidator {
-			return fmt.Errorf("only active validators can participate in auctions: %s", bidder)
-		}
-	}
-	
-	auction, err := k.GetAuction(ctx, auctionID)
-	if err != nil {
-		return err
-	}
-
-	// Check if auction is still open
-	if auction.Status != anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
-		return anteiltypes.ErrAuctionClosed
-	}
-
-	// Check if auction has ended
-	if ctx.BlockTime().After(auction.EndTime.AsTime()) {
-		return anteiltypes.ErrAuctionExpired
-	}
-
-	// SECURITY: Verify bid meets reserve price
-	// According to whitepaper: Auctions have reserve price to prevent low bids
-	bidAmount, err := strconv.ParseFloat(amount, 64)
-	if err != nil {
-		return fmt.Errorf("invalid bid amount: %w", err)
-	}
-	
-	reservePrice, err := strconv.ParseFloat(auction.ReservePrice, 64)
-	if err != nil {
-		return fmt.Errorf("invalid reserve price: %w", err)
-	}
-	
-	if bidAmount < reservePrice {
-		return fmt.Errorf("bid amount %s is below reserve price %s", amount, auction.ReservePrice)
-	}
-
-	// Create bid
-	bid := &anteilv1.Bid{
-		BidId:       fmt.Sprintf("%s_%s_%d", auctionID, bidder, ctx.BlockHeight()),
-		Bidder:      bidder,
-		Amount:      amount,
-		SubmittedAt: timestamppb.New(ctx.BlockTime()),
-	}
-
-	// Store bid
-	bidKey := anteiltypes.GetBidKey(auctionID, bid.BidId)
-	store := ctx.KVStore(k.storeKey)
-	bidBz, err := k.cdc.Marshal(bid)
-	if err != nil {
-		return err
-	}
-	store.Set(bidKey, bidBz)
-
-	// Update auction with new bid
-	if auction.WinningBid == "" {
-		auction.WinningBid = bid.BidId
-		if err := k.UpdateAuction(ctx, auction); err != nil {
-			return err
-		}
-	} else {
-		// Get current winning bid to compare amounts
-		currentWinningBid, err := k.GetBid(ctx, auctionID, auction.WinningBid)
-		if err == nil {
-			// Compare amounts as strings (simplified comparison)
-			if bid.Amount > currentWinningBid.Amount {
-				auction.WinningBid = bid.BidId
-				if err := k.UpdateAuction(ctx, auction); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// GetBid retrieves a bid by ID
-func (k Keeper) GetBid(ctx sdk.Context, auctionID, bidID string) (*anteilv1.Bid, error) {
-	store := ctx.KVStore(k.storeKey)
-	bidKey := anteiltypes.GetBidKey(auctionID, bidID)
-
-	if !store.Has(bidKey) {
-		return nil, anteiltypes.ErrBidNotFound
-	}
-
-	bidBz := store.Get(bidKey)
-	var bid anteilv1.Bid
-	if err := k.cdc.Unmarshal(bidBz, &bid); err != nil {
-		return nil, err
-	}
-
-	return &bid, nil
-}
-
-// SettleAuction settles an auction and distributes rewards
-func (k Keeper) SettleAuction(ctx sdk.Context, auctionID string) error {
-	auction, err := k.GetAuction(ctx, auctionID)
-	if err != nil {
-		return err
-	}
-
-	// Check if auction is closed
-	if auction.Status != anteilv1.AuctionStatus_AUCTION_STATUS_CLOSED {
-		return anteiltypes.ErrAuctionNotClosed
-	}
-
-	// Get winning bid
-	if auction.WinningBid == "" {
-		return anteiltypes.ErrNoWinningBid
-	}
-
-	_, err = k.GetBid(ctx, auctionID, auction.WinningBid)
-	if err != nil {
-		return err
-	}
-
-	// Process settlement logic here
-	// For now, just mark as settled
-	auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_SETTLED
-	return k.UpdateAuction(ctx, auction)
-}
 
 // GetUserPosition retrieves user's position in the market
 func (k Keeper) GetUserPosition(ctx sdk.Context, user string) (*anteilv1.UserPosition, error) {
@@ -839,16 +565,17 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 		return fmt.Errorf("failed to get verified accounts: %w", err)
 	}
 
-	// Get parameters
+	// Get parameters — epoch coefficient drives per-period emission §5.5
 	params := k.GetParams(ctx)
-	rewardRate, err := strconv.ParseUint(params.CitizenAntRewardRate, 10, 64)
+	rewardRate, err := strconv.ParseUint(params.EpochCoefficient, 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid citizen ANT reward rate: %w", err)
+		// EpochCoefficient may be a decimal string like "1.0"; fall back to base rate 10
+		rewardRate = 10
 	}
 
-	accumulationLimit, err := strconv.ParseUint(params.CitizenAntAccumulationLimit, 10, 64)
+	accumulationLimit, err := strconv.ParseUint(params.SupplierEpochAntLimit, 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid citizen ANT accumulation limit: %w", err)
+		return fmt.Errorf("invalid supplier epoch ANT limit: %w", err)
 	}
 
 	// According to whitepaper §4.2: "ANT начисляется Гражданам" — only Citizens receive ANT from protocol.
@@ -864,7 +591,7 @@ func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
 	// OPTIMIZATION: Batch process positions to reduce store operations
 	for _, account := range allAccounts {
 		// Only process active citizens — validators buy ANT on market, per whitepaper
-		if account.Role != identv1.Role_ROLE_CITIZEN || !account.IsActive {
+		if account.Role != identv1.Role_ROLE_SUPPLIER || !account.IsActive {
 			continue
 		}
 
@@ -966,33 +693,16 @@ func (k Keeper) SetLastDistributionTime(ctx sdk.Context, t time.Time) error {
 
 // EndBlocker processes end-of-block operations
 func (k Keeper) EndBlocker(ctx sdk.Context) error {
-	// Create economic engine
 	engine := NewEconomicEngine(&k)
 
-	// Process order matching
 	if err := engine.ProcessOrderMatching(ctx); err != nil {
-		// Log error but continue
 		ctx.Logger().Error("Failed to process order matching", "error", err)
 	}
 
-	// Process auctions
-	if err := engine.ProcessAuctions(ctx); err != nil {
-		// Log error but continue
-		ctx.Logger().Error("Failed to process auctions", "error", err)
-	}
-
-	// Process market making
 	if err := engine.ProcessMarketMaking(ctx); err != nil {
-		// Log error but continue
 		ctx.Logger().Error("Failed to process market making", "error", err)
 	}
 
 	return nil
 }
 
-// GetBidsByAuction returns all bids for a specific auction
-func (k Keeper) GetBidsByAuction(ctx sdk.Context, auctionID string) ([]*anteilv1.Bid, error) {
-	// For now, return empty slice - in real implementation would use proper indexing
-	// This is a simplified version for demo purposes
-	return []*anteilv1.Bid{}, nil
-}

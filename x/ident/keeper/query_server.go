@@ -24,7 +24,7 @@ func (s QueryServer) Params(ctx context.Context, _ *identv1.QueryParamsRequest) 
 
 	return &identv1.QueryParamsResponse{
 		Params: &identv1.Params{
-			MaxIdentitiesPerAddress:     uint64(params.MaxIdentitiesPerAddress),
+			MaxActiveSuppliers:          uint64(params.MaxActiveSuppliers),
 			RequireIdentityVerification: params.RequireIdentityVerification,
 			DefaultVerificationProvider: params.DefaultVerificationProvider,
 		},

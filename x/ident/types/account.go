@@ -33,10 +33,10 @@ func IsAccountActive(acc *identv1.VerifiedAccount, params Params, blockTime time
 
 	var inactivityPeriod time.Duration
 	switch acc.Role {
-	case identv1.Role_ROLE_CITIZEN:
-		inactivityPeriod = params.CitizenActivityPeriod
+	case identv1.Role_ROLE_SUPPLIER:
+		inactivityPeriod = params.MoaSupplierWindow
 	case identv1.Role_ROLE_VALIDATOR:
-		inactivityPeriod = params.ValidatorActivityPeriod
+		inactivityPeriod = params.MoaValidatorWindow
 	default:
 		return false
 	}

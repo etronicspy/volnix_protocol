@@ -1,8 +1,6 @@
 package types
 
 import (
-	"fmt"
-	
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -24,14 +22,11 @@ var (
 	// ValidatorKey defines the key for validator data
 	ValidatorKey = "Validator"
 
-	// BlockCreatorKey defines the key for block creator data
-	BlockCreatorKey = "BlockCreator"
+	// PerHeightBurnKey defines the key prefix for per-height burn data
+	PerHeightBurnKey = "PerHeightBurn"
 
-	// BurnProofKey defines the key for burn proof data
-	BurnProofKey = "BurnProof"
-
-	// ActivityScoreKey defines the key for activity score data
-	ActivityScoreKey = "ActivityScore"
+	// HeightBurnSummaryKey defines the key prefix for height burn summaries
+	HeightBurnSummaryKey = "HeightBurnSummary"
 
 	// HalvingInfoKey defines the key for halving information
 	HalvingInfoKey = []byte("HalvingInfo")
@@ -48,36 +43,30 @@ var (
 	// ValidatorWeightKey defines the key for validator weight
 	ValidatorWeightKey = "ValidatorWeight"
 	
-	// BlindAuctionKey defines the key for blind auction data
-	BlindAuctionKey = "BlindAuction"
-	
-	// BidHistoryKeyPrefix defines the prefix for bid history keys (anti-manipulation)
-	BidHistoryKeyPrefix = []byte{0x11}
+	// ConsensusMappingKey defines the key prefix for consensus pubkey -> account mappings
+	ConsensusMappingKey = "ConsensusMapping"
 
-	// TargetBlockTimeKey defines the key for the dynamic target block time (nanoseconds)
+	// TargetBlockTimeKey defines the key for the dynamic target block time
 	TargetBlockTimeKey = []byte("TargetBlockTime")
 
-	// AntPurchaseKeyPrefix stores cumulative ANT bid amounts per validator in the current epoch
-	AntPurchaseKeyPrefix = []byte{0x12}
+	// AntPurchaseKey defines the key prefix for per-validator ANT purchase totals
+	AntPurchaseKey = "AntPurchase"
 
-	// EpochHeightKey stores the block height when the current epoch started
+	// EpochHeightKey defines the key for the current epoch start height
 	EpochHeightKey = []byte("EpochHeight")
 
-	// DefaultEpochLength is the number of blocks per MOA epoch
-	DefaultEpochLength = uint64(100)
+	// DefaultEpochLength is the number of blocks in one MOA epoch
+	DefaultEpochLength = uint64(1000)
 )
-
-// GetAntPurchaseKey returns the key for a validator's ANT purchase tracker
-func GetAntPurchaseKey(validator string) []byte {
-	return append(AntPurchaseKeyPrefix, []byte(validator)...)
-}
 
 // Key prefixes
 var (
-	KeyValidatorPrefix       = []byte(ValidatorKey)
-	KeyBlockCreatorPrefix    = []byte(BlockCreatorKey)
-	KeyValidatorWeightPrefix = []byte(ValidatorWeightKey)
-	KeyBlindAuctionPrefix    = []byte(BlindAuctionKey)
+	KeyValidatorPrefix        = []byte(ValidatorKey)
+	KeyValidatorWeightPrefix  = []byte(ValidatorWeightKey)
+	KeyPerHeightBurnPrefix    = []byte(PerHeightBurnKey)
+	KeyHeightBurnSummaryPrefix = []byte(HeightBurnSummaryKey)
+	KeyConsensusMappingPrefix = []byte(ConsensusMappingKey)
+	AntPurchaseKeyPrefix      = []byte(AntPurchaseKey)
 )
 
 // KeyPrefix returns the key prefix for the consensus module
@@ -90,14 +79,30 @@ func GetValidatorKey(validator string) []byte {
 	return append(KeyValidatorPrefix, []byte(validator)...)
 }
 
-// GetBlockCreatorKey returns the key for a block creator
-func GetBlockCreatorKey(height uint64) []byte {
-	return append(KeyBlockCreatorPrefix, []byte(fmt.Sprintf("%d", height))...)
-}
-
 // GetValidatorWeightKey returns the key for a validator weight
 func GetValidatorWeightKey(validator string) []byte {
 	return append(KeyValidatorWeightPrefix, []byte(validator)...)
+}
+
+// GetPerHeightBurnKey returns the key for a validator's burn at a specific height
+func GetPerHeightBurnKey(validator string, height uint64) []byte {
+	prefix := append(KeyPerHeightBurnPrefix, []byte(validator)...)
+	return append(prefix, sdk.Uint64ToBigEndian(height)...)
+}
+
+// GetHeightBurnSummaryKey returns the key for a height's burn summary
+func GetHeightBurnSummaryKey(height uint64) []byte {
+	return append(KeyHeightBurnSummaryPrefix, sdk.Uint64ToBigEndian(height)...)
+}
+
+// GetConsensusMappingKey returns the key for a consensus address mapping
+func GetConsensusMappingKey(consensusAddr string) []byte {
+	return append(KeyConsensusMappingPrefix, []byte(consensusAddr)...)
+}
+
+// GetAntPurchaseKey returns the key for a validator's ANT purchase total in the current epoch
+func GetAntPurchaseKey(validator string) []byte {
+	return append(AntPurchaseKeyPrefix, []byte(validator)...)
 }
 
 // KeyHalvingInfo returns the key for halving info
@@ -115,12 +120,3 @@ func KeyConsensusState() []byte {
 	return ConsensusStateKey
 }
 
-// GetBlindAuctionKey returns the key for a blind auction at a specific height
-func GetBlindAuctionKey(height uint64) []byte {
-	return append(KeyBlindAuctionPrefix, []byte(fmt.Sprintf("%d", height))...)
-}
-
-// GetBidHistoryKey returns the key for a validator's bid history
-func GetBidHistoryKey(validator string) []byte {
-	return append(BidHistoryKeyPrefix, []byte(validator)...)
-}

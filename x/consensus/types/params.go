@@ -17,32 +17,25 @@ func NewConsensusParams(params *Params) *ConsensusParams {
 	return &ConsensusParams{Params: params}
 }
 
+func validateNoop(i interface{}) error { return nil }
+
 // ParamSetPairs get the params.ParamSet
 func (p *ConsensusParams) ParamSetPairs() paramtypes.ParamSetPairs {
 	if p.Params == nil {
 		p.Params = DefaultParams()
 	}
 	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyBaseBlockTime, &p.BaseBlockTime, validateBaseBlockTime),
-		paramtypes.NewParamSetPair(KeyHighActivityThreshold, &p.HighActivityThreshold, validateHighActivityThreshold),
-		paramtypes.NewParamSetPair(KeyLowActivityThreshold, &p.LowActivityThreshold, validateLowActivityThreshold),
-		paramtypes.NewParamSetPair(KeyMinBurnAmount, &p.MinBurnAmount, validateMinBurnAmount),
-		paramtypes.NewParamSetPair(KeyMaxBurnAmount, &p.MaxBurnAmount, validateMaxBurnAmount),
-		paramtypes.NewParamSetPair(KeyBlockCreatorSelectionRounds, &p.BlockCreatorSelectionRounds, validateBlockCreatorSelectionRounds),
-		paramtypes.NewParamSetPair(KeyActivityDecayRate, &p.ActivityDecayRate, validateActivityDecayRate),
-		paramtypes.NewParamSetPair(KeyMoaPenaltyRate, &p.MoaPenaltyRate, validateMoaPenaltyRate),
-		paramtypes.NewParamSetPair(KeyBaseBlockReward, &p.BaseBlockReward, validateBaseBlockReward),
-		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdHigh, &p.MoaPenaltyThresholdHigh, validateMoaPenaltyThreshold),
-		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdWarning, &p.MoaPenaltyThresholdWarning, validateMoaPenaltyThreshold),
-		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdMedium, &p.MoaPenaltyThresholdMedium, validateMoaPenaltyThreshold),
-		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdLow, &p.MoaPenaltyThresholdLow, validateMoaPenaltyThreshold),
-		paramtypes.NewParamSetPair(KeyActivityFactorHigh, &p.ActivityFactorHigh, validateActivityFactor),
-		paramtypes.NewParamSetPair(KeyActivityFactorMedium, &p.ActivityFactorMedium, validateActivityFactor),
-		paramtypes.NewParamSetPair(KeyActivityFactorNormal, &p.ActivityFactorNormal, validateActivityFactor),
-		paramtypes.NewParamSetPair(KeyAverageBlockTimeWindowSize, &p.AverageBlockTimeWindowSize, validateUint64),
-		paramtypes.NewParamSetPair(KeyBidHistoryLimit, &p.BidHistoryLimit, validateUint64),
-		paramtypes.NewParamSetPair(KeyAuctionHistoryBlocks, &p.AuctionHistoryBlocks, validateUint64),
-		paramtypes.NewParamSetPair(KeyRapidBidLimit, &p.RapidBidLimit, validateUint64),
+		paramtypes.NewParamSetPair(KeyBaseBlockTime, &p.BaseBlockTime, validateNoop),
+		paramtypes.NewParamSetPair(KeyBaseBlockReward, &p.BaseBlockReward, validateNoop),
+		paramtypes.NewParamSetPair(KeyBurnCapLambda, &p.BurnCapLambda, validateNoop),
+		paramtypes.NewParamSetPair(KeyFeePolicyBZero, &p.FeePolicyBZero, validateNoop),
+		paramtypes.NewParamSetPair(KeyHalvingInterval, &p.HalvingInterval, validateNoop),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdHigh, &p.MoaPenaltyThresholdHigh, validateNoop),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdWarning, &p.MoaPenaltyThresholdWarning, validateNoop),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdMedium, &p.MoaPenaltyThresholdMedium, validateNoop),
+		paramtypes.NewParamSetPair(KeyMoaPenaltyThresholdLow, &p.MoaPenaltyThresholdLow, validateNoop),
+		paramtypes.NewParamSetPair(KeyMaxBlockGas, &p.MaxBlockGas, validateNoop),
+		paramtypes.NewParamSetPair(KeyMaxBlockBytes, &p.MaxBlockBytes, validateNoop),
 	}
 }
 

@@ -130,7 +130,7 @@ func (ee *EconomicEngine) executeTrade(ctx sdk.Context, buyOrder, sellOrder *ant
 		Seller:      sellOrder.Owner,
 		AntAmount:   tradeQty.String(),
 		Price:       tradePrice.String(),
-		TotalValue:  totalValue.String(),
+		WrtAmount:   totalValue.String(),
 	}
 
 	newBuyQty := buyQty.Sub(tradeQty)
@@ -189,72 +189,6 @@ func (ee *EconomicEngine) updateUserPositions(ctx sdk.Context, trade *anteilv1.T
 	if err := ee.keeper.UpdateUserPosition(ctx, seller, negQty.String(), 0); err != nil {
 		return fmt.Errorf("failed to update seller position: %w", err)
 	}
-
-	return nil
-}
-
-// ProcessAuctions processes auction settlements
-func (ee *EconomicEngine) ProcessAuctions(ctx sdk.Context) error {
-	auctions, err := ee.keeper.GetAllAuctions(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get auctions: %w", err)
-	}
-
-	for _, auction := range auctions {
-		if auction.Status == anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
-			if err := ee.settleAuction(ctx, auction); err != nil {
-				return fmt.Errorf("failed to settle auction %s: %w", auction.AuctionId, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// settleAuction settles an auction using deterministic decimal comparison
-func (ee *EconomicEngine) settleAuction(ctx sdk.Context, auction *anteilv1.Auction) error {
-	bids, err := ee.keeper.GetBidsByAuction(ctx, auction.AuctionId)
-	if err != nil {
-		return fmt.Errorf("failed to get bids: %w", err)
-	}
-
-	if len(bids) == 0 {
-		auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_CANCELLED
-		return ee.keeper.UpdateAuction(ctx, auction)
-	}
-
-	var winningBid *anteilv1.Bid
-	highestAmount := math.LegacyZeroDec()
-
-	for _, bid := range bids {
-		amount := mustParseDec(bid.Amount)
-		if amount.GT(highestAmount) {
-			highestAmount = amount
-			winningBid = bid
-		}
-	}
-
-	auction.Status = anteilv1.AuctionStatus_AUCTION_STATUS_SETTLED
-	auction.WinningBid = winningBid.BidId
-
-	if err := ee.keeper.UpdateAuction(ctx, auction); err != nil {
-		return fmt.Errorf("failed to update auction: %w", err)
-	}
-
-	auctionQty := mustParseDec(auction.AntAmount)
-	if err := ee.keeper.UpdateUserPosition(ctx, winningBid.Bidder, auctionQty.String(), 1); err != nil {
-		return fmt.Errorf("failed to update winner position: %w", err)
-	}
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			"auction_settled",
-			sdk.NewAttribute("auction_id", auction.AuctionId),
-			sdk.NewAttribute("winner", winningBid.Bidder),
-			sdk.NewAttribute("winning_bid", auction.WinningBid),
-			sdk.NewAttribute("quantity", auction.AntAmount),
-		),
-	)
 
 	return nil
 }
@@ -354,22 +288,9 @@ func (ee *EconomicEngine) ProcessMarketMaking(ctx sdk.Context) error {
 
 // createMarketMakingOrders creates market making orders using deterministic math
 func (ee *EconomicEngine) createMarketMakingOrders(ctx sdk.Context, marketPrice math.LegacyDec) error {
-	params := ee.keeper.GetParams(ctx)
-
-	buyDiscount := mustParseDec(params.MarketMakingBuyDiscount)
-	if buyDiscount.IsZero() || buyDiscount.IsNegative() {
-		buyDiscount, _ = math.LegacyNewDecFromStr("0.99")
-	}
-
-	sellPremium := mustParseDec(params.MarketMakingSellPremium)
-	if sellPremium.IsZero() || sellPremium.IsNegative() {
-		sellPremium, _ = math.LegacyNewDecFromStr("1.01")
-	}
-
-	orderSize := params.MarketMakingOrderSize
-	if orderSize == "" {
-		orderSize = "1000.0"
-	}
+	buyDiscount, _ := math.LegacyNewDecFromStr("0.99")
+	sellPremium, _ := math.LegacyNewDecFromStr("1.01")
+	orderSize := "1000.0"
 
 	buyPrice := marketPrice.Mul(buyDiscount)
 	sellPrice := marketPrice.Mul(sellPremium)

@@ -238,28 +238,16 @@ func (ms *MonitoringService) getEconomicMetrics() map[string]interface{} {
 		metrics["active_orders"] = activeCount
 	}
 
-	auctions, err := ms.app.anteilKeeper.GetAllAuctions(ctx)
-	if err == nil {
-		activeAuctions := 0
-		for _, auction := range auctions {
-			if auction.Status == anteilv1.AuctionStatus_AUCTION_STATUS_OPEN {
-				activeAuctions++
-			}
-		}
-		metrics["active_auctions"] = activeAuctions
-	}
-
 	trades, err := ms.app.anteilKeeper.GetAllTrades(ctx)
 	if err == nil {
 		metrics["completed_orders"] = len(trades)
 
-		// volume_24h: sum total_value for trades with executed_at in last 24h
 		cutoff := ctx.BlockTime().Add(-24 * time.Hour)
 		var vol24h int64
 		for _, t := range trades {
 			if t.ExecutedAt != nil && t.ExecutedAt.AsTime().After(cutoff) {
 				var v int64
-				if _, err := fmt.Sscanf(t.TotalValue, "%d", &v); err == nil {
+				if _, err := fmt.Sscanf(t.WrtAmount, "%d", &v); err == nil {
 					vol24h += v
 				}
 			}
@@ -307,7 +295,7 @@ func (ms *MonitoringService) getIdentityMetrics() map[string]interface{} {
 
 		for _, account := range accounts {
 			switch account.Role {
-			case identv1.Role_ROLE_CITIZEN:
+			case identv1.Role_ROLE_SUPPLIER:
 				citizens++
 			case identv1.Role_ROLE_VALIDATOR:
 				validators++

@@ -2,23 +2,22 @@ syntax = "proto3";
 package volnix.consensus.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1;consensusv1";
 
-// Validator represents a validator in the PoVB consensus system
+// Validator in the PoVB consensus system
 message Validator {
-  string validator = 1;
-  string ant_balance = 2;
+  string validator = 1;            // bech32 account address
+  string consensus_address = 2;    // CometBFT hex consensus address
   ValidatorStatus status = 3;
   google.protobuf.Timestamp last_active = 4;
   uint64 last_block_height = 5;
-  string moa_score = 6;
-  string activity_score = 7;
-  uint64 total_blocks_created = 8;
-  string total_burn_amount = 9;
+  string activated_lzn = 6;        // L_i — activated LZN in min units (1 LZN = 1 ANT)
+  string total_burn_amount = 7;    // cumulative ANT burned
+  google.protobuf.Timestamp last_burn_time = 8;  // last qualifying burn for MOA §5.3
 }
 
-// ValidatorStatus represents the status of a validator
 enum ValidatorStatus {
   VALIDATOR_STATUS_UNSPECIFIED = 0;
   VALIDATOR_STATUS_ACTIVE = 1;
@@ -26,125 +25,69 @@ enum ValidatorStatus {
   VALIDATOR_STATUS_SLASHED = 3;
 }
 
-// BlockCreator represents a validator selected to create the next block
-message BlockCreator {
+// PerHeightBurn — validator's burn declaration for a single block height §5.4
+message PerHeightBurn {
   string validator = 1;
-  string ant_balance = 2;
-  string activity_score = 3;
-  string burn_amount = 4;
-  uint64 block_height = 5;
-  google.protobuf.Timestamp selection_time = 6;
+  uint64 block_height = 2;
+  string s_i = 3;     // priority stake (ANT min units)
+  string b_i = 4;     // burn-for-fee-share (ANT min units)
+  string inc_i = 5;   // actually included in F split after global cap
 }
 
-// BurnProof represents proof of token burning for consensus
-message BurnProof {
-  string validator = 1;
-  string burn_amount = 2;
-  string burn_hash = 3;
-  uint64 block_height = 4;
-  google.protobuf.Timestamp burn_time = 5;
-  string proof_signature = 6;
+// HeightBurnSummary — aggregate burn data for a single height
+message HeightBurnSummary {
+  uint64 block_height = 1;
+  string total_fees = 2;           // F — sum of tx fees for this height
+  string total_included_burn = 3;  // B = Σ inc_i
+  string global_cap = 4;           // C = λ · L_tot
+  string l_tot = 5;                // total activated LZN across network
+  repeated PerHeightBurn burns = 6;
 }
 
-// ActivityScore represents the activity score of a validator
-message ActivityScore {
-  string validator = 1;
-  uint64 score = 2;
-  uint64 ant_balance = 3;
-  uint64 blocks_created = 4;
-  uint64 transactions_processed = 5;
-  google.protobuf.Timestamp last_update = 6;
-}
-
-// Params defines the parameters for the consensus module
+// Params for the consensus module
 message Params {
-  string base_block_time = 1;
-  uint64 high_activity_threshold = 2;
-  uint64 low_activity_threshold = 3;
-  string min_burn_amount = 4;
-  string max_burn_amount = 5;
-  uint64 block_creator_selection_rounds = 6;
-  string activity_decay_rate = 7;
-  string moa_penalty_rate = 8;
-  // Base block reward in micro WRT (e.g., "50000000uwrt" for 50 WRT)
-  string base_block_reward = 9;
-  // MOA penalty thresholds (0.0 to 1.0)
-  string moa_penalty_threshold_high = 10;   // >= 1.0: no penalty
-  string moa_penalty_threshold_warning = 11; // >= 0.9: warning
-  string moa_penalty_threshold_medium = 12;  // >= 0.7: 25% penalty
-  string moa_penalty_threshold_low = 13;     // >= 0.5: 50% penalty
-  // Activity factors for dynamic block time (0.0 to 1.0)
-  string activity_factor_high = 14;    // High activity: faster blocks
-  string activity_factor_medium = 15;  // Medium activity: moderate speed
-  string activity_factor_normal = 16;  // Normal activity: normal speed
-  // History limits for consensus operations
-  uint64 average_block_time_window_size = 17; // Window size for average block time calculation (default: 1000)
-  uint64 bid_history_limit = 18;              // Maximum number of bid history entries per validator (default: 100)
-  uint64 auction_history_blocks = 19;         // Number of blocks to keep auction history (default: 100)
-  uint64 rapid_bid_limit = 20;                // Maximum rapid bids allowed (default: 5)
+  string base_block_time = 1;           // target block interval (e.g. "5s")
+  string base_block_reward = 2;         // base WRT reward per block in micro WRT
+  string burn_cap_lambda = 3;           // λ ∈ [1/3, 2/3]; DAO §7.2 п.10
+  string fee_policy_b_zero = 4;         // policy when B=0: "community_pool" | "carry_forward" §7.2 п.6
+  uint64 halving_interval = 5;          // N blocks between halvings §6.2 (default 210000)
+  // MOA penalty thresholds kept for reward distribution
+  string moa_penalty_threshold_high = 6;
+  string moa_penalty_threshold_warning = 7;
+  string moa_penalty_threshold_medium = 8;
+  string moa_penalty_threshold_low = 9;
+  uint64 max_block_gas = 10;            // §7.2 п.7 — max gas per block
+  uint64 max_block_bytes = 11;          // §7.2 п.8 — max block size in bytes
 }
 
-// GenesisState moved to genesis.proto to avoid duplication
-
-// HalvingInfo represents halving information
-// According to whitepaper: "Халвинг происходит строго каждые N блоков, но реальная дата адаптируется к динамическому времени блока"
+// HalvingInfo — WRT emission halving (Bitcoin model) §6.2
 message HalvingInfo {
   uint64 last_halving_height = 1;
   uint64 halving_interval = 2;
   uint64 next_halving_height = 3;
-  google.protobuf.Timestamp estimated_next_halving_date = 4; // Estimated date based on average block time
-  google.protobuf.Timestamp last_halving_date = 5; // Actual date of last halving
+  google.protobuf.Timestamp estimated_next_halving_date = 4;
+  google.protobuf.Timestamp last_halving_date = 5;
 }
 
-// ConsensusState represents the current consensus state
+// ConsensusState — current consensus state
 message ConsensusState {
   uint64 current_height = 1;
   string total_ant_burned = 2;
   google.protobuf.Timestamp last_block_time = 3;
   repeated string active_validators = 4;
+  string l_tot = 5;  // total activated LZN at this height
 }
 
-// ValidatorWeight represents validator weight information
+// ValidatorWeight — voting power derived from activated LZN §4.2
 message ValidatorWeight {
   string validator = 1;
-  string weight = 2;
+  string weight = 2;    // = activated LZN amount
 }
 
-// EncryptedBid represents a committed bid in the blind auction
-// This is the commit phase: validator submits encrypted/hashed bid
-message EncryptedBid {
-  string validator = 1;
-  string commit_hash = 2; // Hash of (nonce + bid_amount)
-  uint64 block_height = 3;
-  google.protobuf.Timestamp commit_time = 4;
-}
-
-// BidReveal represents a revealed bid in the blind auction
-// This is the reveal phase: validator reveals nonce and bid amount
-message BidReveal {
-  string validator = 1;
-  string nonce = 2; // Random nonce used in commit
-  string bid_amount = 3; // ANT amount bid
-  uint64 block_height = 4;
-  google.protobuf.Timestamp reveal_time = 5;
-}
-
-// AuctionPhase represents the current phase of the blind auction
-enum AuctionPhase {
-  AUCTION_PHASE_UNSPECIFIED = 0;
-  AUCTION_PHASE_COMMIT = 1; // Validators can submit encrypted bids
-  AUCTION_PHASE_REVEAL = 2; // Validators reveal their bids
-  AUCTION_PHASE_COMPLETE = 3; // Auction is complete, winner selected
-}
-
-// BlindAuction represents a blind auction for block creation rights
-message BlindAuction {
-  uint64 block_height = 1;
-  AuctionPhase phase = 2;
-  repeated EncryptedBid commits = 3; // Committed bids
-  repeated BidReveal reveals = 4; // Revealed bids
-  string winner = 5; // Winner validator address
-  string winning_bid = 6; // Winning bid amount
-  google.protobuf.Timestamp start_time = 7;
-  google.protobuf.Timestamp end_time = 8;
+// InitialValidator for genesis
+message InitialValidator {
+  string pub_key_type = 1;
+  bytes  pub_key = 2;
+  int64  power = 3;
+  string account_address = 4;  // explicit mapping §4.2
 }

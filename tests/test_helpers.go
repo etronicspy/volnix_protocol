@@ -28,29 +28,29 @@ import (
 	lizenztypes "github.com/volnix-protocol/volnix-protocol/x/lizenz/types"
 )
 
-// TestMaxIdentitiesPerAddress is an elevated limit for testing, avoiding
+// TestMaxActiveSuppliers is an elevated limit for testing, avoiding
 // "Account limit exceeded" errors in integration and benchmark suites.
-const TestMaxIdentitiesPerAddress = 10_000
+const TestMaxActiveSuppliers = 10_000
 
 // TestContext holds all components needed for multi-module integration testing.
 type TestContext struct {
-	Cdc        codec.Codec
-	Ctx        sdk.Context
-	Cms        store.CommitMultiStore
-	IdentKeeper     *identkeeper.Keeper
-	LizenzKeeper    *lizenzkeeper.Keeper
-	AnteilKeeper    *anteilkeeper.Keeper
-	ConsensusKeeper *consensuskeeper.Keeper
-	GovernanceKeeper *governancekeeper.Keeper
-	IdentStoreKey     storetypes.StoreKey
-	LizenzStoreKey    storetypes.StoreKey
-	AnteilStoreKey    storetypes.StoreKey
-	ConsensusStoreKey storetypes.StoreKey
-	GovernanceStoreKey storetypes.StoreKey
-	IdentParamStore     paramtypes.Subspace
-	LizenzParamStore    paramtypes.Subspace
-	AnteilParamStore    paramtypes.Subspace
-	ConsensusParamStore paramtypes.Subspace
+	Cdc                  codec.Codec
+	Ctx                  sdk.Context
+	Cms                  store.CommitMultiStore
+	IdentKeeper          *identkeeper.Keeper
+	LizenzKeeper         *lizenzkeeper.Keeper
+	AnteilKeeper         *anteilkeeper.Keeper
+	ConsensusKeeper      *consensuskeeper.Keeper
+	GovernanceKeeper     *governancekeeper.Keeper
+	IdentStoreKey        storetypes.StoreKey
+	LizenzStoreKey       storetypes.StoreKey
+	AnteilStoreKey       storetypes.StoreKey
+	ConsensusStoreKey    storetypes.StoreKey
+	GovernanceStoreKey   storetypes.StoreKey
+	IdentParamStore      paramtypes.Subspace
+	LizenzParamStore     paramtypes.Subspace
+	AnteilParamStore     paramtypes.Subspace
+	ConsensusParamStore  paramtypes.Subspace
 	GovernanceParamStore paramtypes.Subspace
 }
 
@@ -77,7 +77,7 @@ func NewTestContext(t require.TestingT) *TestContext {
 	// Create test context with all store keys
 	db := dbm.NewMemDB()
 	cms := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
-	
+
 	// Mount all stores - это критически важно для исправления "store does not exist"
 	cms.MountStoreWithDB(identStoreKey, storetypes.StoreTypeIAVL, db)
 	cms.MountStoreWithDB(lizenzStoreKey, storetypes.StoreTypeIAVL, db)
@@ -85,7 +85,7 @@ func NewTestContext(t require.TestingT) *TestContext {
 	cms.MountStoreWithDB(consensusStoreKey, storetypes.StoreTypeIAVL, db)
 	cms.MountStoreWithDB(governanceStoreKey, storetypes.StoreTypeIAVL, db)
 	cms.MountStoreWithDB(tKey, storetypes.StoreTypeTransient, db)
-	
+
 	// Load latest version - обязательно перед созданием контекста
 	err := cms.LoadLatestVersion()
 	require.NoError(t, err, "failed to load latest version of commit multi store")
@@ -115,7 +115,7 @@ func NewTestContext(t require.TestingT) *TestContext {
 	governanceKeeper := governancekeeper.NewKeeper(cdc, governanceStoreKey, governanceParamStore)
 
 	identParams := identtypes.DefaultParams()
-	identParams.MaxIdentitiesPerAddress = TestMaxIdentitiesPerAddress
+	identParams.MaxActiveSuppliers = TestMaxActiveSuppliers
 	identKeeper.SetParams(ctx, identParams)
 
 	lizenzKeeper.SetParams(ctx, lizenztypes.DefaultParams())
@@ -124,24 +124,23 @@ func NewTestContext(t require.TestingT) *TestContext {
 	governanceKeeper.SetParams(ctx, governancetypes.DefaultParams())
 
 	return &TestContext{
-		Cdc:                cdc,
-		Ctx:                ctx,
-		Cms:                cms,
-		IdentKeeper:        identKeeper,
-		LizenzKeeper:       lizenzKeeper,
-		AnteilKeeper:       anteilKeeper,
-		ConsensusKeeper:    consensusKeeper,
-		GovernanceKeeper:   governanceKeeper,
-		IdentStoreKey:      identStoreKey,
-		LizenzStoreKey:     lizenzStoreKey,
-		AnteilStoreKey:     anteilStoreKey,
-		ConsensusStoreKey:  consensusStoreKey,
-		GovernanceStoreKey: governanceStoreKey,
-		IdentParamStore:    identParamStore,
-		LizenzParamStore:   lizenzParamStore,
-		AnteilParamStore:   anteilParamStore,
-		ConsensusParamStore: consensusParamStore,
+		Cdc:                  cdc,
+		Ctx:                  ctx,
+		Cms:                  cms,
+		IdentKeeper:          identKeeper,
+		LizenzKeeper:         lizenzKeeper,
+		AnteilKeeper:         anteilKeeper,
+		ConsensusKeeper:      consensusKeeper,
+		GovernanceKeeper:     governanceKeeper,
+		IdentStoreKey:        identStoreKey,
+		LizenzStoreKey:       lizenzStoreKey,
+		AnteilStoreKey:       anteilStoreKey,
+		ConsensusStoreKey:    consensusStoreKey,
+		GovernanceStoreKey:   governanceStoreKey,
+		IdentParamStore:      identParamStore,
+		LizenzParamStore:     lizenzParamStore,
+		AnteilParamStore:     anteilParamStore,
+		ConsensusParamStore:  consensusParamStore,
 		GovernanceParamStore: governanceParamStore,
 	}
 }
-

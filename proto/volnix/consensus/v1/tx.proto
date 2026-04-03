@@ -5,132 +5,66 @@ import "cosmos/msg/v1/msg.proto";
 
 option go_package = "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/consensus/v1;consensusv1";
 
-// Msg defines the consensus Msg service.
 service Msg {
   option (cosmos.msg.v1.service) = true;
-  // SelectBlockCreator selects the next block creator
-  rpc SelectBlockCreator(MsgSelectBlockCreator) returns (MsgSelectBlockCreatorResponse);
-  
-  // UpdateConsensusState updates the consensus state
+
+  // DeclarePerHeightBurn — validator declares s_i and b_i for current height §5.4
+  rpc DeclarePerHeightBurn(MsgDeclarePerHeightBurn) returns (MsgDeclarePerHeightBurnResponse);
+
+  // UpdateConsensusState — authority-only state update
   rpc UpdateConsensusState(MsgUpdateConsensusState) returns (MsgUpdateConsensusStateResponse);
-  
-  // SetValidatorWeight sets validator weight
+
+  // SetValidatorWeight — authority sets validator weight (from lizenz)
   rpc SetValidatorWeight(MsgSetValidatorWeight) returns (MsgSetValidatorWeightResponse);
-  
-  // ProcessHalving processes halving event
-  rpc ProcessHalving(MsgProcessHalving) returns (MsgProcessHalvingResponse);
-  
-  // SelectBlockProducer selects block producer
-  rpc SelectBlockProducer(MsgSelectBlockProducer) returns (MsgSelectBlockProducerResponse);
-  
-  // CalculateBlockTime calculates block time
-  rpc CalculateBlockTime(MsgCalculateBlockTime) returns (MsgCalculateBlockTimeResponse);
-  
-  // CommitBid commits an encrypted bid for blind auction
-  rpc CommitBid(MsgCommitBid) returns (MsgCommitBidResponse);
-  
-  // RevealBid reveals a bid in blind auction
-  rpc RevealBid(MsgRevealBid) returns (MsgRevealBidResponse);
+
+  // RegisterConsensusMapping — register consensus_pubkey <-> account mapping §4.2
+  rpc RegisterConsensusMapping(MsgRegisterConsensusMapping) returns (MsgRegisterConsensusMappingResponse);
 }
 
-// MsgSelectBlockCreator defines a message to select the next block creator
-message MsgSelectBlockCreator {
-  option (cosmos.msg.v1.signer) = "creator";
-  
-  string creator = 1;
+// MsgDeclarePerHeightBurn — validator's burn declaration for this block §5.4
+message MsgDeclarePerHeightBurn {
+  option (cosmos.msg.v1.signer) = "validator";
+
+  string validator = 1;     // bech32 account address
+  string s_i = 2;           // priority stake (ANT min units)
+  string b_i = 3;           // burn for fee share (ANT min units)
 }
 
-// MsgSelectBlockCreatorResponse defines the response for MsgSelectBlockCreator
-message MsgSelectBlockCreatorResponse {
-  string selected_validator = 1;
+message MsgDeclarePerHeightBurnResponse {
+  string inc_i = 1;         // actually included after global cap
+  bool   success = 2;
 }
 
-// MsgUpdateConsensusState defines a message to update consensus state
 message MsgUpdateConsensusState {
   option (cosmos.msg.v1.signer) = "authority";
-  
+
   string authority = 1;
   uint64 current_height = 2;
   string total_ant_burned = 3;
   repeated string active_validators = 4;
 }
 
-// MsgUpdateConsensusStateResponse defines the response for MsgUpdateConsensusState
 message MsgUpdateConsensusStateResponse {}
 
-// MsgSetValidatorWeight defines a message to set validator weight
 message MsgSetValidatorWeight {
   option (cosmos.msg.v1.signer) = "authority";
-  
+
   string authority = 1;
   string validator = 2;
   string weight = 3;
 }
 
-// MsgSetValidatorWeightResponse defines the response for MsgSetValidatorWeight
 message MsgSetValidatorWeightResponse {}
 
-// MsgProcessHalving defines a message to process halving
-message MsgProcessHalving {
-  option (cosmos.msg.v1.signer) = "authority";
-  
-  string authority = 1;
+// MsgRegisterConsensusMapping — §4.2 explicit consensus <-> account mapping
+message MsgRegisterConsensusMapping {
+  option (cosmos.msg.v1.signer) = "account_address";
+
+  string account_address = 1;     // bech32 account address
+  bytes  consensus_pubkey = 2;    // Ed25519 pubkey
 }
 
-// MsgProcessHalvingResponse defines the response for MsgProcessHalving
-message MsgProcessHalvingResponse {}
-
-// MsgSelectBlockProducer defines a message to select block producer
-message MsgSelectBlockProducer {
-  option (cosmos.msg.v1.signer) = "authority";
-  
-  string authority = 1;
-  repeated string validators = 2;
-}
-
-// MsgSelectBlockProducerResponse defines the response for MsgSelectBlockProducer
-message MsgSelectBlockProducerResponse {
-  string producer = 1;
-}
-
-// MsgCalculateBlockTime defines a message to calculate block time
-message MsgCalculateBlockTime {
-  option (cosmos.msg.v1.signer) = "authority";
-  
-  string authority = 1;
-  string ant_amount = 2;
-}
-
-// MsgCalculateBlockTimeResponse defines the response for MsgCalculateBlockTime
-message MsgCalculateBlockTimeResponse {
-  int64 block_time = 1;
-}
-
-// MsgCommitBid defines a message to commit an encrypted bid
-message MsgCommitBid {
-  option (cosmos.msg.v1.signer) = "validator";
-  
-  string validator = 1;
-  string commit_hash = 2; // Hash of (nonce + bid_amount)
-  uint64 block_height = 3;
-}
-
-// MsgCommitBidResponse defines the response for MsgCommitBid
-message MsgCommitBidResponse {
-  bool success = 1;
-}
-
-// MsgRevealBid defines a message to reveal a bid
-message MsgRevealBid {
-  option (cosmos.msg.v1.signer) = "validator";
-  
-  string validator = 1;
-  string nonce = 2; // Nonce used in commit
-  string bid_amount = 3; // ANT amount bid
-  uint64 block_height = 4;
-}
-
-// MsgRevealBidResponse defines the response for MsgRevealBid
-message MsgRevealBidResponse {
-  bool success = 1;
+message MsgRegisterConsensusMappingResponse {
+  string consensus_address = 1;   // derived hex consensus address
+  bool   success = 2;
 }

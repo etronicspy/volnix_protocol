@@ -5,31 +5,34 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
+// DefaultProtoParams returns sensible proto-level defaults.
+func DefaultProtoParams() *anteilv1.Params {
+	d := DefaultParams()
+	return d.ToProto()
+}
+
 // ToProto converts Go Params to the protobuf Params.
-// NOTE: After running `buf generate`, add fields 16-21 (citizen_ant_*, market_making_*)
-// from the updated types.proto to keep proto and Go params in sync.
 func (p Params) ToProto() *anteilv1.Params {
 	return &anteilv1.Params{
-		MinAntAmount:                p.MinAntAmount,
-		MaxAntAmount:                p.MaxAntAmount,
-		TradingFeeRate:              p.TradingFeeRate,
 		MinOrderSize:                p.MinOrderSize,
 		MaxOrderSize:                p.MaxOrderSize,
+		TradingFeeRate:              p.TradingFeeRate,
 		OrderExpiry:                 durationpb.New(p.OrderExpiry),
 		RequireIdentityVerification: p.RequireIdentityVerification,
 		AntDenom:                    p.AntDenom,
 		MaxOpenOrders:               p.MaxOpenOrders,
 		PricePrecision:              p.PricePrecision,
-		MarketMakerRewardRate:       p.MarketMakerRewardRate,
-		StakingRewardRate:           p.StakingRewardRate,
-		LiquidityPoolFee:            p.LiquidityPoolFee,
-		MaxSlippage:                 p.MaxSlippage,
-		MinLiquidityThreshold:       p.MinLiquidityThreshold,
+
+		EpochLength:                  durationpb.New(p.EpochLength),
+		EpochCoefficient:             p.EpochCoefficient,
+		EpochCoefficientMin:          p.EpochCoefficientMin,
+		EpochCoefficientMax:          p.EpochCoefficientMax,
+		SupplierEpochAntLimit:        p.SupplierEpochAntLimit,
+		CitizenAntDistributionPeriod: durationpb.New(p.CitizenAntDistributionPeriod),
 	}
 }
 
 // ParamsFromProto converts protobuf Params to Go Params.
-// Fields not present in proto (citizen_ant_*, market_making_*) keep Go defaults.
 func ParamsFromProto(pp *anteilv1.Params) (Params, error) {
 	if pp == nil {
 		return DefaultParams(), nil
@@ -42,27 +45,51 @@ func ParamsFromProto(pp *anteilv1.Params) (Params, error) {
 		orderExpiry = pp.OrderExpiry.AsDuration()
 	}
 
+	epochLength := defaults.EpochLength
+	if pp.EpochLength != nil {
+		epochLength = pp.EpochLength.AsDuration()
+	}
+
+	citizenDistPeriod := defaults.CitizenAntDistributionPeriod
+	if pp.CitizenAntDistributionPeriod != nil {
+		citizenDistPeriod = pp.CitizenAntDistributionPeriod.AsDuration()
+	}
+
+	epochCoefficient := defaults.EpochCoefficient
+	if pp.EpochCoefficient != "" {
+		epochCoefficient = pp.EpochCoefficient
+	}
+
+	epochCoefficientMin := defaults.EpochCoefficientMin
+	if pp.EpochCoefficientMin != "" {
+		epochCoefficientMin = pp.EpochCoefficientMin
+	}
+
+	epochCoefficientMax := defaults.EpochCoefficientMax
+	if pp.EpochCoefficientMax != "" {
+		epochCoefficientMax = pp.EpochCoefficientMax
+	}
+
+	supplierLimit := defaults.SupplierEpochAntLimit
+	if pp.SupplierEpochAntLimit != "" {
+		supplierLimit = pp.SupplierEpochAntLimit
+	}
+
 	return Params{
-		MinAntAmount:                pp.MinAntAmount,
-		MaxAntAmount:                pp.MaxAntAmount,
-		TradingFeeRate:              pp.TradingFeeRate,
 		MinOrderSize:                pp.MinOrderSize,
 		MaxOrderSize:                pp.MaxOrderSize,
+		TradingFeeRate:              pp.TradingFeeRate,
 		OrderExpiry:                 orderExpiry,
 		RequireIdentityVerification: pp.RequireIdentityVerification,
 		AntDenom:                    pp.AntDenom,
 		MaxOpenOrders:               pp.MaxOpenOrders,
 		PricePrecision:              pp.PricePrecision,
-		MarketMakerRewardRate:       pp.MarketMakerRewardRate,
-		StakingRewardRate:           pp.StakingRewardRate,
-		LiquidityPoolFee:            pp.LiquidityPoolFee,
-		MaxSlippage:                 pp.MaxSlippage,
-		MinLiquidityThreshold:       pp.MinLiquidityThreshold,
-		CitizenAntRewardRate:        defaults.CitizenAntRewardRate,
-		CitizenAntAccumulationLimit: defaults.CitizenAntAccumulationLimit,
-		CitizenAntDistributionPeriod: defaults.CitizenAntDistributionPeriod,
-		MarketMakingBuyDiscount:     defaults.MarketMakingBuyDiscount,
-		MarketMakingSellPremium:     defaults.MarketMakingSellPremium,
-		MarketMakingOrderSize:       defaults.MarketMakingOrderSize,
+
+		EpochLength:                  epochLength,
+		EpochCoefficient:             epochCoefficient,
+		EpochCoefficientMin:          epochCoefficientMin,
+		EpochCoefficientMax:          epochCoefficientMax,
+		SupplierEpochAntLimit:        supplierLimit,
+		CitizenAntDistributionPeriod: citizenDistPeriod,
 	}, nil
 }

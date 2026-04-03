@@ -336,9 +336,9 @@ func (zkp *ZKPVerifier) checkMigrationRules(ctx sdk.Context, fromAddress, toAddr
 	case identv1.Role_ROLE_VALIDATOR:
 		// Validators have stricter migration rules
 		return zkp.checkValidatorMigrationRules(ctx, fromAccount)
-	case identv1.Role_ROLE_CITIZEN:
-		// Citizens have standard migration rules
-		return zkp.checkCitizenMigrationRules(ctx, fromAccount)
+	case identv1.Role_ROLE_SUPPLIER:
+		// Suppliers have standard migration rules
+		return zkp.checkSupplierMigrationRules(ctx, fromAccount)
 	default:
 		return fmt.Errorf("migration not allowed for role: %s", fromAccount.Role)
 	}
@@ -366,14 +366,10 @@ func (zkp *ZKPVerifier) checkValidatorMigrationRules(ctx sdk.Context, account *i
 	return nil
 }
 
-// checkCitizenMigrationRules checks citizen-specific migration rules
-func (zkp *ZKPVerifier) checkCitizenMigrationRules(ctx sdk.Context, account *identv1.VerifiedAccount) error {
-	// Citizens have simpler migration rules
-	// - Must be active
-	// - Standard cooldown period
-
+// checkSupplierMigrationRules checks supplier-specific migration rules
+func (zkp *ZKPVerifier) checkSupplierMigrationRules(ctx sdk.Context, account *identv1.VerifiedAccount) error {
 	if !account.IsActive {
-		return fmt.Errorf("inactive citizen cannot migrate")
+		return fmt.Errorf("inactive supplier cannot migrate")
 	}
 
 	return nil

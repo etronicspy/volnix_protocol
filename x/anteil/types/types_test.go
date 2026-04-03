@@ -40,7 +40,6 @@ func TestNewTrade(t *testing.T) {
 		"cosmos1seller",
 		"1000000",
 		"1.5",
-		"hash123",
 	)
 
 	require.NotNil(t, trade)
@@ -50,9 +49,8 @@ func TestNewTrade(t *testing.T) {
 	require.Equal(t, "cosmos1seller", trade.Seller)
 	require.Equal(t, "1000000", trade.AntAmount)
 	require.Equal(t, "1.5", trade.Price)
-	require.Equal(t, "hash123", trade.IdentityHash)
+	require.NotEmpty(t, trade.WrtAmount)
 	require.NotEmpty(t, trade.TradeId)
-	require.NotEmpty(t, trade.TotalValue)
 	require.NotNil(t, trade.ExecutedAt)
 }
 
@@ -156,7 +154,6 @@ func TestIsTradeValid(t *testing.T) {
 				"cosmos1seller",
 				"1000000",
 				"1.5",
-				"hash123",
 			),
 			wantErr: nil,
 		},
@@ -227,111 +224,6 @@ func TestIsTradeValid(t *testing.T) {
 	}
 }
 
-func TestIsAuctionValid(t *testing.T) {
-	tests := []struct {
-		name    string
-		auction *anteilv1.Auction
-		wantErr error
-	}{
-		{
-			name: "valid auction",
-			auction: &anteilv1.Auction{
-				AuctionId:    "auction1",
-				ReservePrice: "1000000",
-				AntAmount:    "1000000",
-			},
-			wantErr: nil,
-		},
-		{
-			name: "empty auction id",
-			auction: &anteilv1.Auction{
-				AuctionId:    "",
-				ReservePrice: "1000000",
-				AntAmount:    "1000000",
-			},
-			wantErr: types.ErrEmptyAuctionID,
-		},
-		{
-			name: "empty reserve price",
-			auction: &anteilv1.Auction{
-				AuctionId:    "auction1",
-				ReservePrice: "",
-				AntAmount:    "1000000",
-			},
-			wantErr: types.ErrEmptyReservePrice,
-		},
-		{
-			name: "empty ant amount",
-			auction: &anteilv1.Auction{
-				AuctionId:    "auction1",
-				ReservePrice: "1000000",
-				AntAmount:    "",
-			},
-			wantErr: types.ErrEmptyAntAmount,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := types.IsAuctionValid(tt.auction)
-			if tt.wantErr != nil {
-				require.Error(t, err)
-				require.Equal(t, tt.wantErr, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestIsBidValid(t *testing.T) {
-	tests := []struct {
-		name    string
-		bid     *anteilv1.Bid
-		wantErr error
-	}{
-		{
-			name: "valid bid",
-			bid: &anteilv1.Bid{
-				BidId:  "bid1",
-				Bidder: "cosmos1bidder",
-				Amount: "1500000",
-			},
-			wantErr: nil,
-		},
-		{
-			name: "empty bidder",
-			bid: &anteilv1.Bid{
-				BidId:  "bid1",
-				Bidder: "",
-				Amount: "1500000",
-			},
-			wantErr: types.ErrEmptyBidder,
-		},
-		{
-			name: "empty amount",
-			bid: &anteilv1.Bid{
-				BidId:  "bid1",
-				Bidder: "cosmos1bidder",
-				Amount: "",
-			},
-			wantErr: types.ErrEmptyBidAmount,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := types.IsBidValid(tt.bid)
-			if tt.wantErr != nil {
-				require.Error(t, err)
-				require.Equal(t, tt.wantErr, err)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestNewUserPosition(t *testing.T) {
 	pos := types.NewUserPosition("cosmos1owner", "1000000")
 	require.NotNil(t, pos)
@@ -341,30 +233,20 @@ func TestNewUserPosition(t *testing.T) {
 	require.Equal(t, "1000000", pos.AvailableAnt)
 	require.Empty(t, pos.OpenOrderIds)
 	require.Equal(t, "0", pos.TotalTrades)
-	require.Equal(t, "0", pos.TotalVolume)
 	require.NotNil(t, pos.LastActivity)
 }
 
-func TestNewAuction(t *testing.T) {
-	auc := types.NewAuction(100, "500000", "1.0")
-	require.NotNil(t, auc)
-	require.NotEmpty(t, auc.AuctionId)
-	require.Equal(t, uint64(100), auc.BlockHeight)
-	require.Equal(t, "500000", auc.AntAmount)
-	require.Equal(t, "1.0", auc.ReservePrice)
-	require.NotNil(t, auc.StartTime)
-	require.NotNil(t, auc.EndTime)
-	require.Equal(t, anteilv1.AuctionStatus_AUCTION_STATUS_OPEN, auc.Status)
-}
-
-func TestNewBid(t *testing.T) {
-	bid := types.NewBid("cosmos1bidder", "auction-1", "200000", "hash1")
-	require.NotNil(t, bid)
-	require.NotEmpty(t, bid.BidId)
-	require.Equal(t, "cosmos1bidder", bid.Bidder)
-	require.Equal(t, "200000", bid.Amount)
-	require.Equal(t, "hash1", bid.IdentityHash)
-	require.NotNil(t, bid.SubmittedAt)
+func TestNewEpochState(t *testing.T) {
+	now := types.NewEpochState(1, 
+		types.NewOrder("x", anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1", "1", "h").CreatedAt.AsTime(),
+		types.NewOrder("x", anteilv1.OrderType_ORDER_TYPE_LIMIT, anteilv1.OrderSide_ORDER_SIDE_BUY, "1", "1", "h").ExpiresAt.AsTime(),
+	)
+	require.NotNil(t, now)
+	require.Equal(t, uint64(1), now.EpochNumber)
+	require.Equal(t, "0", now.TotalBurnedPrevEpoch)
+	require.Equal(t, "0", now.TotalBurnedCurrentEpoch)
+	require.Equal(t, "1.0", now.EmissionCoefficient)
+	require.Equal(t, "0", now.TotalEmitted)
 }
 
 func TestIsUserPositionValid(t *testing.T) {
@@ -389,10 +271,9 @@ func TestUpdateOrderStatus(t *testing.T) {
 
 func TestUpdateUserPosition(t *testing.T) {
 	pos := types.NewUserPosition("cosmos1owner", "1000")
-	trade := types.NewTrade("b1", "s1", "cosmos1buyer", "cosmos1seller", "100", "1", "hash")
+	trade := types.NewTrade("b1", "s1", "cosmos1buyer", "cosmos1seller", "100", "1")
 	types.UpdateUserPosition(pos, trade, true)
 	require.Equal(t, "1", pos.TotalTrades)
-	require.Equal(t, "100", pos.TotalVolume)
 }
 
 func TestParseUint64(t *testing.T) {

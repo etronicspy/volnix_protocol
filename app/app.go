@@ -137,26 +137,21 @@ func (a *ConsensusKeeperAdapter) SetValidator(ctx sdk.Context, validator interfa
 
 	// Safely extract values from map
 	validatorAddr, _ := validatorMap["validator"].(string)
-	antBalance, _ := validatorMap["ant_balance"].(string)
+	consensusAddress, _ := validatorMap["consensus_address"].(string)
 	status, _ := validatorMap["status"].(int)
 	lastActive, _ := validatorMap["last_active"].(*timestamppb.Timestamp)
 	lastBlockHeight, _ := validatorMap["last_block_height"].(uint64)
-	moaScore, _ := validatorMap["moa_score"].(string)
-	activityScore, _ := validatorMap["activity_score"].(string)
-	totalBlocksCreated, _ := validatorMap["total_blocks_created"].(uint64)
+	activatedLZN, _ := validatorMap["activated_lzn"].(string)
 	totalBurnAmount, _ := validatorMap["total_burn_amount"].(string)
 
-	// Create validator object
 	validatorObj := &consensusv1.Validator{
-		Validator:          validatorAddr,
-		AntBalance:         antBalance,
-		Status:             consensusv1.ValidatorStatus(status),
-		LastActive:         lastActive,
-		LastBlockHeight:    lastBlockHeight,
-		MoaScore:           moaScore,
-		ActivityScore:      activityScore,
-		TotalBlocksCreated: totalBlocksCreated,
-		TotalBurnAmount:    totalBurnAmount,
+		Validator:        validatorAddr,
+		ConsensusAddress: consensusAddress,
+		Status:           consensusv1.ValidatorStatus(status),
+		LastActive:       lastActive,
+		LastBlockHeight:  lastBlockHeight,
+		ActivatedLzn:    activatedLZN,
+		TotalBurnAmount:  totalBurnAmount,
 	}
 
 	a.keeper.SetValidator(ctx, validatorObj)
@@ -644,21 +639,17 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			}
 			existing, _ := consensusKeeper.GetValidator(ctx, addr)
 			v := &consensusv1.Validator{
-				Validator:          addr,
-				AntBalance:         "0",
-				Status:             status,
-				LastActive:         timestamppb.New(ctx.BlockTime()),
-				LastBlockHeight:    uint64(ctx.BlockHeight()),
-				MoaScore:           "0",
-				ActivityScore:      "0",
-				TotalBlocksCreated: 0,
-				TotalBurnAmount:    "0",
+				Validator:       addr,
+				Status:          status,
+				LastActive:      timestamppb.New(ctx.BlockTime()),
+				LastBlockHeight: uint64(ctx.BlockHeight()),
+				ActivatedLzn:   "0",
+				TotalBurnAmount: "0",
 			}
 			if existing != nil {
-				v.AntBalance = existing.AntBalance
-				v.ActivityScore = existing.ActivityScore
-				v.TotalBlocksCreated = existing.TotalBlocksCreated
+				v.ActivatedLzn = existing.ActivatedLzn
 				v.TotalBurnAmount = existing.TotalBurnAmount
+				v.ConsensusAddress = existing.ConsensusAddress
 			}
 			consensusKeeper.SetValidator(ctx, v)
 		}
@@ -716,15 +707,12 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 			addr := pk.Address()
 			validatorAddr := sdk.AccAddress(addr).String()
 			consensusKeeper.SetValidator(ctx, &consensusv1.Validator{
-				Validator:          validatorAddr,
-				AntBalance:         "0",
-				Status:             consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
-				LastActive:         timestamppb.New(ctx.BlockTime()),
-				LastBlockHeight:    0,
-				MoaScore:           "0",
-				ActivityScore:      "0",
-				TotalBlocksCreated: 0,
-				TotalBurnAmount:    "0",
+				Validator:       validatorAddr,
+				Status:          consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
+				LastActive:      timestamppb.New(ctx.BlockTime()),
+				LastBlockHeight: 0,
+				ActivatedLzn:   "0",
+				TotalBurnAmount: "0",
 			})
 		}
 
