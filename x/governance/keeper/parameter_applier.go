@@ -75,6 +75,15 @@ func (k Keeper) applyLizenzParameterChange(ctx sdk.Context, change *ParameterCha
 			return fmt.Errorf("invalid duration format: %w", err)
 		}
 		currentParams.DeactivationPeriod = duration
+	case "activation_freeze_period": // §7.2 п.1
+		duration, err := time.ParseDuration(change.NewValue)
+		if err != nil {
+			return fmt.Errorf("invalid duration format: %w", err)
+		}
+		if duration <= 0 {
+			return fmt.Errorf("activation_freeze_period must be positive")
+		}
+		currentParams.ActivationFreezePeriod = duration
 	default:
 		return fmt.Errorf("unknown lizenz parameter: %s", change.Parameter)
 	}
@@ -148,6 +157,14 @@ func (k Keeper) applyConsensusParameterChange(ctx sdk.Context, change *Parameter
 		}
 		currentParams.BaseBlockTime = change.NewValue
 	case "burn_cap_lambda":
+		// §7.1 constitutional bounds: 1/3 ≤ λ ≤ 2/3
+		lambda, err := strconv.ParseFloat(change.NewValue, 64)
+		if err != nil {
+			return fmt.Errorf("invalid lambda value: %w", err)
+		}
+		if lambda < 1.0/3.0 || lambda > 2.0/3.0 {
+			return fmt.Errorf("burn_cap_lambda must be within constitutional bounds [1/3, 2/3], got %.6f", lambda)
+		}
 		currentParams.BurnCapLambda = change.NewValue
 	case "fee_policy_b_zero":
 		currentParams.FeePolicyBZero = change.NewValue
