@@ -7,9 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
+	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	governancev1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/governance/v1"
 )
@@ -116,6 +118,42 @@ func (m *mockGasMeter) RefundGas(amount uint64, descriptor string) {}
 func (m *mockGasMeter) IsPastLimit() bool       { return m.consumed > m.limit }
 func (m *mockGasMeter) IsOutOfGas() bool        { return m.consumed >= m.limit }
 func (m *mockGasMeter) String() string         { return "mockGasMeter" }
+
+func TestImprovedAnteHandler_BlockANTTransfer(t *testing.T) {
+	storeKey := storetypes.NewKVStoreKey("test")
+	ctx := testutil.DefaultContext(storeKey, storetypes.NewTransientStoreKey("t"))
+
+	// §4.1 — MsgSend with uant must be rejected
+	msgSendANT := &banktypes.MsgSend{
+		FromAddress: "cosmos1sender",
+		ToAddress:   "cosmos1receiver",
+		Amount:      sdk.NewCoins(sdk.NewCoin("uant", math.NewInt(1000))),
+	}
+	tx := mockTx{msgs: []sdk.Msg{msgSendANT}}
+	_, err := ImprovedAnteHandler(ctx, tx, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "direct ANT transfers are prohibited")
+
+	// MsgSend with uwrt should be allowed
+	msgSendWRT := &banktypes.MsgSend{
+		FromAddress: "cosmos1sender",
+		ToAddress:   "cosmos1receiver",
+		Amount:      sdk.NewCoins(sdk.NewCoin("uwrt", math.NewInt(1000))),
+	}
+	tx = mockTx{msgs: []sdk.Msg{msgSendWRT}}
+	_, err = ImprovedAnteHandler(ctx, tx, false)
+	require.NoError(t, err)
+
+	// MsgMultiSend with uant must be rejected
+	msgMultiSend := &banktypes.MsgMultiSend{
+		Inputs:  []banktypes.Input{{Address: "cosmos1sender", Coins: sdk.NewCoins(sdk.NewCoin("uant", math.NewInt(500)))}},
+		Outputs: []banktypes.Output{{Address: "cosmos1receiver", Coins: sdk.NewCoins(sdk.NewCoin("uant", math.NewInt(500)))}},
+	}
+	tx = mockTx{msgs: []sdk.Msg{msgMultiSend}}
+	_, err = ImprovedAnteHandler(ctx, tx, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "direct ANT transfers are prohibited")
+}
 
 func TestImprovedAnteHandler_GasExceeded(t *testing.T) {
 	storeKey := storetypes.NewKVStoreKey("test")

@@ -18,18 +18,24 @@ import (
 )
 
 // IdentKeeperInterface defines the interface for interacting with ident module
-// This allows anteil module to get verified citizens for ANT distribution and validate order owners
 type IdentKeeperInterface interface {
 	GetAllVerifiedAccounts(ctx sdk.Context) ([]*identv1.VerifiedAccount, error)
 	GetVerifiedAccount(ctx sdk.Context, address string) (*identv1.VerifiedAccount, error)
 }
 
+// BankKeeperInterface defines bank operations needed for order escrow §4.1
+type BankKeeperInterface interface {
+	SendCoinsFromAccountToModule(ctx sdk.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
+	SendCoinsFromModuleToAccount(ctx sdk.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
+}
+
 type (
 	Keeper struct {
-		cdc        codec.BinaryCodec
-		storeKey   storetypes.StoreKey
-		paramstore paramtypes.Subspace
-		identKeeper IdentKeeperInterface // Optional: for getting verified citizens
+		cdc         codec.BinaryCodec
+		storeKey    storetypes.StoreKey
+		paramstore  paramtypes.Subspace
+		identKeeper IdentKeeperInterface
+		bankKeeper  BankKeeperInterface
 	}
 )
 
@@ -48,6 +54,11 @@ func NewKeeper(
 		storeKey:   storeKey,
 		paramstore: ps,
 	}
+}
+
+// SetBankKeeper sets the bank keeper for escrow operations §4.1
+func (k *Keeper) SetBankKeeper(bk BankKeeperInterface) {
+	k.bankKeeper = bk
 }
 
 // GetParams returns the current parameters for the anteil module
@@ -92,28 +103,54 @@ func (k Keeper) SetOrder(ctx sdk.Context, order *anteilv1.Order) error {
 		}
 	}
 
-	// For SELL orders: validate seller has sufficient ANT balance
+	// §4.1 / §5.2 — Escrow: lock collateral when placing an order
 	if order.OrderSide == anteilv1.OrderSide_ORDER_SIDE_SELL {
+		// Sell side: lock ANT from user position
 		pos, err := k.GetUserPosition(ctx, order.Owner)
-		balance := uint64(0)
-		if err == nil && pos != nil {
-			balance = anteiltypes.ParseUint64(pos.AntBalance)
-		}
-		sellAmount := anteiltypes.ParseUint64(order.AntAmount)
-		if sellAmount > balance {
+		if err != nil || pos == nil {
 			return anteiltypes.ErrInsufficientBalance
+		}
+		available := anteiltypes.ParseUint64(pos.AvailableAnt)
+		sellAmount := anteiltypes.ParseUint64(order.AntAmount)
+		if sellAmount > available {
+			return anteiltypes.ErrInsufficientBalance
+		}
+		// Move ANT from available to locked (escrow)
+		pos.AvailableAnt = fmt.Sprintf("%d", available-sellAmount)
+		pos.LockedAnt = fmt.Sprintf("%d", anteiltypes.ParseUint64(pos.LockedAnt)+sellAmount)
+		pos.OpenOrderIds = append(pos.OpenOrderIds, order.OrderId)
+		order.EscrowedAmount = order.AntAmount
+		if err := k.SetUserPosition(ctx, pos); err != nil {
+			return fmt.Errorf("failed to update position for escrow: %w", err)
+		}
+	} else if order.OrderSide == anteilv1.OrderSide_ORDER_SIDE_BUY {
+		// Buy side: lock WRT via bank module (send to module escrow account)
+		if k.bankKeeper != nil {
+			buyerAddr, addrErr := sdk.AccAddressFromBech32(order.Owner)
+			if addrErr != nil {
+				return fmt.Errorf("invalid buyer address: %w", addrErr)
+			}
+			price := anteiltypes.ParseUint64(order.Price)
+			amount := anteiltypes.ParseUint64(order.AntAmount)
+			wrtAmount := price * amount / 1_000_000 // price in micro WRT per micro ANT
+			if wrtAmount == 0 {
+				wrtAmount = 1
+			}
+			escrowCoins := sdk.NewCoins(sdk.NewInt64Coin("uwrt", int64(wrtAmount)))
+			if sendErr := k.bankKeeper.SendCoinsFromAccountToModule(ctx, buyerAddr, anteiltypes.ModuleName, escrowCoins); sendErr != nil {
+				return fmt.Errorf("insufficient WRT for buy order escrow: %w", sendErr)
+			}
+			order.EscrowedAmount = fmt.Sprintf("%d", wrtAmount)
 		}
 	}
 
 	store := ctx.KVStore(k.storeKey)
 	orderKey := anteiltypes.GetOrderKey(order.GetOrderId())
 
-	// Check if order already exists
 	if store.Has(orderKey) {
 		return anteiltypes.ErrOrderAlreadyExists
 	}
 
-	// Store the order
 	orderBz, err := k.cdc.Marshal(order)
 	if err != nil {
 		return fmt.Errorf("failed to marshal order: %w", err)
@@ -177,9 +214,50 @@ func (k Keeper) CancelOrder(ctx sdk.Context, orderID string) error {
 		return err
 	}
 
-	// Update order status to cancelled
+	// §4.1 — Release escrowed collateral on cancel
+	if err := k.releaseEscrow(ctx, order); err != nil {
+		return fmt.Errorf("failed to release escrow: %w", err)
+	}
+
 	order.Status = anteilv1.OrderStatus_ORDER_STATUS_CANCELLED
 	return k.UpdateOrder(ctx, order)
+}
+
+// releaseEscrow returns escrowed funds to the order owner on cancellation
+func (k Keeper) releaseEscrow(ctx sdk.Context, order *anteilv1.Order) error {
+	escrowedAmt := anteiltypes.ParseUint64(order.EscrowedAmount)
+	if escrowedAmt == 0 {
+		return nil
+	}
+	if order.OrderSide == anteilv1.OrderSide_ORDER_SIDE_SELL {
+		pos, err := k.GetUserPosition(ctx, order.Owner)
+		if err != nil || pos == nil {
+			return nil
+		}
+		locked := anteiltypes.ParseUint64(pos.LockedAnt)
+		if escrowedAmt > locked {
+			escrowedAmt = locked
+		}
+		pos.LockedAnt = fmt.Sprintf("%d", locked-escrowedAmt)
+		pos.AvailableAnt = fmt.Sprintf("%d", anteiltypes.ParseUint64(pos.AvailableAnt)+escrowedAmt)
+		// Remove order ID from open orders
+		newOpenIds := make([]string, 0, len(pos.OpenOrderIds))
+		for _, id := range pos.OpenOrderIds {
+			if id != order.OrderId {
+				newOpenIds = append(newOpenIds, id)
+			}
+		}
+		pos.OpenOrderIds = newOpenIds
+		return k.SetUserPosition(ctx, pos)
+	} else if order.OrderSide == anteilv1.OrderSide_ORDER_SIDE_BUY && k.bankKeeper != nil {
+		ownerAddr, err := sdk.AccAddressFromBech32(order.Owner)
+		if err != nil {
+			return nil
+		}
+		refundCoins := sdk.NewCoins(sdk.NewInt64Coin("uwrt", int64(escrowedAmt)))
+		return k.bankKeeper.SendCoinsFromModuleToAccount(ctx, anteiltypes.ModuleName, ownerAddr, refundCoins)
+	}
+	return nil
 }
 
 // DeleteOrder removes an order from the store

@@ -4,16 +4,19 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 )
 
 const (
 	maxMemoLength = 256
 	maxMsgCount   = 16
+	antDenom      = "uant"
 )
 
 // ImprovedAnteHandler provides enhanced transaction validation
 // with timeout height, memo, and signature presence checks.
+// §4.1: rejects any bank MsgSend / MsgMultiSend that transfers ANT.
 func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 	if tx == nil {
 		return ctx, fmt.Errorf("transaction cannot be nil")
@@ -32,6 +35,11 @@ func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context
 			return ctx, fmt.Errorf("message %d cannot be nil", i)
 		}
 
+		// §4.1 — ANT direct transfer ban: reject MsgSend/MsgMultiSend containing uant
+		if err := rejectANTTransfer(msg); err != nil {
+			return ctx, fmt.Errorf("message %d rejected: %w", i, err)
+		}
+
 		if validator, ok := msg.(interface{ ValidateBasic() error }); ok {
 			if err := validator.ValidateBasic(); err != nil {
 				return ctx, fmt.Errorf("message %d validation failed: %w", i, err)
@@ -39,7 +47,6 @@ func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context
 		}
 	}
 
-	// Timeout height validation
 	if txWithTimeout, ok := tx.(interface{ GetTimeoutHeight() uint64 }); ok {
 		timeoutHeight := txWithTimeout.GetTimeoutHeight()
 		if timeoutHeight > 0 {
@@ -53,7 +60,6 @@ func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context
 		}
 	}
 
-	// Memo length validation
 	if txWithMemo, ok := tx.(interface{ GetMemo() string }); ok {
 		memo := txWithMemo.GetMemo()
 		if len(memo) > maxMemoLength {
@@ -64,7 +70,6 @@ func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context
 		}
 	}
 
-	// Signature presence check
 	if sigTx, ok := tx.(interface {
 		GetSignaturesV2() ([]signing.SignatureV2, error)
 	}); ok {
@@ -76,7 +81,6 @@ func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context
 		}
 	}
 
-	// Gas limit validation
 	gasLimit := ctx.GasMeter().Limit()
 	if gasLimit > 0 {
 		gasConsumed := ctx.GasMeter().GasConsumed()
@@ -98,6 +102,29 @@ func ImprovedAnteHandler(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context
 	}
 
 	return ctx, nil
+}
+
+// rejectANTTransfer blocks bank MsgSend and MsgMultiSend if they contain ANT (uant).
+// Per §4.1: ANT changes owner only via internal market order execution and
+// protocol service movements (emission, epoch reset, burn, migration).
+func rejectANTTransfer(msg sdk.Msg) error {
+	switch m := msg.(type) {
+	case *banktypes.MsgSend:
+		for _, coin := range m.Amount {
+			if coin.Denom == antDenom {
+				return fmt.Errorf("direct ANT transfers are prohibited (§4.1): use the internal market")
+			}
+		}
+	case *banktypes.MsgMultiSend:
+		for _, input := range m.Inputs {
+			for _, coin := range input.Coins {
+				if coin.Denom == antDenom {
+					return fmt.Errorf("direct ANT transfers are prohibited (§4.1): use the internal market")
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // MinimalAnteHandler is kept for backward compatibility.
