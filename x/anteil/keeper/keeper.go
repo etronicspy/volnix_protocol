@@ -853,10 +853,6 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 		ctx.Logger().Error("Failed to process order matching", "error", err)
 	}
 
-	if err := engine.ProcessMarketMaking(ctx); err != nil {
-		ctx.Logger().Error("Failed to process market making", "error", err)
-	}
-
 	return nil
 }
 

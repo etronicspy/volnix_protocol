@@ -5,7 +5,6 @@ import (
 	"sort"
 
 	"cosmossdk.io/math"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/types"
@@ -265,75 +264,5 @@ func (ee *EconomicEngine) CalculateMarketMetrics(ctx sdk.Context) (*MarketMetric
 	return metrics, nil
 }
 
-// ProcessMarketMaking handles automated market making via module account
-func (ee *EconomicEngine) ProcessMarketMaking(ctx sdk.Context) error {
-	metrics, err := ee.CalculateMarketMetrics(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to calculate market price: %w", err)
-	}
-
-	if metrics.TotalTrades == 0 {
-		return nil
-	}
-
-	spreadThreshold, _ := math.LegacyNewDecFromStr("0.1")
-	if metrics.PriceSpread.GT(spreadThreshold) {
-		if err := ee.createMarketMakingOrders(ctx, metrics.AveragePrice); err != nil {
-			return fmt.Errorf("failed to create market making orders: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// createMarketMakingOrders creates market making orders using deterministic math
-func (ee *EconomicEngine) createMarketMakingOrders(ctx sdk.Context, marketPrice math.LegacyDec) error {
-	buyDiscount, _ := math.LegacyNewDecFromStr("0.99")
-	sellPremium, _ := math.LegacyNewDecFromStr("1.01")
-	orderSize := "1000.0"
-
-	buyPrice := marketPrice.Mul(buyDiscount)
-	sellPrice := marketPrice.Mul(sellPremium)
-
-	// Use anteil module account for market making (governance can fund via proposals)
-	moduleAddr := authtypes.NewModuleAddress(types.ModuleName).String()
-
-	buyOrder := &anteilv1.Order{
-		OrderId:   fmt.Sprintf("mm_buy_%d", ctx.BlockTime().Unix()),
-		Owner:     moduleAddr,
-		OrderType: anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		OrderSide: anteilv1.OrderSide_ORDER_SIDE_BUY,
-		AntAmount: orderSize,
-		Price:     buyPrice.String(),
-		Status:    anteilv1.OrderStatus_ORDER_STATUS_OPEN,
-	}
-
-	sellOrder := &anteilv1.Order{
-		OrderId:   fmt.Sprintf("mm_sell_%d", ctx.BlockTime().Unix()),
-		Owner:     moduleAddr,
-		OrderType: anteilv1.OrderType_ORDER_TYPE_LIMIT,
-		OrderSide: anteilv1.OrderSide_ORDER_SIDE_SELL,
-		AntAmount: orderSize,
-		Price:     sellPrice.String(),
-		Status:    anteilv1.OrderStatus_ORDER_STATUS_OPEN,
-	}
-
-	if err := ee.keeper.CreateOrder(ctx, buyOrder); err != nil {
-		return fmt.Errorf("failed to create market making buy order: %w", err)
-	}
-
-	if err := ee.keeper.CreateOrder(ctx, sellOrder); err != nil {
-		return fmt.Errorf("failed to create market making sell order: %w", err)
-	}
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			"market_making_orders_created",
-			sdk.NewAttribute("buy_price", buyPrice.String()),
-			sdk.NewAttribute("sell_price", sellPrice.String()),
-			sdk.NewAttribute("market_price", marketPrice.String()),
-		),
-	)
-
-	return nil
-}
+// NOTE: ProcessMarketMaking and createMarketMakingOrders removed.
+// The spec (§5.2) defines a pure order-book model with no automated market making.
