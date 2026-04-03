@@ -1,8 +1,4 @@
----
-alwaysApply: true
----
-
-# Monitoring and Metrics
+# Monitoring, Metrics, and Logging
 
 ## Metrics Collection
 - Use Prometheus for metrics collection, expose metrics on `/metrics` endpoint
@@ -11,24 +7,12 @@ alwaysApply: true
 - Consensus metrics: block creation time, validator selection
 
 ## Logging
-- Use structured logging format, include context in all logs
+- Use structured logging format, include context in all logs (module name, operation, account address, tx hash, block height)
 - Implement log rotation, centralize logs for analysis (ELK, Loki, etc.)
-- Set up log retention policies
+- Recover from panics in critical paths, log before recovery
+- Mask sensitive information in logs (private keys, passwords)
 
-## Health Checks
-- Implement `/health` endpoint
-- Check database connectivity, module state, validator status
-- Return status codes (200, 503)
-- Monitor health check failures, alert on degradation
-
-## Alerting
-- Set up alerts for critical metrics
-- Alert on error rate spikes, performance degradation, validator issues
-- Configure alert channels (email, Slack, PagerDuty)
-- Set appropriate thresholds, avoid alert fatigue
-
-## Best Practices
-- Use consistent metric naming, include module name
-- Avoid high cardinality metrics
-- Monitor resource usage (CPU, memory, disk)
-- Create dashboards for key metrics
+## Health Checks & Alerting
+- Implement `/health` endpoint (check DB, module state, validator status)
+- Set up alerts for critical metrics (error rate spikes, performance degradation, validator issues)
+- Configure alert channels and set appropriate thresholds

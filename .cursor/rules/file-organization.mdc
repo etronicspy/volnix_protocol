@@ -14,6 +14,12 @@ alwaysApply: true
 - All other documentation goes to `deprecated/`: deployment guides, improvement plans, user guides, status reports
 - Exception: `README.md` stays in root
 
+## Official whitepapers (do not delete)
+- `docs/WHITEPAPER.md` — English whitepaper (canonical public narrative aligned with protocol specs).
+- `docs/WHITEPAPER_RU.md` — Russian whitepaper (same specification version; links to English).
+- **These files must not be deleted.** If the protocol evolves, **update** them in place (or add new sections); do not remove the whitepaper files from the repository. Relocation or renaming requires an explicit project decision and must preserve both language editions.
+- Detailed version-by-version changelog of the specification text remains in `docs/volnix_protocol.md`; whitepapers may omit the long appendix of per-release deltas.
+
 ## Documentation Naming
 - Use UPPERCASE_WITH_UNDERSCORES.md format
 - Examples: `PRODUCTION_DEPLOYMENT.md`, `DOCKER_DEPLOYMENT.md`
