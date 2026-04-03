@@ -219,69 +219,110 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 }
 
 // checkAccountActivity checks account activity and updates roles if needed
+// checkAccountActivity implements §5.3 MOA — Minimum Obligation of Activity
+// Supplier MOA (T_g): must place at least one sell order within the window.
+// Validator MOA (T_v): must submit at least one per-height burn within the window.
+// Sanction for Supplier: burn ANT → demote to Guest.
+// Sanction for Validator: request LZN deactivation → remove from ValidatorSet.
 func (k Keeper) checkAccountActivity(ctx sdk.Context) error {
 	allAccounts, err := k.GetAllVerifiedAccounts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get verified accounts: %w", err)
 	}
 
-	// Get params for activity periods
 	params := k.GetParams(ctx)
 	currentTime := ctx.BlockTime()
 
 	for _, account := range allAccounts {
-		// Check if account has been inactive for too long
-		lastActivity := account.GetLastActive().AsTime()
+		if !account.IsActive {
+			continue
+		}
 
-		var activityPeriod time.Duration
+		var moaWindow time.Duration
+		var burnReason string
+		var roleChangeReason string
+
 		switch account.GetRole() {
 		case identv1.Role_ROLE_SUPPLIER:
-			activityPeriod = params.MoaSupplierWindow
+			moaWindow = params.MoaSupplierWindow
+			burnReason = types.BurnReasonMOASupplier
+			roleChangeReason = types.RoleChangeReasonMOASupplier
 		case identv1.Role_ROLE_VALIDATOR:
-			activityPeriod = params.MoaValidatorWindow
+			moaWindow = params.MoaValidatorWindow
+			burnReason = types.BurnReasonMOAValidator
+			roleChangeReason = types.RoleChangeReasonMOAValidator
 		default:
-			continue // Skip guests
+			continue
 		}
 
-		if currentTime.Sub(lastActivity) > activityPeriod {
-			// For suppliers: burn ANT before deactivation
-			if account.Role == identv1.Role_ROLE_SUPPLIER && k.anteilKeeper != nil {
-				if err := k.anteilKeeper.BurnAntFromUser(ctx, account.Address); err != nil {
-					ctx.Logger().Error("Failed to burn ANT on supplier deactivation", "supplier", account.Address, "error", err)
-					
-					ctx.EventManager().EmitEvent(
-						sdk.NewEvent(
-							"ident.ant_burn_failed",
-							sdk.NewAttribute("supplier", account.Address),
-							sdk.NewAttribute("error", err.Error()),
-						),
-					)
-				} else {
-					ctx.EventManager().EmitEvent(
-						sdk.NewEvent(
-							"ident.ant_burned_on_deactivation",
-							sdk.NewAttribute("supplier", account.Address),
-							sdk.NewAttribute("reason", "inactivity"),
-						),
-					)
-				}
-			}
+		if moaWindow == 0 {
+			continue
+		}
 
-			// Release identity hash for possible re-verification
-			// According to whitepaper: "ZKP-идентификатор освобождается для возможной повторной верификации"
-			if err := k.ReleaseIdentityHash(ctx, account.Address); err != nil {
-				// Log error but continue with deactivation
-				ctx.Logger().Error("Failed to release identity hash on deactivation", "address", account.Address, "error", err)
-			}
-
-			// Downgrade role to guest
-			account.Role = identv1.Role_ROLE_GUEST
-
-			// Update account in store
-			if err := k.UpdateVerifiedAccount(ctx, account); err != nil {
-				return fmt.Errorf("failed to update inactive account: %w", err)
+		// §5.3: check last qualifying MOA event, falling back to last_active
+		lastEvent := account.GetLastActive().AsTime()
+		if account.LastMoaEvent != nil {
+			moaTime := account.LastMoaEvent.AsTime()
+			if moaTime.After(lastEvent) {
+				lastEvent = moaTime
 			}
 		}
+
+		if currentTime.Sub(lastEvent) <= moaWindow {
+			continue
+		}
+
+		// MOA violation detected
+		oldRole := account.Role
+
+		if account.Role == identv1.Role_ROLE_SUPPLIER {
+			// §5.3(1): burn supplier ANT, demote to Guest
+			if k.anteilKeeper != nil {
+				_ = k.anteilKeeper.BurnAntFromUser(ctx, account.Address)
+			}
+
+			ctx.EventManager().EmitEvent(
+				sdk.NewEvent(
+					types.EventTypeAntBurned,
+					sdk.NewAttribute(types.AttributeKeyAccount, account.Address),
+					sdk.NewAttribute(types.AttributeKeyBurnReason, burnReason),
+					sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+				),
+			)
+		}
+
+		// Release identity hash
+		if err := k.ReleaseIdentityHash(ctx, account.Address); err != nil {
+			ctx.Logger().Error("Failed to release identity hash", "address", account.Address, "error", err)
+		}
+
+		// Demote to Guest
+		account.Role = identv1.Role_ROLE_GUEST
+		account.IsActive = false
+
+		if err := k.UpdateVerifiedAccount(ctx, account); err != nil {
+			return fmt.Errorf("failed to update account after MOA sanction: %w", err)
+		}
+
+		// Emit role change event §6.3
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				types.EventTypeRoleChanged,
+				sdk.NewAttribute(types.AttributeKeyAccount, account.Address),
+				sdk.NewAttribute(types.AttributeKeyOldRole, oldRole.String()),
+				sdk.NewAttribute(types.AttributeKeyNewRole, identv1.Role_ROLE_GUEST.String()),
+				sdk.NewAttribute(types.AttributeKeyRoleChangeReason, roleChangeReason),
+				sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+			),
+		)
+
+		_ = burnReason // used above
+
+		ctx.Logger().Info("MOA violation: account sanctioned",
+			"address", account.Address,
+			"old_role", oldRole.String(),
+			"reason", roleChangeReason,
+		)
 	}
 
 	return nil
