@@ -74,12 +74,57 @@ def create_accounts(req: CreateAccountsRequest):
 class MintRequest(BaseModel):
     address: str
     amount: float
-    asset_type: str = "vlnx" # "vlnx" or "shares"
+    asset_type: str = "wrt" # "wrt", "lzn", or "ant"
 
 @app.post("/api/god-mode/mint")
 def mint_tokens(req: MintRequest):
-    state_manager.mint_tokens(req.address, req.amount, req.asset_type)
-    return {"status": "success", "address": req.address, "balance": state_manager.accounts[req.address].balance}
+    import uuid
+    import time
+    from core.models import Transaction, TransactionType
+    
+    try:
+        # Instead of direct minting, we simulate a transfer from supervisor
+        acc = state_manager.accounts.get(req.address)
+        if not acc:
+            acc = state_manager.create_account(req.address)
+            
+        if req.asset_type == "ant" and acc.role == Role.GUEST:
+            return {"status": "error", "message": "Guests cannot hold ANT tokens"}
+            
+        tx = Transaction(
+            tx_hash=uuid.uuid4().hex,
+            tx_type=TransactionType.TRANSFER,
+            sender="supervisor",
+            receiver=req.address,
+            amount=req.amount,
+            asset_type=req.asset_type,
+            timestamp=time.time()
+        )
+        
+        # Execute immediately for God Mode feedback, or add to mempool
+        # For immediate feedback:
+        supervisor = state_manager.accounts["supervisor"]
+        if req.asset_type == "wrt" and supervisor.wrt_balance >= req.amount:
+            supervisor.wrt_balance -= req.amount
+            acc.wrt_balance += req.amount
+        elif req.asset_type == "lzn" and supervisor.lzn_balance >= req.amount:
+            supervisor.lzn_balance -= req.amount
+            acc.lzn_balance += req.amount
+        elif req.asset_type == "ant" and supervisor.ant_balance >= req.amount:
+            supervisor.ant_balance -= req.amount
+            acc.ant_balance += req.amount
+        else:
+            return {"status": "error", "message": "Supervisor has insufficient funds"}
+            
+        return {
+            "status": "success", 
+            "address": req.address, 
+            "wrt_balance": acc.wrt_balance,
+            "lzn_balance": acc.lzn_balance,
+            "ant_balance": acc.ant_balance
+        }
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
 
 class RoleRequest(BaseModel):
     address: str
@@ -140,7 +185,7 @@ class BotControlRequest(BaseModel):
     intensity: float = 1.0 # tx/s
 
 @app.post("/api/bot/control")
-def control_bot(req: BotControlRequest):
+async def control_bot(req: BotControlRequest):
     if req.action == "start":
         bot_engine.set_intensity(req.intensity)
         if not bot_engine.is_running:
@@ -174,5 +219,6 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Keep connection alive and listen for potential client messages
             data = await websocket.receive_text()
-    except WebSocketDisconnect:
+    except Exception as e:
+        # Handle all WebSocket disconnects gracefully
         engine.ws_manager.disconnect(websocket)

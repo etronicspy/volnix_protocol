@@ -70,11 +70,11 @@ class SimulationEngine:
                 
                 total_cost = match_price * match_amount
                 
-                if buyer and seller and buyer.balance >= total_cost and seller.shares >= match_amount:
-                    buyer.balance -= total_cost
-                    buyer.shares += match_amount
-                    seller.shares -= match_amount
-                    seller.balance += total_cost
+                if buyer and seller and buyer.wrt_balance >= total_cost and seller.ant_balance >= match_amount:
+                    buyer.wrt_balance -= total_cost
+                    buyer.ant_balance += match_amount
+                    seller.ant_balance -= match_amount
+                    seller.wrt_balance += total_cost
                     
                     highest_bid.filled += match_amount
                     lowest_ask.filled += match_amount
@@ -117,32 +117,53 @@ class SimulationEngine:
                 sender = self.state.accounts.get(tx.sender)
                 receiver = self.state.accounts.get(tx.receiver)
                 
-                if sender and receiver and sender.role != Role.NONE and sender.balance >= tx.amount:
-                    sender.balance -= tx.amount
-                    receiver.balance += tx.amount
+                if sender and receiver and sender.wrt_balance >= tx.amount:
+                    sender.wrt_balance -= tx.amount
+                    receiver.wrt_balance += tx.amount
                     txs_in_block.append(tx.dict())
             elif tx.tx_type == TransactionType.MINT:
                 receiver = self.state.accounts.get(tx.receiver)
-                if receiver:
-                    receiver.balance += tx.amount
+                if not receiver:
+                    receiver = self.state.create_account(tx.receiver)
+                
+                asset = getattr(tx, "asset_type", "wrt") or "wrt"
+                
+                if asset == "ant" and receiver.role == Role.GUEST:
+                    pass # Invalid, skip
+                else:
+                    if asset == "wrt":
+                        receiver.wrt_balance += tx.amount
+                    elif asset == "lzn":
+                        receiver.lzn_balance += tx.amount
+                    elif asset == "ant":
+                        receiver.ant_balance += tx.amount
                     txs_in_block.append(tx.dict())
             elif tx.tx_type == TransactionType.SET_ROLE:
                 receiver = self.state.accounts.get(tx.receiver)
                 if receiver:
-                    receiver.role = tx.role
+                    if tx.role == Role.VALIDATOR and receiver.lzn_balance <= 0:
+                        pass # Cannot become validator without LZN
+                    else:
+                        receiver.role = tx.role
+                        txs_in_block.append(tx.dict())
+            elif tx.tx_type == TransactionType.BURN:
+                sender = self.state.accounts.get(tx.sender)
+                if sender and sender.role == Role.VALIDATOR and sender.ant_balance >= tx.amount:
+                    sender.ant_balance -= tx.amount
+                    self.state.current_epoch_burn += tx.amount
                     txs_in_block.append(tx.dict())
             elif tx.tx_type == TransactionType.CREATE_ORDER:
                 owner = self.state.accounts.get(tx.sender)
-                if owner and owner.role != Role.NONE:
+                if owner and owner.role != Role.GUEST:
                     # Basic validation
-                    if tx.order_type == OrderType.BUY and owner.balance >= (tx.price * tx.amount):
+                    if tx.order_type == OrderType.BUY and owner.wrt_balance >= (tx.price * tx.amount):
                         # Lock funds (simplified: we just check at match time, but let's lock for realism)
-                        owner.balance -= (tx.price * tx.amount)
+                        owner.wrt_balance -= (tx.price * tx.amount)
                         order = Order(id=tx.tx_hash, owner=tx.sender, order_type=tx.order_type, price=tx.price, amount=tx.amount, timestamp=tx.timestamp)
                         self.state.orders[tx.tx_hash] = order
                         txs_in_block.append(tx.dict())
-                    elif tx.order_type == OrderType.SELL and owner.shares >= tx.amount:
-                        owner.shares -= tx.amount
+                    elif tx.order_type == OrderType.SELL and owner.ant_balance >= tx.amount:
+                        owner.ant_balance -= tx.amount
                         order = Order(id=tx.tx_hash, owner=tx.sender, order_type=tx.order_type, price=tx.price, amount=tx.amount, timestamp=tx.timestamp)
                         self.state.orders[tx.tx_hash] = order
                         txs_in_block.append(tx.dict())
@@ -151,15 +172,65 @@ class SimulationEngine:
                 if order and order.owner == tx.sender:
                     owner = self.state.accounts.get(tx.sender)
                     if order.order_type == OrderType.BUY:
-                        owner.balance += (order.price * (order.amount - order.filled))
+                        owner.wrt_balance += (order.price * (order.amount - order.filled))
                     else:
-                        owner.shares += (order.amount - order.filled)
+                        owner.ant_balance += (order.amount - order.filled)
                     del self.state.orders[tx.order_id]
                     txs_in_block.append(tx.dict())
         
         # Run Matching Engine
         trades = self._match_orders()
         txs_in_block.extend(trades)
+        
+        # Block Reward (WRT Emission)
+        reward_amount = 50.0
+        validators = [acc for acc in self.state.accounts.values() if acc.role == Role.VALIDATOR and acc.lzn_balance > 0]
+        
+        if validators:
+            total_lzn = sum(v.lzn_balance for v in validators)
+            for v in validators:
+                share = (v.lzn_balance / total_lzn) * reward_amount
+                v.wrt_balance += share
+                
+            details = "Block reward distributed to validators"
+            if self.state.current_height == 0: # Producing Block 1
+                details = "The Times 03/Apr/2026 Volnix Protocol Genesis: Overcoming the Justice Trilemma"
+                
+            txs_in_block.append({
+                "tx_hash": uuid.uuid4().hex,
+                "tx_type": TransactionType.BLOCK_REWARD,
+                "receiver": "validators",
+                "amount": reward_amount,
+                "asset_type": "wrt",
+                "details": details,
+                "timestamp": time.time()
+            })
+        
+        # Epoch Logic (every 10 blocks)
+        if self.state.current_height > 0 and self.state.current_height % 10 == 0:
+            providers = [acc for acc in self.state.accounts.values() if acc.role == Role.PROVIDER]
+            
+            wiped_ant = 0.0
+            for p in providers:
+                wiped_ant += p.ant_balance
+                p.ant_balance = 0.0
+                
+            # Distribute new ANT based on previous burn
+            emission = max(self.state.current_epoch_burn * 1.0, 100.0) # Base emission for sim
+            if providers:
+                per_provider = emission / len(providers)
+                for p in providers:
+                    p.ant_balance += per_provider
+                    
+            txs_in_block.append({
+                "tx_hash": uuid.uuid4().hex,
+                "tx_type": TransactionType.EPOCH_EMISSION,
+                "amount": emission,
+                "asset_type": "ant",
+                "details": f"Wiped {wiped_ant:.2f} ANT. Emitted {emission:.2f} ANT to {len(providers)} providers",
+                "timestamp": time.time()
+            })
+            self.state.current_epoch_burn = 0.0
         
         import hashlib
         block_hash = hashlib.sha256(f"{self.state.current_height + 1}{time.time()}".encode()).hexdigest()[:16]

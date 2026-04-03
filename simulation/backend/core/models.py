@@ -3,16 +3,17 @@ from typing import Optional, List, Dict
 from enum import Enum
 
 class Role(str, Enum):
-    NONE = "none"
     CITIZEN = "citizen"
     PROVIDER = "provider"
     VALIDATOR = "validator"
+    GUEST = "guest"
 
 class Account(BaseModel):
     address: str
-    balance: float = 0.0  # VLNX tokens
-    shares: float = 0.0   # Anteil shares
-    role: Role = Role.NONE
+    wrt_balance: float = 0.0  # WRT (Wert) - Main token
+    lzn_balance: float = 0.0  # LZN (Lizenz) - License token
+    ant_balance: float = 0.0  # ANT (Anteil) - Internal market coin
+    role: Role = Role.CITIZEN
 
 class TransactionType(str, Enum):
     TRANSFER = "transfer"
@@ -20,6 +21,9 @@ class TransactionType(str, Enum):
     SET_ROLE = "set_role"
     CREATE_ORDER = "create_order"
     CANCEL_ORDER = "cancel_order"
+    BURN = "burn"
+    EPOCH_EMISSION = "epoch_emission"
+    BLOCK_REWARD = "block_reward"
 
 class OrderType(str, Enum):
     BUY = "buy"
@@ -40,6 +44,7 @@ class Transaction(BaseModel):
     sender: Optional[str] = None
     receiver: Optional[str] = None
     amount: Optional[float] = None
+    asset_type: Optional[str] = None
     price: Optional[float] = None
     order_type: Optional[OrderType] = None
     order_id: Optional[str] = None
