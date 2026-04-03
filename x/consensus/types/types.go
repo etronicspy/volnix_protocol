@@ -41,8 +41,8 @@ func DefaultParams() *Params {
 	return &Params{
 		BaseBlockTime:              "5s",
 		BaseBlockReward:            "50000000uwrt",
-		BurnCapLambda:              "0.5",
-		FeePolicyBZero:             "community_pool",
+		BurnCapLambda:              "0.333333333333333333",
+		FeePolicyBZero:             "community_pool", // deprecated: B=0 impossible with min burn threshold (v4.17)
 		HalvingInterval:            210000,
 		MoaPenaltyThresholdHigh:    "1.0",
 		MoaPenaltyThresholdWarning: "0.9",

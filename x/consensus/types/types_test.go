@@ -104,7 +104,7 @@ func TestValidateParams(t *testing.T) {
 			params: &types.Params{
 				BaseBlockTime:              "",
 				BaseBlockReward:            "50000000uwrt",
-				BurnCapLambda:              "0.5",
+				BurnCapLambda:              "0.333333333333333333",
 				FeePolicyBZero:             "community_pool",
 				HalvingInterval:            210000,
 				MoaPenaltyThresholdHigh:    "1.0",
@@ -121,7 +121,7 @@ func TestValidateParams(t *testing.T) {
 			params: &types.Params{
 				BaseBlockTime:              "5s",
 				BaseBlockReward:            "",
-				BurnCapLambda:              "0.5",
+				BurnCapLambda:              "0.333333333333333333",
 				FeePolicyBZero:             "community_pool",
 				HalvingInterval:            210000,
 				MoaPenaltyThresholdHigh:    "1.0",
@@ -155,7 +155,7 @@ func TestValidateParams(t *testing.T) {
 			params: &types.Params{
 				BaseBlockTime:              "5s",
 				BaseBlockReward:            "50000000uwrt",
-				BurnCapLambda:              "0.5",
+				BurnCapLambda:              "0.333333333333333333",
 				FeePolicyBZero:             "community_pool",
 				HalvingInterval:            0,
 				MoaPenaltyThresholdHigh:    "1.0",
