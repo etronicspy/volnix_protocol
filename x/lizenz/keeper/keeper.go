@@ -170,7 +170,7 @@ func (k Keeper) SetActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.ActivatedLi
 
 	store.Set(lizenzKey, lizenzBz)
 	
-	// Emit LZN activation event
+	// Emit LZN activation event §6.3
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeLizenzActivated,
@@ -178,6 +178,8 @@ func (k Keeper) SetActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.ActivatedLi
 			sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
 			sdk.NewAttribute(types.AttributeKeyActivationTime, lizenz.ActivationTime.String()),
 			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+			sdk.NewAttribute(types.AttributeKeyConsensusChangeReason, types.ConsensusChangeReasonLZNActivated),
+			sdk.NewAttribute(types.AttributeKeyPower, lizenz.Amount),
 		),
 	)
 	
@@ -318,7 +320,7 @@ func (k Keeper) DeleteActivatedLizenz(ctx sdk.Context, validator string) error {
 
 	store.Delete(lizenzKey)
 	
-	// Emit event for LZN deactivation
+	// Emit event for LZN deactivation §6.3
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeLizenzDeactivated,
@@ -326,6 +328,8 @@ func (k Keeper) DeleteActivatedLizenz(ctx sdk.Context, validator string) error {
 			sdk.NewAttribute(types.AttributeKeyAmount, lizenz.Amount),
 			sdk.NewAttribute(types.AttributeKeyDeactivationTime, timestamppb.New(ctx.BlockTime()).String()),
 			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", ctx.BlockHeight())),
+			sdk.NewAttribute(types.AttributeKeyConsensusChangeReason, types.ConsensusChangeReasonLZNDeactivated),
+			sdk.NewAttribute(types.AttributeKeyPower, "0"),
 		),
 	)
 	

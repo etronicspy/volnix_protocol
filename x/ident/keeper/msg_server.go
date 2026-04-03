@@ -67,11 +67,12 @@ func (s MsgServer) VerifyIdentity(ctx context.Context, req *identv1.MsgVerifyIde
 
 	verificationId := fmt.Sprintf("verification-%s", req.Address)
 	sdkCtx.EventManager().EmitEvent(
-		sdk.NewEvent("ident.identity_verified",
-			sdk.NewAttribute("address", req.Address),
-			sdk.NewAttribute("role", req.DesiredRole.String()),
-			sdk.NewAttribute("verification_id", verificationId),
-			sdk.NewAttribute("identity_hash", identityHash),
+		sdk.NewEvent(types.EventTypeIdentityVerified,
+			sdk.NewAttribute(types.AttributeKeyAccount, req.Address),
+			sdk.NewAttribute(types.AttributeKeyNewRole, req.DesiredRole.String()),
+			sdk.NewAttribute(types.AttributeKeyIdentityHash, identityHash),
+			sdk.NewAttribute(types.AttributeKeyRoleChangeReason, types.RoleChangeReasonZKPVerify),
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", sdkCtx.BlockHeight())),
 		),
 	)
 
@@ -170,11 +171,12 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 			}
 			changeHash := fmt.Sprintf("change-%s-%d", req.Address, req.NewRole)
 			sdkCtx.EventManager().EmitEvent(
-				sdk.NewEvent("ident.role_changed",
-					sdk.NewAttribute("address", req.Address),
-					sdk.NewAttribute("old_role", identv1.Role_ROLE_GUEST.String()),
-					sdk.NewAttribute("new_role", req.NewRole.String()),
-					sdk.NewAttribute("change_hash", changeHash),
+				sdk.NewEvent(types.EventTypeRoleChanged,
+					sdk.NewAttribute(types.AttributeKeyAccount, req.Address),
+					sdk.NewAttribute(types.AttributeKeyOldRole, identv1.Role_ROLE_GUEST.String()),
+					sdk.NewAttribute(types.AttributeKeyNewRole, req.NewRole.String()),
+					sdk.NewAttribute(types.AttributeKeyRoleChangeReason, types.RoleChangeReasonRoleChange),
+					sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", sdkCtx.BlockHeight())),
 				),
 			)
 			return &identv1.MsgChangeRoleResponse{
@@ -200,11 +202,12 @@ func (s MsgServer) ChangeRole(ctx context.Context, req *identv1.MsgChangeRole) (
 
 	changeHash := fmt.Sprintf("change-%s-%d", req.Address, req.NewRole)
 	sdkCtx.EventManager().EmitEvent(
-		sdk.NewEvent("ident.role_changed",
-			sdk.NewAttribute("address", req.Address),
-			sdk.NewAttribute("old_role", oldRole.String()),
-			sdk.NewAttribute("new_role", req.NewRole.String()),
-			sdk.NewAttribute("change_hash", changeHash),
+		sdk.NewEvent(types.EventTypeRoleChanged,
+			sdk.NewAttribute(types.AttributeKeyAccount, req.Address),
+			sdk.NewAttribute(types.AttributeKeyOldRole, oldRole.String()),
+			sdk.NewAttribute(types.AttributeKeyNewRole, req.NewRole.String()),
+			sdk.NewAttribute(types.AttributeKeyRoleChangeReason, types.RoleChangeReasonRoleChange),
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", sdkCtx.BlockHeight())),
 		),
 	)
 
