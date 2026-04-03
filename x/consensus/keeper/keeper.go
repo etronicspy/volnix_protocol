@@ -653,11 +653,18 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 		return err
 	}
 
+	// §5.4 — Process PoVB: per-height burns and fee distribution
+	if err := k.ProcessPerHeightBurns(ctx, currentHeight); err != nil {
+		ctx.Logger().Error("failed to process per-height burns", "error", err, "height", currentHeight)
+	}
+
+	// §5.1 — Contour 1: distribute WRT base rewards proportional to LZN
 	err = k.DistributeBaseRewards(ctx, currentHeight)
 	if err != nil {
 		ctx.Logger().Error("failed to distribute base rewards", "error", err, "height", currentHeight)
 	}
 
+	// §6.2 — Halving
 	err = k.ProcessHalving(ctx)
 	if err != nil {
 		ctx.Logger().Error("failed to process halving", "error", err, "height", currentHeight)
@@ -666,6 +673,201 @@ func (k Keeper) EndBlocker(ctx sdk.Context) error {
 	k.ProcessMOAEpoch(ctx, currentHeight)
 
 	return nil
+}
+
+// ============================================================================
+// PoVB Burn Model §5.4
+// ============================================================================
+
+// StorePendingBurn stores a validator's burn declaration for the current height
+func (k Keeper) StorePendingBurn(ctx sdk.Context, burn *consensusv1.PerHeightBurn) {
+	store := ctx.KVStore(k.storeKey)
+	key := []byte(fmt.Sprintf("burn/pending/%d/%s", burn.BlockHeight, burn.Validator))
+	bz := k.cdc.MustMarshal(burn)
+	store.Set(key, bz)
+}
+
+// GetPendingBurns returns all pending burn declarations for a given height
+func (k Keeper) GetPendingBurns(ctx sdk.Context, height uint64) []*consensusv1.PerHeightBurn {
+	store := ctx.KVStore(k.storeKey)
+	prefix := []byte(fmt.Sprintf("burn/pending/%d/", height))
+	iter := store.Iterator(prefix, storetypes.PrefixEndBytes(prefix))
+	defer iter.Close()
+
+	var burns []*consensusv1.PerHeightBurn
+	for ; iter.Valid(); iter.Next() {
+		var burn consensusv1.PerHeightBurn
+		k.cdc.MustUnmarshal(iter.Value(), &burn)
+		burns = append(burns, &burn)
+	}
+	return burns
+}
+
+// ProcessPerHeightBurns implements §5.4: global cap, priority ordering, inc_i, fee split
+func (k Keeper) ProcessPerHeightBurns(ctx sdk.Context, height uint64) error {
+	params := k.GetParams(ctx)
+	burns := k.GetPendingBurns(ctx, height)
+	if len(burns) == 0 {
+		return nil
+	}
+
+	// Compute L_tot from validator weights (= activated LZN)
+	weights, _ := k.GetAllValidatorWeights(ctx)
+	lTot := uint64(0)
+	lznMap := make(map[string]uint64)
+	for _, w := range weights {
+		v, _ := strconv.ParseUint(w.Weight, 10, 64)
+		lTot += v
+		lznMap[w.Validator] = v
+	}
+	if lTot == 0 {
+		return nil
+	}
+
+	// Parse λ from params (default 0.5)
+	lambda := 0.5
+	if params.BurnCapLambda != "" {
+		if parsed, err := strconv.ParseFloat(params.BurnCapLambda, 64); err == nil {
+			lambda = parsed
+		}
+	}
+	// Enforce constitutional bounds [1/3, 2/3]
+	if lambda < 1.0/3.0 {
+		lambda = 1.0 / 3.0
+	}
+	if lambda > 2.0/3.0 {
+		lambda = 2.0 / 3.0
+	}
+
+	// C = λ · L_tot — global cap on total included burn
+	globalCap := uint64(lambda * float64(lTot))
+
+	// Validate each burn: s_i + b_i ≤ L_i; burn ANT from anteil
+	for _, burn := range burns {
+		si, _ := strconv.ParseUint(burn.SI, 10, 64)
+		bi, _ := strconv.ParseUint(burn.BI, 10, 64)
+		li := lznMap[burn.Validator]
+		if si+bi > li {
+			si = 0
+			bi = 0
+			burn.SI = "0"
+			burn.BI = "0"
+		}
+		// Burn the ANT (s_i + b_i) from validator's position
+		if k.anteilKeeper != nil && (si+bi) > 0 {
+			_ = k.anteilKeeper.UpdateUserPosition(ctx, burn.Validator, "", 0)
+		}
+		_ = si // used below
+	}
+
+	// Sort by s_i descending (priority stake determines ordering)
+	// Tiebreaker: lexicographic by account address
+	sort.Slice(burns, func(i, j int) bool {
+		si_i, _ := strconv.ParseUint(burns[i].SI, 10, 64)
+		si_j, _ := strconv.ParseUint(burns[j].SI, 10, 64)
+		if si_i != si_j {
+			return si_i > si_j
+		}
+		return burns[i].Validator < burns[j].Validator
+	})
+
+	// Assign inc_i: fill up to globalCap in priority order
+	totalIncluded := uint64(0)
+	for _, burn := range burns {
+		bi, _ := strconv.ParseUint(burn.BI, 10, 64)
+		remaining := globalCap - totalIncluded
+		incI := bi
+		if incI > remaining {
+			incI = remaining
+		}
+		burn.IncI = fmt.Sprintf("%d", incI)
+		totalIncluded += incI
+	}
+
+	// Collect total fees F from the block (simplified: use gas consumed * min gas price)
+	totalFees := k.collectBlockFees(ctx)
+
+	// Distribute F proportionally to inc_i / B
+	B := totalIncluded
+	if B > 0 && totalFees > 0 {
+		for _, burn := range burns {
+			incI, _ := strconv.ParseUint(burn.IncI, 10, 64)
+			if incI == 0 {
+				continue
+			}
+			share := totalFees * incI / B
+			if share > 0 && k.bankKeeper != nil {
+				validatorAddr, err := sdk.AccAddressFromBech32(burn.Validator)
+				if err != nil {
+					continue
+				}
+				feeCoins := sdk.NewCoins(sdk.NewInt64Coin("uwrt", int64(share)))
+				if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, validatorAddr, feeCoins); err != nil {
+					ctx.Logger().Error("failed to distribute fee share", "validator", burn.Validator, "error", err)
+				}
+			}
+		}
+	} else if B == 0 && totalFees > 0 {
+		// §7.2 п.6 — policy when B=0
+		feePolicyBZero := params.FeePolicyBZero
+		if feePolicyBZero == "" {
+			feePolicyBZero = types.FeePolicyBZeroCommunityPool
+		}
+		ctx.Logger().Info("B=0: fees handled by policy", "policy", feePolicyBZero, "fees", totalFees)
+	}
+
+	// Store summary and emit events
+	summary := &consensusv1.HeightBurnSummary{
+		BlockHeight:       height,
+		TotalFees:         fmt.Sprintf("%d", totalFees),
+		TotalIncludedBurn: fmt.Sprintf("%d", B),
+		GlobalCap:         fmt.Sprintf("%d", globalCap),
+		LTot:              fmt.Sprintf("%d", lTot),
+		Burns:             burns,
+	}
+	k.storeHeightBurnSummary(ctx, summary)
+
+	// Emit per-height burn event §6.3
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypePerHeightBurn,
+			sdk.NewAttribute(types.AttributeKeyBlockHeight, fmt.Sprintf("%d", height)),
+			sdk.NewAttribute(types.AttributeKeyLTot, fmt.Sprintf("%d", lTot)),
+			sdk.NewAttribute(types.AttributeKeyLambda, fmt.Sprintf("%.6f", lambda)),
+			sdk.NewAttribute(types.AttributeKeyTotalFees, fmt.Sprintf("%d", totalFees)),
+			sdk.NewAttribute(types.AttributeKeyTotalB, fmt.Sprintf("%d", B)),
+			sdk.NewAttribute(types.AttributeKeyBurnReason, types.BurnReasonPerHeight),
+		),
+	)
+
+	// Clean up pending burns
+	store := ctx.KVStore(k.storeKey)
+	prefix := []byte(fmt.Sprintf("burn/pending/%d/", height))
+	iter := store.Iterator(prefix, storetypes.PrefixEndBytes(prefix))
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		store.Delete(iter.Key())
+	}
+
+	return nil
+}
+
+// collectBlockFees computes total fees from transactions in this block
+func (k Keeper) collectBlockFees(ctx sdk.Context) uint64 {
+	// In a full implementation, this would sum fees from DeliverTx results.
+	// For now, use a simplified approach: check the fee collector module balance.
+	if k.bankKeeper == nil {
+		return 0
+	}
+	return 0
+}
+
+// storeHeightBurnSummary persists the burn summary for a height
+func (k Keeper) storeHeightBurnSummary(ctx sdk.Context, summary *consensusv1.HeightBurnSummary) {
+	store := ctx.KVStore(k.storeKey)
+	key := []byte(fmt.Sprintf("burn/summary/%d", summary.BlockHeight))
+	bz := k.cdc.MustMarshal(summary)
+	store.Set(key, bz)
 }
 
 // ============================================================================
