@@ -489,23 +489,22 @@ func (k Keeper) GetAllTrades(ctx sdk.Context) ([]*anteilv1.Trade, error) {
 
 // BeginBlocker distributes ANT to citizens on schedule
 func (k Keeper) BeginBlocker(ctx sdk.Context) error {
-	// Check if it's time to distribute ANT to citizens
 	params := k.GetParams(ctx)
 	lastDistributionTime, err := k.GetLastDistributionTime(ctx)
 	if err != nil {
 		ctx.Logger().Error("Failed to get last distribution time", "error", err)
-		// Continue anyway - will distribute on next block
 	} else {
 		currentTime := ctx.BlockTime()
-		timeSinceLastDistribution := currentTime.Sub(lastDistributionTime)
+		period := params.EpochLength
+		if period == 0 {
+			period = params.CitizenAntDistributionPeriod
+		}
 
-		// Distribute if enough time has passed (or if first distribution)
-		if lastDistributionTime.IsZero() || timeSinceLastDistribution >= params.CitizenAntDistributionPeriod {
-			if err := k.DistributeAntToCitizens(ctx); err != nil {
-				ctx.Logger().Error("Failed to distribute ANT to citizens", "error", err)
-				// Don't fail the block if distribution fails
+		if lastDistributionTime.IsZero() || currentTime.Sub(lastDistributionTime) >= period {
+			// §5.5 — Run epoch emission: burn supplier ANT, compute coefficient, re-emit
+			if err := k.ProcessEpochEmission(ctx); err != nil {
+				ctx.Logger().Error("Failed to process epoch emission", "error", err)
 			} else {
-				// Update last distribution time
 				if err := k.SetLastDistributionTime(ctx, currentTime); err != nil {
 					ctx.Logger().Error("Failed to set last distribution time", "error", err)
 				}
@@ -628,116 +627,193 @@ func (k Keeper) GetOrdersByOwner(ctx sdk.Context, owner string) ([]*anteilv1.Ord
 	return orders, nil
 }
 
-// DistributeAntToCitizens distributes ANT tokens to verified citizens
-// According to whitepaper: Citizens automatically receive ANT (10 ANT per day by default)
-func (k Keeper) DistributeAntToCitizens(ctx sdk.Context) error {
-	// Check if ident keeper is available
+// ProcessEpochEmission implements §5.5: burn all supplier ANT, compute coefficient, re-emit
+func (k Keeper) ProcessEpochEmission(ctx sdk.Context) error {
 	if k.identKeeper == nil {
-		ctx.Logger().Info("Ident keeper not set, skipping ANT distribution")
 		return nil
 	}
 
-	// Get all verified accounts
 	allAccounts, err := k.identKeeper.GetAllVerifiedAccounts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get verified accounts: %w", err)
 	}
 
-	// Get parameters — epoch coefficient drives per-period emission §5.5
 	params := k.GetParams(ctx)
-	rewardRate, err := strconv.ParseUint(params.EpochCoefficient, 10, 64)
-	if err != nil {
-		// EpochCoefficient may be a decimal string like "1.0"; fall back to base rate 10
-		rewardRate = 10
-	}
-
-	accumulationLimit, err := strconv.ParseUint(params.SupplierEpochAntLimit, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid supplier epoch ANT limit: %w", err)
-	}
-
-	// According to whitepaper §4.2: "ANT начисляется Гражданам" — only Citizens receive ANT from protocol.
-	// Validators buy ANT on the internal market; they do not receive protocol distribution.
-	distributedCount := 0
-	
-	// OPTIMIZATION: Cache timestamp to avoid repeated allocations
-	now := timestamppb.New(ctx.BlockTime())
-	
-	// OPTIMIZATION: Get store once for batch operations
 	store := ctx.KVStore(k.storeKey)
-	
-	// OPTIMIZATION: Batch process positions to reduce store operations
+	now := timestamppb.New(ctx.BlockTime())
+
+	// Step 1: Collect all active suppliers and their current ANT balances
+	type supplierData struct {
+		address string
+		balance uint64
+	}
+	var suppliers []supplierData
+	totalSupplierANT := uint64(0)
+
 	for _, account := range allAccounts {
-		// Only process active citizens — validators buy ANT on market, per whitepaper
 		if account.Role != identv1.Role_ROLE_SUPPLIER || !account.IsActive {
 			continue
 		}
-
-		// OPTIMIZED: Get user position directly from store (faster than GetUserPosition)
 		positionKey := anteiltypes.GetUserPositionKey(account.Address)
-		var position *anteilv1.UserPosition
-		
 		positionBz := store.Get(positionKey)
+		balance := uint64(0)
 		if positionBz != nil {
-			position = &anteilv1.UserPosition{}
-			if err := k.cdc.Unmarshal(positionBz, position); err != nil {
-				// If unmarshal fails, create new position
-				position = anteiltypes.NewUserPosition(account.Address, "0", ctx.BlockTime())
+			var position anteilv1.UserPosition
+			if err := k.cdc.Unmarshal(positionBz, &position); err == nil {
+				balance, _ = strconv.ParseUint(position.AntBalance, 10, 64)
 			}
-		} else {
-			// Create new position if not found
-			position = anteiltypes.NewUserPosition(account.Address, "0", ctx.BlockTime())
 		}
+		suppliers = append(suppliers, supplierData{address: account.Address, balance: balance})
+		totalSupplierANT += balance
+	}
 
-		// Check accumulation limit
-		currentBalance, err := strconv.ParseUint(position.AntBalance, 10, 64)
+	if len(suppliers) == 0 {
+		return nil
+	}
+
+	// Step 2: Burn all supplier ANT §5.5
+	for _, s := range suppliers {
+		positionKey := anteiltypes.GetUserPositionKey(s.address)
+		position := anteiltypes.NewUserPosition(s.address, "0", ctx.BlockTime())
+		position.AntBalance = "0"
+		position.AvailableAnt = "0"
+		position.LockedAnt = "0"
+		position.LastActivity = now
+		positionBz, err := k.cdc.Marshal(position)
 		if err != nil {
-			currentBalance = 0
-		}
-
-		// Skip if already at limit
-		if currentBalance >= accumulationLimit {
-			continue // Skip logging in production for performance
-		}
-
-		// Calculate new balance (respect limit)
-		newBalance := currentBalance + rewardRate
-		if newBalance > accumulationLimit {
-			newBalance = accumulationLimit
-		}
-
-		// OPTIMIZED: Use strconv.FormatUint instead of fmt.Sprintf (faster)
-		balanceStr := strconv.FormatUint(newBalance, 10)
-		position.AntBalance = balanceStr
-		position.AvailableAnt = balanceStr // Available = total (not locked)
-		position.LastActivity = now // Reuse cached timestamp
-
-		// OPTIMIZED: Marshal and set directly (faster than SetUserPosition wrapper)
-		positionBz, err = k.cdc.Marshal(position)
-		if err != nil {
-			ctx.Logger().Error("Failed to marshal position", "citizen", account.Address, "error", err)
 			continue
 		}
 		store.Set(positionKey, positionBz)
-
-		distributedCount++
-
-		// OPTIMIZED: Emit event for ANT distribution
-		// Note: Events are important for indexing, but can be batched in future
-		ctx.EventManager().EmitEvent(
-			sdk.NewEvent(
-				"anteil.ant_distributed",
-				sdk.NewAttribute("citizen", account.Address),
-				sdk.NewAttribute("role", account.Role.String()),
-				sdk.NewAttribute("amount", strconv.FormatUint(rewardRate, 10)),
-				sdk.NewAttribute("new_balance", balanceStr),
-				sdk.NewAttribute("limit", strconv.FormatUint(accumulationLimit, 10)),
-			),
-		)
 	}
 
-	ctx.Logger().Info("ANT distribution completed", "recipients_distributed", distributedCount, "total_accounts", len(allAccounts))
+	// Step 3: Compute epoch coefficient §5.5
+	// coefficient = totalBurnedByValidators / totalSupplierANT (from previous epoch)
+	// Clamped to [epoch_coefficient_min, epoch_coefficient_max]
+	epochState := k.GetEpochState(ctx)
+	burnedPrevEpoch, _ := strconv.ParseUint(epochState.TotalBurnedCurrentEpoch, 10, 64)
+
+	coefficient := float64(1.0)
+	if totalSupplierANT > 0 && burnedPrevEpoch > 0 {
+		coefficient = float64(burnedPrevEpoch) / float64(totalSupplierANT)
+	}
+
+	coeffMin := 0.75
+	coeffMax := 1.50
+	if params.EpochCoefficientMin != "" {
+		if parsed, err := strconv.ParseFloat(params.EpochCoefficientMin, 64); err == nil {
+			coeffMin = parsed
+		}
+	}
+	if params.EpochCoefficientMax != "" {
+		if parsed, err := strconv.ParseFloat(params.EpochCoefficientMax, 64); err == nil {
+			coeffMax = parsed
+		}
+	}
+	if coefficient < coeffMin {
+		coefficient = coeffMin
+	}
+	if coefficient > coeffMax {
+		coefficient = coeffMax
+	}
+
+	// Step 4: Re-emit ANT to suppliers §5.5
+	// new emission = totalSupplierANT * coefficient, split equally among active suppliers
+	totalEmission := uint64(float64(totalSupplierANT) * coefficient)
+	perSupplierEmission := totalEmission / uint64(len(suppliers))
+
+	accumulationLimit := uint64(0)
+	if params.SupplierEpochAntLimit != "" {
+		accumulationLimit, _ = strconv.ParseUint(params.SupplierEpochAntLimit, 10, 64)
+	}
+
+	distributedCount := 0
+	for _, s := range suppliers {
+		emission := perSupplierEmission
+		if accumulationLimit > 0 && emission > accumulationLimit {
+			emission = accumulationLimit
+		}
+
+		positionKey := anteiltypes.GetUserPositionKey(s.address)
+		balanceStr := strconv.FormatUint(emission, 10)
+		position := anteiltypes.NewUserPosition(s.address, balanceStr, ctx.BlockTime())
+		position.AntBalance = balanceStr
+		position.AvailableAnt = balanceStr
+		position.LastActivity = now
+
+		positionBz, err := k.cdc.Marshal(position)
+		if err != nil {
+			continue
+		}
+		store.Set(positionKey, positionBz)
+		distributedCount++
+	}
+
+	// Step 5: Update epoch state
+	epochNumber := epochState.EpochNumber + 1
+	newEpochState := &anteilv1.EpochState{
+		EpochNumber:             epochNumber,
+		EpochStart:              now,
+		TotalBurnedPrevEpoch:    fmt.Sprintf("%d", burnedPrevEpoch),
+		TotalBurnedCurrentEpoch: "0",
+		EmissionCoefficient:     fmt.Sprintf("%.6f", coefficient),
+		TotalEmitted:            fmt.Sprintf("%d", totalEmission),
+		ActiveSuppliers:         uint64(len(suppliers)),
+	}
+	k.SetEpochState(ctx, newEpochState)
+
+	// Emit epoch events §6.3
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			anteiltypes.EventTypeEpochReset,
+			sdk.NewAttribute(anteiltypes.AttributeKeyEpochNumber, fmt.Sprintf("%d", epochNumber)),
+			sdk.NewAttribute(anteiltypes.AttributeKeyBurnAmount, fmt.Sprintf("%d", totalSupplierANT)),
+			sdk.NewAttribute(anteiltypes.AttributeKeyBurnReason, "epoch_supplier_reset"),
+			sdk.NewAttribute(anteiltypes.AttributeKeyActiveSuppliers, fmt.Sprintf("%d", len(suppliers))),
+		),
+	)
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			anteiltypes.EventTypeEpochEmission,
+			sdk.NewAttribute(anteiltypes.AttributeKeyEpochNumber, fmt.Sprintf("%d", epochNumber)),
+			sdk.NewAttribute(anteiltypes.AttributeKeyEpochCoefficient, fmt.Sprintf("%.6f", coefficient)),
+			sdk.NewAttribute(anteiltypes.AttributeKeyTotalEmitted, fmt.Sprintf("%d", totalEmission)),
+			sdk.NewAttribute(anteiltypes.AttributeKeyBurnedPrevEpoch, fmt.Sprintf("%d", burnedPrevEpoch)),
+			sdk.NewAttribute(anteiltypes.AttributeKeyActiveSuppliers, fmt.Sprintf("%d", len(suppliers))),
+		),
+	)
+
+	ctx.Logger().Info("Epoch emission completed",
+		"epoch", epochNumber,
+		"coefficient", coefficient,
+		"burned", totalSupplierANT,
+		"emitted", totalEmission,
+		"suppliers", len(suppliers),
+	)
 	return nil
+}
+
+// GetEpochState retrieves the current epoch state
+func (k Keeper) GetEpochState(ctx sdk.Context) *anteilv1.EpochState {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(anteiltypes.EpochStateKey)
+	if bz == nil {
+		return &anteilv1.EpochState{}
+	}
+	var state anteilv1.EpochState
+	if err := k.cdc.Unmarshal(bz, &state); err != nil {
+		return &anteilv1.EpochState{}
+	}
+	return &state
+}
+
+// SetEpochState stores the epoch state
+func (k Keeper) SetEpochState(ctx sdk.Context, state *anteilv1.EpochState) {
+	store := ctx.KVStore(k.storeKey)
+	bz, err := k.cdc.Marshal(state)
+	if err != nil {
+		return
+	}
+	store.Set(anteiltypes.EpochStateKey, bz)
 }
 
 // GetLastDistributionTime returns the last time ANT was distributed to citizens
