@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -52,6 +54,15 @@ var (
 	// AntPurchaseKey defines the key prefix for per-validator ANT purchase totals
 	AntPurchaseKey = "AntPurchase"
 
+	// BlockCreatorKeyPrefix defines the key prefix for block creator records by height
+	BlockCreatorKeyPrefix = "BlockCreator"
+
+	// BlindAuctionKeyPrefix defines the key prefix for blind auction records by height
+	BlindAuctionKeyPrefix = "BlindAuction"
+
+	// BidHistoryKeyPrefix defines the key prefix for per-validator bid history
+	BidHistoryKeyPrefix = "BidHistory"
+
 	// EpochHeightKey defines the key for the current epoch start height
 	EpochHeightKey = []byte("EpochHeight")
 
@@ -67,6 +78,9 @@ var (
 	KeyHeightBurnSummaryPrefix = []byte(HeightBurnSummaryKey)
 	KeyConsensusMappingPrefix = []byte(ConsensusMappingKey)
 	AntPurchaseKeyPrefix      = []byte(AntPurchaseKey)
+	KeyBlockCreatorPrefix     = []byte(BlockCreatorKeyPrefix)
+	KeyBlindAuctionPrefix     = []byte(BlindAuctionKeyPrefix)
+	KeyBidHistoryPrefix       = []byte(BidHistoryKeyPrefix)
 )
 
 // KeyPrefix returns the key prefix for the consensus module
@@ -113,6 +127,21 @@ func KeyHalvingInfo() []byte {
 // GetBlockTimeKey returns the key for a block's time
 func GetBlockTimeKey(height uint64) []byte {
 	return append(BlockTimeKeyPrefix, sdk.Uint64ToBigEndian(height)...)
+}
+
+// GetBlockCreatorKey returns the store key for the block creator at the given height.
+func GetBlockCreatorKey(height uint64) []byte {
+	return append(KeyBlockCreatorPrefix, []byte(fmt.Sprintf("%d", height))...)
+}
+
+// GetBlindAuctionKey returns the store key for the blind auction at the given height.
+func GetBlindAuctionKey(height uint64) []byte {
+	return append(KeyBlindAuctionPrefix, []byte(fmt.Sprintf("%d", height))...)
+}
+
+// GetBidHistoryKey returns the store key for a validator's bid history.
+func GetBidHistoryKey(validator string) []byte {
+	return append(KeyBidHistoryPrefix, []byte(validator)...)
 }
 
 // KeyConsensusState returns the key for consensus state

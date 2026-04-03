@@ -122,14 +122,14 @@ func (suite *ZKPTestSuite) TestVerifyRoleMigration_TargetAlreadyExists() {
 
 	suite.keeper.SetVerifiedAccount(suite.ctx, &identv1.VerifiedAccount{
 		Address:      fromAddr,
-		Role:         identv1.Role_ROLE_CITIZEN,
+		Role:         identv1.Role_ROLE_SUPPLIER,
 		IsActive:     true,
 		IdentityHash: "hash1",
 		LastActive:   timestamppb.Now(),
 	})
 	suite.keeper.SetVerifiedAccount(suite.ctx, &identv1.VerifiedAccount{
 		Address:      toAddr,
-		Role:         identv1.Role_ROLE_CITIZEN,
+		Role:         identv1.Role_ROLE_SUPPLIER,
 		IsActive:     true,
 		IdentityHash: "hash2",
 		LastActive:   timestamppb.Now(),
@@ -171,7 +171,7 @@ func (suite *ZKPTestSuite) TestVerifyRoleMigration_InactiveCitizen() {
 
 	suite.keeper.SetVerifiedAccount(suite.ctx, &identv1.VerifiedAccount{
 		Address:      fromAddr,
-		Role:         identv1.Role_ROLE_CITIZEN,
+		Role:         identv1.Role_ROLE_SUPPLIER,
 		IsActive:     false,
 		IdentityHash: "cizhash1",
 		LastActive:   timestamppb.Now(),

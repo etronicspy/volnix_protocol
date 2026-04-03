@@ -270,13 +270,11 @@ func (suite *IntegrationTestSuite) TestHalvingFlow() {
 	require.NoError(suite.T(), err)
 
 	// Step 2: Set halving info
-	halvingInfo := &consensusv1.HalvingInfo{
+	err = suite.consensusKeeper.SetHalvingInfo(suite.ctx, &consensusv1.HalvingInfo{
 		LastHalvingHeight: 0,
 		HalvingInterval:   100000,
 		NextHalvingHeight: 100000,
-	}
-
-	err = suite.consensusKeeper.SetHalvingInfo(suite.ctx, *halvingInfo)
+	})
 	require.NoError(suite.T(), err)
 
 	// Step 3: Set block height to trigger halving

@@ -62,49 +62,6 @@ func (suite *KeeperTestSuite) TestProcessOrderMatching() {
 	require.NoError(suite.T(), err)
 }
 
-func (suite *KeeperTestSuite) TestProcessAuctions_EconomicEngine() {
-	// Set block time
-	currentTime := time.Now()
-	suite.ctx = suite.ctx.WithBlockTime(currentTime)
-
-	// Create auction
-	pastTime := currentTime.Add(-1 * time.Hour)
-	auction := &anteilv1.Auction{
-		AuctionId:    "auction1",
-		BlockHeight:  1000,
-		ReservePrice: "1000000",
-		AntAmount:    "1000000",
-		StartTime:    timestamppb.New(pastTime.Add(-24 * time.Hour)),
-		EndTime:      timestamppb.New(pastTime),
-		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
-		WinningBid:   "",
-	}
-
-	err := suite.keeper.SetAuction(suite.ctx, auction)
-	require.NoError(suite.T(), err)
-
-	// Create economic engine and process auctions
-	engine := keeper.NewEconomicEngine(suite.keeper)
-	err = engine.ProcessAuctions(suite.ctx)
-	require.NoError(suite.T(), err)
-
-	// Verify auction was cancelled (no bids)
-	retrieved, err := suite.keeper.GetAuction(suite.ctx, "auction1")
-	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), anteilv1.AuctionStatus_AUCTION_STATUS_CANCELLED, retrieved.Status)
-}
-
-func (suite *KeeperTestSuite) TestProcessMarketMaking() {
-	// Set block time
-	currentTime := time.Now()
-	suite.ctx = suite.ctx.WithBlockTime(currentTime)
-
-	// Create economic engine and process market making
-	engine := keeper.NewEconomicEngine(suite.keeper)
-	err := engine.ProcessMarketMaking(suite.ctx)
-	require.NoError(suite.T(), err)
-}
-
 func (suite *KeeperTestSuite) TestNewMatchingEngine() {
 	engine := keeper.NewMatchingEngine()
 	require.NotNil(suite.T(), engine)

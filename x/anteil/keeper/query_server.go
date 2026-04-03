@@ -54,3 +54,9 @@ func (s QueryServer) UserPosition(ctx context.Context, req *anteilv1.QueryUserPo
 	}
 	return &anteilv1.QueryUserPositionResponse{Position: position}, nil
 }
+
+func (s QueryServer) EpochState(ctx context.Context, _ *anteilv1.QueryEpochStateRequest) (*anteilv1.QueryEpochStateResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	state := s.k.GetEpochState(sdkCtx)
+	return &anteilv1.QueryEpochStateResponse{EpochState: state}, nil
+}

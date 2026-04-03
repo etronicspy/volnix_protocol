@@ -120,7 +120,7 @@ func NewTestContext(t require.TestingT) *TestContext {
 
 	lizenzKeeper.SetParams(ctx, lizenztypes.DefaultParams())
 	anteilKeeper.SetParams(ctx, anteiltypes.DefaultParams())
-	consensusKeeper.SetParams(ctx, *consensustypes.DefaultParams())
+	consensusKeeper.SetParams(ctx, consensustypes.DefaultParams())
 	governanceKeeper.SetParams(ctx, governancetypes.DefaultParams())
 
 	return &TestContext{

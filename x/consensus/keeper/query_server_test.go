@@ -43,7 +43,7 @@ func (suite *QueryServerTestSuite) SetupTest() {
 	suite.paramStore = suite.paramStore.WithKeyTable(types.ParamKeyTable())
 	suite.keeper = NewKeeper(suite.cdc, suite.storeKey, suite.paramStore)
 	suite.queryServer = NewQueryServer(*suite.keeper)
-	suite.keeper.SetParams(suite.ctx, *types.DefaultParams())
+	suite.keeper.SetParams(suite.ctx, types.DefaultParams())
 }
 
 func TestQueryServerTestSuite(t *testing.T) {
@@ -64,18 +64,16 @@ func (suite *QueryServerTestSuite) TestValidators() {
 	// Create some validators
 	validators := []*consensusv1.Validator{
 		{
-			Validator:     "cosmos1validator1",
-			AntBalance:    "1000000",
-			ActivityScore: "500",
-			Status:        consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
-			LastActive:    timestamppb.Now(),
+			Validator:    "cosmos1validator1",
+			ActivatedLzn: "1000000",
+			Status:       consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
+			LastActive:   timestamppb.Now(),
 		},
 		{
-			Validator:     "cosmos1validator2",
-			AntBalance:    "2000000",
-			ActivityScore: "600",
-			Status:        consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
-			LastActive:    timestamppb.Now(),
+			Validator:    "cosmos1validator2",
+			ActivatedLzn: "2000000",
+			Status:       consensusv1.ValidatorStatus_VALIDATOR_STATUS_ACTIVE,
+			LastActive:   timestamppb.Now(),
 		},
 	}
 	

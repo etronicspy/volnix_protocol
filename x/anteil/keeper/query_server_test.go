@@ -57,7 +57,7 @@ func (suite *QueryServerTestSuite) TestParams() {
 	resp, err := suite.queryServer.Params(ctx, req)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), resp)
-	require.NotEmpty(suite.T(), resp.Json)
+	require.NotNil(suite.T(), resp.Params)
 }
 
 func (suite *QueryServerTestSuite) TestOrders() {
@@ -86,16 +86,12 @@ func (suite *QueryServerTestSuite) TestTrades() {
 	}
 }
 
-func (suite *QueryServerTestSuite) TestAuctions() {
+func (suite *QueryServerTestSuite) TestEpochState() {
 	ctx := sdk.WrapSDKContext(suite.ctx)
-	req := &anteilv1.QueryAuctionsRequest{}
+	req := &anteilv1.QueryEpochStateRequest{}
 	
-	resp, err := suite.queryServer.Auctions(ctx, req)
+	resp, err := suite.queryServer.EpochState(ctx, req)
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), resp)
-	// Auctions can be nil or empty slice - both are valid
-	if resp.Auctions != nil {
-		require.Empty(suite.T(), resp.Auctions)
-	}
 }
 

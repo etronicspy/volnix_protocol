@@ -74,7 +74,7 @@ func (suite *QueryServerTestSuite) TestParams() {
 	require.NotNil(suite.T(), resp.Params)
 
 	defaultParams := types.DefaultParams()
-	require.Equal(suite.T(), defaultParams.MaxIdentitiesPerAddress, resp.Params.MaxIdentitiesPerAddress)
+	require.Equal(suite.T(), defaultParams.MaxActiveSuppliers, resp.Params.MaxActiveSuppliers)
 	require.Equal(suite.T(), defaultParams.RequireIdentityVerification, resp.Params.RequireIdentityVerification)
 	require.Equal(suite.T(), defaultParams.DefaultVerificationProvider, resp.Params.DefaultVerificationProvider)
 }
@@ -83,7 +83,7 @@ func (suite *QueryServerTestSuite) TestVerifiedAccount() {
 	// Create a verified account
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrTest,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		IsActive:             true,
 		VerificationDate:     timestamppb.Now(),
 		VerificationProvider: "test-provider",
@@ -131,14 +131,14 @@ func (suite *QueryServerTestSuite) TestVerifiedAccount_NotFound() {
 func (suite *QueryServerTestSuite) TestVerifiedAccounts() {
 	// Increase account limit for testing
 	params := suite.keeper.GetParams(suite.ctx)
-	params.MaxIdentitiesPerAddress = 10
+	params.MaxActiveSuppliers = 10
 	suite.keeper.SetParams(suite.ctx, params)
 	
 	// Create multiple verified accounts with different roles to avoid limit issues
 	accounts := []*identv1.VerifiedAccount{
 		{
 			Address:              suite.addrTest1,
-			Role:                 identv1.Role_ROLE_CITIZEN,
+			Role:                 identv1.Role_ROLE_SUPPLIER,
 			IsActive:             true,
 			VerificationDate:     timestamppb.Now(),
 			VerificationProvider: "test-provider",
@@ -156,7 +156,7 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts() {
 		},
 		{
 			Address:              suite.addrTest3,
-			Role:                 identv1.Role_ROLE_CITIZEN,
+			Role:                 identv1.Role_ROLE_SUPPLIER,
 			IsActive:             true,
 			VerificationDate:     timestamppb.Now(),
 			VerificationProvider: "test-provider",
@@ -183,13 +183,13 @@ func (suite *QueryServerTestSuite) TestVerifiedAccounts() {
 func (suite *QueryServerTestSuite) TestVerifiedAccounts_WithPagination() {
 	// Increase account limit for testing
 	params := suite.keeper.GetParams(suite.ctx)
-	params.MaxIdentitiesPerAddress = 10
+	params.MaxActiveSuppliers = 10
 	suite.keeper.SetParams(suite.ctx, params)
 	
 	// Create multiple verified accounts with different roles to avoid limit issues
 	pagAddrs := []string{mustAddr("0000000000000000000000000000000000000010"), mustAddr("0000000000000000000000000000000000000011"), mustAddr("0000000000000000000000000000000000000012"), mustAddr("0000000000000000000000000000000000000013"), mustAddr("0000000000000000000000000000000000000014")}
 	for i := 0; i < 5; i++ {
-		role := identv1.Role_ROLE_CITIZEN
+		role := identv1.Role_ROLE_SUPPLIER
 		if i%2 == 1 {
 			role = identv1.Role_ROLE_VALIDATOR
 		}

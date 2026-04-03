@@ -95,7 +95,7 @@ func (suite *KeeperTestSuite) SetupTest() {
 
 	// Set default params with higher limits for testing
 	params := types.DefaultParams()
-	params.MaxIdentitiesPerAddress = 1000
+	params.MaxActiveSuppliers = 1000
 	suite.keeper.SetParams(suite.ctx, params)
 }
 
@@ -107,7 +107,7 @@ func TestKeeperTestSuite(t *testing.T) {
 func (suite *KeeperTestSuite) TestSetVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrTest,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
 		IsActive:             true,
@@ -128,7 +128,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount() {
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_Duplicate() {
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrTest,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
 		IsActive:             true,
@@ -149,7 +149,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
 	// Empty address
 	account := &identv1.VerifiedAccount{
 		Address:          "",
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -163,7 +163,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
 	// Empty identity hash
 	account = &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -179,7 +179,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_InvalidAccount() {
 func (suite *KeeperTestSuite) TestGetVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrTest,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
 		IsActive:             true,
@@ -206,7 +206,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_NotFound() {
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrTest,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
 		IsActive:             true,
@@ -231,7 +231,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount() {
 func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_NotFound() {
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrNotFound,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -247,7 +247,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_NotFound() {
 func (suite *KeeperTestSuite) TestDeleteVerifiedAccount() {
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrTest,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
 		IsActive:             true,
@@ -281,7 +281,7 @@ func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts() {
 	for i := range 5 {
 		account := &identv1.VerifiedAccount{
 			Address:          addrs[i],
-			Role:             identv1.Role_ROLE_CITIZEN,
+			Role:             identv1.Role_ROLE_SUPPLIER,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
 			IsActive:         true,
@@ -303,7 +303,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole() {
 	for i := range 3 {
 		account := &identv1.VerifiedAccount{
 			Address:          citizenAddrs[i],
-			Role:             identv1.Role_ROLE_CITIZEN,
+			Role:             identv1.Role_ROLE_SUPPLIER,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
 			IsActive:         true,
@@ -329,7 +329,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole() {
 	}
 
 	// Get citizens
-	citizens, err := suite.keeper.GetVerifiedAccountsByRole(suite.ctx, identv1.Role_ROLE_CITIZEN)
+	citizens, err := suite.keeper.GetVerifiedAccountsByRole(suite.ctx, identv1.Role_ROLE_SUPPLIER)
 	require.NoError(suite.T(), err)
 	require.Len(suite.T(), citizens, 3)
 
@@ -343,7 +343,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole() {
 func (suite *KeeperTestSuite) TestChangeAccountRole() {
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -366,7 +366,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole() {
 func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRole() {
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -386,7 +386,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRole() {
 func (suite *KeeperTestSuite) TestUpdateAccountActivity() {
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(time.Now().Add(-24 * time.Hour)),
 		IsActive:         true,
@@ -421,7 +421,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_InactiveAccounts() {
 	oldTime := currentTime.Add(-400 * 24 * time.Hour) // 400 days ago
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
 		IsActive:         true,
@@ -450,7 +450,7 @@ func (suite *KeeperTestSuite) TestEndBlocker() {
 	oldTime := currentTime.Add(-1 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
 		IsActive:         true,
@@ -475,7 +475,7 @@ func (suite *KeeperTestSuite) TestSetRoleMigration() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
@@ -496,7 +496,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrFrom,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -510,8 +510,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -533,7 +533,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration() {
 	targetRetrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTo)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), suite.addrTo, targetRetrieved.Address)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, targetRetrieved.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, targetRetrieved.Role)
 	require.True(suite.T(), targetRetrieved.IsActive)
 
 	// Verify migration is marked as completed
@@ -547,8 +547,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_AlreadyCompleted() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   true,
@@ -572,7 +572,7 @@ func (suite *KeeperTestSuite) TestGetAllRoleMigrations() {
 		migration := &identv1.RoleMigration{
 			FromAddress:   migFrom[i],
 			ToAddress:     migTo[i],
-			FromRole:      identv1.Role_ROLE_CITIZEN,
+			FromRole:      identv1.Role_ROLE_SUPPLIER,
 			ToRole:        identv1.Role_ROLE_VALIDATOR,
 			MigrationHash: "hash" + string(rune('0'+i)),
 			ZkpProof:      "proof" + string(rune('0'+i)),
@@ -590,12 +590,12 @@ func (suite *KeeperTestSuite) TestGetAllRoleMigrations() {
 // Test Params
 func (suite *KeeperTestSuite) TestGetSetParams() {
 	params := types.DefaultParams()
-	params.MaxIdentitiesPerAddress = 100
+	params.MaxActiveSuppliers = 100
 
 	suite.keeper.SetParams(suite.ctx, params)
 
 	retrieved := suite.keeper.GetParams(suite.ctx)
-	require.Equal(suite.T(), params.MaxIdentitiesPerAddress, retrieved.MaxIdentitiesPerAddress)
+	require.Equal(suite.T(), params.MaxActiveSuppliers, retrieved.MaxActiveSuppliers)
 }
 
 // Additional tests for uncovered methods
@@ -603,13 +603,13 @@ func (suite *KeeperTestSuite) TestGetSetParams() {
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_ExceedsLimit() {
 	// Set low limit
 	params := types.DefaultParams()
-	params.MaxIdentitiesPerAddress = 1
+	params.MaxActiveSuppliers = 1
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest1,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -622,7 +622,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_ExceedsLimit() {
 	// Try to create second account (should fail)
 	account2 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest2,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -637,7 +637,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_ExceedsLimit() {
 func (suite *KeeperTestSuite) TestChangeAccountRole_SameRole() {
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -648,13 +648,13 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_SameRole() {
 	require.NoError(suite.T(), err)
 
 	// Change to same role (should succeed)
-	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrTest, identv1.Role_ROLE_CITIZEN)
+	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrTest, identv1.Role_ROLE_SUPPLIER)
 	require.NoError(suite.T(), err)
 
 	// Verify role unchanged
 	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, retrieved.Role)
 }
 
 func (suite *KeeperTestSuite) TestChangeAccountRole_NotFound() {
@@ -680,8 +680,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SourceNotFound() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrNotFound,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -712,7 +712,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts() {
 	// Create account with recent activity
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -729,7 +729,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts() {
 	// Verify account role unchanged (still active)
 	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, retrieved.Role)
 }
 
 func (suite *KeeperTestSuite) TestEndBlocker_DoesNotUpdateActivity() {
@@ -740,7 +740,7 @@ func (suite *KeeperTestSuite) TestEndBlocker_DoesNotUpdateActivity() {
 	oldTime := currentTime.Add(-1 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
 		IsActive:         true,
@@ -764,17 +764,17 @@ func (suite *KeeperTestSuite) TestEndBlocker_DoesNotUpdateActivity() {
 func (suite *KeeperTestSuite) TestGetParams() {
 	params := suite.keeper.GetParams(suite.ctx)
 	require.NotNil(suite.T(), params)
-	require.Greater(suite.T(), params.MaxIdentitiesPerAddress, uint64(0))
+	require.Greater(suite.T(), params.MaxActiveSuppliers, uint64(0))
 }
 
 func (suite *KeeperTestSuite) TestSetParams() {
 	params := types.DefaultParams()
-	params.MaxIdentitiesPerAddress = 500
+	params.MaxActiveSuppliers = 500
 
 	suite.keeper.SetParams(suite.ctx, params)
 
 	retrieved := suite.keeper.GetParams(suite.ctx)
-	require.Equal(suite.T(), uint64(500), retrieved.MaxIdentitiesPerAddress)
+	require.Equal(suite.T(), uint64(500), retrieved.MaxActiveSuppliers)
 }
 
 func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts_NoChange() {
@@ -785,7 +785,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts_NoChange() {
 	// Create account with recent activity
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -802,7 +802,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ActiveAccounts_NoChange() {
 	// Verify account role unchanged
 	retrieved, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, retrieved.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, retrieved.Role)
 }
 
 func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
@@ -812,7 +812,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
 
 	// Set shorter activity period for testing
 	params := suite.keeper.GetParams(suite.ctx)
-	params.ValidatorActivityPeriod = 60 * 24 * time.Hour // 60 days
+	params.MoaValidatorWindow = 60 * 24 * time.Hour // 60 days
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create validator with old activity (older than activity period)
@@ -842,7 +842,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ValidatorInactive() {
 func (suite *KeeperTestSuite) TestChangeAccountRole_ExceedsLimit() {
 	// Set low limit
 	params := types.DefaultParams()
-	params.MaxIdentitiesPerAddress = 1
+	params.MaxActiveSuppliers = 1
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create one validator
@@ -861,7 +861,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_ExceedsLimit() {
 	// Create citizen and try to change to validator (should fail due to limit)
 	account2 := &identv1.VerifiedAccount{
 		Address:          suite.addrCitizen,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -893,7 +893,7 @@ func (suite *KeeperTestSuite) TestSetRoleMigration_Update() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
 		ToRole:        identv1.Role_ROLE_VALIDATOR,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
@@ -918,7 +918,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrFrom,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -931,7 +931,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
 	// Create target account (already exists)
 	targetAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrTo,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -945,8 +945,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_TargetAlreadyExists() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -994,14 +994,14 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_BurnsAntOnCitizenDeactiva
 
 	// Set params with short activity period for testing (1 hour instead of 1 year)
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 1 * time.Hour
+	params.MoaSupplierWindow = 1 * time.Hour
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create citizen with old last activity (2 hours ago - inactive)
 	oldTime := time.Now().Add(-2 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrCitizen,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.New(oldTime),
 		LastActive:           timestamppb.New(oldTime),
 		IsActive:             true,
@@ -1028,24 +1028,23 @@ func (suite *KeeperTestSuite) TestCheckAccountActivity_BurnsAntOnCitizenDeactiva
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), identv1.Role_ROLE_GUEST, updatedAccount.Role, "Citizen should be downgraded to GUEST")
 
-	// Check events - should have ant_burned_on_deactivation event
+	// Check events — unified ident.ant_burned (MOA supplier sanction)
 	events := suite.ctx.EventManager().Events()
 	antBurnedFound := false
 	for _, event := range events {
-		if event.Type == "ident.ant_burned_on_deactivation" {
+		if event.Type == types.EventTypeAntBurned {
 			antBurnedFound = true
-			// Verify attributes
 			for _, attr := range event.Attributes {
-				if string(attr.Key) == "citizen" {
+				if string(attr.Key) == types.AttributeKeyAccount {
 					require.Equal(suite.T(), suite.addrCitizen, string(attr.Value))
 				}
-				if string(attr.Key) == "reason" {
-					require.Equal(suite.T(), "inactivity", string(attr.Value))
+				if string(attr.Key) == types.AttributeKeyBurnReason {
+					require.Equal(suite.T(), types.BurnReasonMOASupplier, string(attr.Value))
 				}
 			}
 		}
 	}
-	require.True(suite.T(), antBurnedFound, "Should have ant_burned_on_deactivation event")
+	require.True(suite.T(), antBurnedFound, "Should have ident.ant_burned event")
 }
 
 // Test ReleaseIdentityHash
@@ -1053,7 +1052,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash() {
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrCitizen,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
 		IsActive:             true,
@@ -1114,14 +1113,14 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash_NoAccount() {
 func (suite *KeeperTestSuite) TestCheckAccountActivity_ReleasesIdentityHashOnDeactivation() {
 	// Set params with short activity period for testing
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 1 * time.Hour
+	params.MoaSupplierWindow = 1 * time.Hour
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create citizen with old last activity (2 hours ago - inactive)
 	oldTime := time.Now().Add(-2 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:              suite.addrCitizen,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.New(oldTime),
 		LastActive:           timestamppb.New(oldTime),
 		IsActive:             true,
@@ -1181,7 +1180,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_WithIdentityHashChange()
 	// Create initial account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		IsActive:         true,
 		IdentityHash:     "hash1",
 		VerificationDate: timestamppb.Now(),
@@ -1212,7 +1211,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_DuplicateIdentityHash() 
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest1,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		IsActive:         true,
 		IdentityHash:     "hash1",
 		VerificationDate: timestamppb.Now(),
@@ -1223,7 +1222,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_DuplicateIdentityHash() 
 	// Create second account
 	account2 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest2,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		IsActive:         true,
 		IdentityHash:     "hash2",
 		VerificationDate: timestamppb.Now(),
@@ -1249,7 +1248,7 @@ func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_SameAddress() {
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		IsActive:         true,
 		IdentityHash:     "hash1",
 		VerificationDate: timestamppb.Now(),
@@ -1267,7 +1266,7 @@ func (suite *KeeperTestSuite) TestCheckDuplicateIdentityHash_DifferentAddress() 
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest1,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		IsActive:         true,
 		IdentityHash:     "hash1",
 		VerificationDate: timestamppb.Now(),
@@ -1286,7 +1285,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithRoleMigrations() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrSource,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		IsActive:         true,
 		IdentityHash:     "hash1",
 		VerificationDate: timestamppb.Now(),
@@ -1321,7 +1320,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_DuplicateIdentityHash() {
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest1,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1333,7 +1332,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_DuplicateIdentityHash() {
 	// Try to create second account with same identity hash - should fail
 	account2 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest2,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1349,7 +1348,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_UnmarshalError() {
 	// Create account first
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1379,7 +1378,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithInactiveCitizen() {
 	oldTime := time.Now().Add(-100 * 24 * time.Hour) // 100 days ago
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrCitizen,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
 		IsActive:         true,
@@ -1390,7 +1389,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithInactiveCitizen() {
 
 	// Set short activity period
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 30 * 24 * time.Hour // 30 days
+	params.MoaSupplierWindow = 30 * 24 * time.Hour // 30 days
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -1424,7 +1423,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithInactiveValidator() {
 
 	// Set short activity period
 	params := suite.keeper.GetParams(suite.ctx)
-	params.ValidatorActivityPeriod = 30 * 24 * time.Hour // 30 days
+	params.MoaValidatorWindow = 30 * 24 * time.Hour // 30 days
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -1447,7 +1446,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithActiveAccount() {
 	recentTime := time.Now().Add(-1 * 24 * time.Hour) // 1 day ago
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrCitizen,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(recentTime),
 		IsActive:         true,
@@ -1458,7 +1457,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithActiveAccount() {
 
 	// Set long activity period
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 30 * 24 * time.Hour // 30 days
+	params.MoaSupplierWindow = 30 * 24 * time.Hour // 30 days
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -1472,7 +1471,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithActiveAccount() {
 	// Verify citizen role was NOT changed
 	updated, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrCitizen)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, updated.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, updated.Role)
 }
 
 // TestBeginBlocker_WithGuestAccount tests BeginBlocker with guest account (should skip)
@@ -1480,7 +1479,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithGuestAccount() {
 	// Create citizen account first, then downgrade to guest
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrGuest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1509,7 +1508,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount
 	// Create account first
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1536,7 +1535,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash_NoIdentityHash() {
 	// Create account with identity hash
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1558,7 +1557,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash_NoIdentityHash() {
 // TestcheckAccountLimits_CitizenLimit tests checkAccountLimits with citizen limit
 func (suite *KeeperTestSuite) TestcheckAccountLimits_CitizenLimit() {
 	params := suite.keeper.GetParams(suite.ctx)
-	params.MaxIdentitiesPerAddress = 2
+	params.MaxActiveSuppliers = 2
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create 2 citizens (at limit) with valid addresses
@@ -1566,7 +1565,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_CitizenLimit() {
 	for i := 0; i < 2; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:          citizenAddrs[i],
-			Role:             identv1.Role_ROLE_CITIZEN,
+			Role:             identv1.Role_ROLE_SUPPLIER,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
 			IsActive:         true,
@@ -1579,7 +1578,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_CitizenLimit() {
 	// Try to create third citizen - should fail
 	account := &identv1.VerifiedAccount{
 		Address:          mustAddr("0000000000000000000000000000000000000042"),
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1593,7 +1592,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_CitizenLimit() {
 // TestcheckAccountLimits_ValidatorLimit tests checkAccountLimits with validator limit
 func (suite *KeeperTestSuite) TestcheckAccountLimits_ValidatorLimit() {
 	params := suite.keeper.GetParams(suite.ctx)
-	params.MaxIdentitiesPerAddress = 1
+	params.MaxActiveSuppliers = 1
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create 1 validator (at limit)
@@ -1643,7 +1642,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithAnteilKeeperError() {
 	oldTime := time.Now().Add(-100 * 24 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrCitizen,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
 		IsActive:         true,
@@ -1654,7 +1653,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_WithAnteilKeeperError() {
 
 	// Set short activity period
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 30 * 24 * time.Hour
+	params.MoaSupplierWindow = 30 * 24 * time.Hour
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -1676,7 +1675,7 @@ func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_UnmarshalError() {
 	// Create valid account first
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1730,7 +1729,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRoleChange() {
 	// Create citizen account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrCitizen,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1742,7 +1741,7 @@ func (suite *KeeperTestSuite) TestChangeAccountRole_InvalidRoleChange() {
 	// Try to change to GUEST (should be rejected - downgrade not allowed)
 	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrCitizen, identv1.Role_ROLE_GUEST)
 	require.Error(suite.T(), err)
-	require.Contains(suite.T(), err.Error(), "downgrade from citizen to guest")
+	require.Contains(suite.T(), err.Error(), "downgrade from supplier to guest")
 }
 
 // TestChangeAccountRole_AccountNotFound tests ChangeAccountRole when account doesn't exist
@@ -1760,7 +1759,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccountsByRole_Error() {
 	accountStore.Set([]byte("invalid"), []byte("invalid data"))
 
 	// Try to get accounts by role - should return error
-	_, err := suite.keeper.GetVerifiedAccountsByRole(suite.ctx, identv1.Role_ROLE_CITIZEN)
+	_, err := suite.keeper.GetVerifiedAccountsByRole(suite.ctx, identv1.Role_ROLE_SUPPLIER)
 	require.Error(suite.T(), err)
 }
 
@@ -1774,7 +1773,7 @@ func (suite *KeeperTestSuite) TestcheckAccountLimits_GetAccountsError() {
 	// Try to set account - checkAccountLimits should fail
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1790,7 +1789,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrFrom,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1802,7 +1801,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 	// Create target account with different identity hash first
 	targetAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrTo,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1815,8 +1814,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SetAccountError() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash789", // Different hash, but target already exists
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -1835,7 +1834,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_UpdateAccountError() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrFrom,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1853,8 +1852,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_UpdateAccountError() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash456",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -1872,7 +1871,7 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SameIdentityHash() {
 	// Create source account
 	sourceAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrFrom,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1885,8 +1884,8 @@ func (suite *KeeperTestSuite) TestExecuteRoleMigration_SameIdentityHash() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123", // Same as source
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -1912,8 +1911,8 @@ func (suite *KeeperTestSuite) TestGetAllRoleMigrations_UnmarshalError() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -1941,8 +1940,8 @@ func (suite *KeeperTestSuite) TestGetRoleMigration_UnmarshalError() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -1967,7 +1966,7 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_AlreadyVerified() {
 	// Create account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -1977,7 +1976,7 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_AlreadyVerified() {
 	require.NoError(suite.T(), err)
 
 	// Try to validate role choice for already verified address
-	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_CITIZEN)
+	err = suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_SUPPLIER)
 	require.Error(suite.T(), err)
 	require.ErrorIs(suite.T(), err, types.ErrAlreadyVerified)
 }
@@ -1998,7 +1997,7 @@ func (suite *KeeperTestSuite) TestValidateRoleChoice_InvalidRole() {
 // TestValidateRoleChoice_ValidRoles tests ValidateRoleChoice with valid roles
 func (suite *KeeperTestSuite) TestValidateRoleChoice_ValidRoles() {
 	// Validate CITIZEN role (valid)
-	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_CITIZEN)
+	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrTest, identv1.Role_ROLE_SUPPLIER)
 	require.NoError(suite.T(), err)
 
 	// Validate VALIDATOR role (valid)
@@ -2012,8 +2011,8 @@ func (suite *KeeperTestSuite) TestSetRoleMigration_MarshalError() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -2034,7 +2033,7 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_UnmarshalError_EdgeCase() {
 	// Adding additional edge case: account exists but data is corrupted
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2057,13 +2056,13 @@ func (suite *KeeperTestSuite) TestGetVerifiedAccount_UnmarshalError_EdgeCase() {
 func (suite *KeeperTestSuite) TestSetVerifiedAccount_AccountLimitError() {
 	// Set very low limit
 	params := suite.keeper.GetParams(suite.ctx)
-	params.MaxIdentitiesPerAddress = 1
+	params.MaxActiveSuppliers = 1
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Create first account
 	account1 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest1,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2075,7 +2074,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_AccountLimitError() {
 	// Try to create second account - should fail
 	account2 := &identv1.VerifiedAccount{
 		Address:          suite.addrTest2,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2092,7 +2091,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_UpdateError() {
 	oldTime := time.Now().Add(-100 * 24 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrCitizen,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(oldTime),
 		IsActive:         true,
@@ -2103,7 +2102,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_UpdateError() {
 
 	// Set short activity period
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 30 * 24 * time.Hour
+	params.MoaSupplierWindow = 30 * 24 * time.Hour
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -2135,7 +2134,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ProcessRoleMigrations_PendingExec
 	// Source account must exist for ExecuteRoleMigration
 	acc := &identv1.VerifiedAccount{
 		Address:              fromAddr,
-		Role:                 identv1.Role_ROLE_CITIZEN,
+		Role:                 identv1.Role_ROLE_SUPPLIER,
 		VerificationDate:     timestamppb.Now(),
 		LastActive:           timestamppb.Now(),
 		IsActive:             true,
@@ -2148,8 +2147,8 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ProcessRoleMigrations_PendingExec
 	migration := &identv1.RoleMigration{
 		FromAddress:   fromAddr,
 		ToAddress:     toAddr,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash-mig",
 		IsCompleted:   false,
 	}
@@ -2162,7 +2161,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ProcessRoleMigrations_PendingExec
 	got, err := suite.keeper.GetVerifiedAccount(suite.ctx, toAddr)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), toAddr, got.Address)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, got.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, got.Role)
 	m, err := suite.keeper.GetRoleMigration(suite.ctx, fromAddr, toAddr)
 	require.NoError(suite.T(), err)
 	require.True(suite.T(), m.IsCompleted)
@@ -2221,7 +2220,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalError() {
 	// Create account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2244,7 +2243,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalError() {
 // TestValidateRoleChoice_EdgeCases tests ValidateRoleChoice with various edge cases
 func (suite *KeeperTestSuite) TestValidateRoleChoice_EdgeCases() {
 	// Test with valid CITIZEN role
-	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew, identv1.Role_ROLE_CITIZEN)
+	err := suite.keeper.ValidateRoleChoice(suite.ctx, suite.addrNew, identv1.Role_ROLE_SUPPLIER)
 	require.NoError(suite.T(), err)
 
 	// Test with valid VALIDATOR role
@@ -2268,8 +2267,8 @@ func (suite *KeeperTestSuite) TestSetRoleMigration_EdgeCases() {
 	migration := &identv1.RoleMigration{
 		FromAddress:   suite.addrFrom,
 		ToAddress:     suite.addrTo,
-		FromRole:      identv1.Role_ROLE_CITIZEN,
-		ToRole:        identv1.Role_ROLE_CITIZEN,
+		FromRole:      identv1.Role_ROLE_SUPPLIER,
+		ToRole:        identv1.Role_ROLE_SUPPLIER,
 		MigrationHash: "hash123",
 		ZkpProof:      "proof123",
 		IsCompleted:   false,
@@ -2301,8 +2300,8 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ComplexScenario() {
 		lastActive       time.Time
 		shouldDeactivate bool
 	}{
-		{suite.addrActive, identv1.Role_ROLE_CITIZEN, time.Now().Add(-1 * 24 * time.Hour), false},
-		{suite.addrInactive, identv1.Role_ROLE_CITIZEN, time.Now().Add(-100 * 24 * time.Hour), true},
+		{suite.addrActive, identv1.Role_ROLE_SUPPLIER, time.Now().Add(-1 * 24 * time.Hour), false},
+		{suite.addrInactive, identv1.Role_ROLE_SUPPLIER, time.Now().Add(-100 * 24 * time.Hour), true},
 		{suite.addrValidator, identv1.Role_ROLE_VALIDATOR, time.Now().Add(-50 * 24 * time.Hour), false},
 	}
 
@@ -2321,8 +2320,8 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ComplexScenario() {
 
 	// Set activity periods
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 30 * 24 * time.Hour
-	params.ValidatorActivityPeriod = 60 * 24 * time.Hour
+	params.MoaSupplierWindow = 30 * 24 * time.Hour
+	params.MoaValidatorWindow = 60 * 24 * time.Hour
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -2341,7 +2340,7 @@ func (suite *KeeperTestSuite) TestBeginBlocker_ComplexScenario() {
 	// Verify active citizen was NOT deactivated
 	active, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrActive)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, active.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, active.Role)
 }
 
 // TestEndBlocker_ComplexScenario - EndBlocker is no-op; activity in AnteHandler
@@ -2351,7 +2350,7 @@ func (suite *KeeperTestSuite) TestEndBlocker_ComplexScenario() {
 	for i := 0; i < 5; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:          endBlockerAddrs[i],
-			Role:             identv1.Role_ROLE_CITIZEN,
+			Role:             identv1.Role_ROLE_SUPPLIER,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.New(oldTime),
 			IsActive:         true,
@@ -2398,7 +2397,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_IdentityHashUnchanged() 
 	// Create account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2424,7 +2423,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_UnmarshalExistingAccount
 	// Create account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2457,7 +2456,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_MarshalError() {
 	// Create valid account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2489,7 +2488,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_ValidatorInactive() {
 
 	// Set short activity period
 	params := suite.keeper.GetParams(suite.ctx)
-	params.ValidatorActivityPeriod = 30 * 24 * time.Hour
+	params.MoaValidatorWindow = 30 * 24 * time.Hour
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -2513,7 +2512,7 @@ func (suite *KeeperTestSuite) TestSetVerifiedAccount_MarshalErrorPath() {
 	// Create valid account - Marshal should succeed
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2532,7 +2531,7 @@ func (suite *KeeperTestSuite) TestUpdateVerifiedAccount_MarshalErrorPath() {
 	// Create account
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2555,7 +2554,7 @@ func (suite *KeeperTestSuite) TestReleaseIdentityHash_EdgeCases() {
 	// Test with account that has identity hash but mapping doesn't exist
 	account := &identv1.VerifiedAccount{
 		Address:          suite.addrTest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.Now(),
 		IsActive:         true,
@@ -2583,7 +2582,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_AllRoles() {
 		role       identv1.Role
 		lastActive time.Time
 	}{
-		{suite.addrCitizen, identv1.Role_ROLE_CITIZEN, time.Now().Add(-100 * 24 * time.Hour)},
+		{suite.addrCitizen, identv1.Role_ROLE_SUPPLIER, time.Now().Add(-100 * 24 * time.Hour)},
 		{suite.addrValidator, identv1.Role_ROLE_VALIDATOR, time.Now().Add(-100 * 24 * time.Hour)},
 	}
 
@@ -2604,7 +2603,7 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_AllRoles() {
 	// Create guest account by downgrading a citizen
 	citizenAccount := &identv1.VerifiedAccount{
 		Address:          suite.addrGuest,
-		Role:             identv1.Role_ROLE_CITIZEN,
+		Role:             identv1.Role_ROLE_SUPPLIER,
 		VerificationDate: timestamppb.Now(),
 		LastActive:       timestamppb.New(time.Now().Add(-100 * 24 * time.Hour)),
 		IsActive:         true,
@@ -2620,8 +2619,8 @@ func (suite *KeeperTestSuite) TestcheckAccountActivity_AllRoles() {
 
 	// Set activity periods
 	params := suite.keeper.GetParams(suite.ctx)
-	params.CitizenActivityPeriod = 30 * 24 * time.Hour
-	params.ValidatorActivityPeriod = 30 * 24 * time.Hour
+	params.MoaSupplierWindow = 30 * 24 * time.Hour
+	params.MoaValidatorWindow = 30 * 24 * time.Hour
 	suite.keeper.SetParams(suite.ctx, params)
 
 	// Set current block time
@@ -2668,7 +2667,7 @@ func (suite *KeeperTestSuite) TestGetAllVerifiedAccounts_IteratorError() {
 	for i := 0; i < 3; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:          iterAddrs[i],
-			Role:             identv1.Role_ROLE_CITIZEN,
+			Role:             identv1.Role_ROLE_SUPPLIER,
 			VerificationDate: timestamppb.Now(),
 			LastActive:       timestamppb.Now(),
 			IsActive:         true,
@@ -2735,7 +2734,7 @@ func (suite *KeeperTestSuite) TestValidateRoleChange_Downgrade() {
 	// Test 2: CITIZEN to GUEST downgrade (should be rejected)
 	citizenAccount := &identv1.VerifiedAccount{
 		Address:      suite.addrCitizen,
-		Role:         identv1.Role_ROLE_CITIZEN,
+		Role:         identv1.Role_ROLE_SUPPLIER,
 		IdentityHash: "hash2",
 		IsActive:     true,
 		LastActive:   timestamppb.Now(),
@@ -2744,13 +2743,13 @@ func (suite *KeeperTestSuite) TestValidateRoleChange_Downgrade() {
 	require.NoError(suite.T(), err)
 	
 	err = suite.keeper.ChangeAccountRole(suite.ctx, suite.addrCitizen, identv1.Role_ROLE_GUEST)
-	require.Error(suite.T(), err, "Downgrade from citizen to guest should be rejected")
-	require.Contains(suite.T(), err.Error(), "downgrade from citizen to guest")
+	require.Error(suite.T(), err, "Downgrade from supplier to guest should be rejected")
+	require.Contains(suite.T(), err.Error(), "downgrade from supplier to guest")
 	
 	// Test 3: Valid upgrades should work (CITIZEN to VALIDATOR)
 	citizen2Account := &identv1.VerifiedAccount{
 		Address:      suite.addrCitizen2,
-		Role:         identv1.Role_ROLE_CITIZEN,
+		Role:         identv1.Role_ROLE_SUPPLIER,
 		IdentityHash: "hash3",
 		IsActive:     true,
 		LastActive:   timestamppb.Now(),

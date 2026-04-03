@@ -693,7 +693,7 @@ func NewVolnixApp(logger sdklog.Logger, db cosmosdb.DB, traceStore io.Writer, en
 		identKeeper.SetParams(ctx, identtypes.DefaultParams())
 		lizenzKeeper.SetParams(ctx, lizenztypes.DefaultParams())
 		anteilKeeper.SetParams(ctx, anteiltypes.DefaultParams())
-		consensusKeeper.SetParams(ctx, *consensustypes.DefaultParams())
+		consensusKeeper.SetParams(ctx, consensustypes.DefaultParams())
 
 		// Sync CometBFT genesis validators into consensus module store so Explorer and
 		// EndBlocker (auctions, rewards) see them. InitChainer bypasses mm.InitGenesis,

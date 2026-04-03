@@ -14,17 +14,17 @@ func TestDefaultGenesis(t *testing.T) {
 	require.NotNil(t, genesis)
 	require.NotNil(t, genesis.Params)
 	require.Equal(t, "5s", genesis.Params.BaseBlockTime)
-	require.Equal(t, uint64(1000), genesis.Params.HighActivityThreshold)
-	require.Equal(t, uint64(100), genesis.Params.LowActivityThreshold)
-	require.Equal(t, "1000000uvx", genesis.Params.MinBurnAmount)
-	require.Equal(t, "1000000000uvx", genesis.Params.MaxBurnAmount)
-	require.Equal(t, uint64(10), genesis.Params.BlockCreatorSelectionRounds)
-	require.Equal(t, "0.95", genesis.Params.ActivityDecayRate)
-	require.Equal(t, "0.1", genesis.Params.MoaPenaltyRate)
+	require.Equal(t, "50000000uwrt", genesis.Params.BaseBlockReward)
+	require.Equal(t, "0.5", genesis.Params.BurnCapLambda)
+	require.Equal(t, "community_pool", genesis.Params.FeePolicyBZero)
+	require.Equal(t, uint64(210000), genesis.Params.HalvingInterval)
+	require.Equal(t, "1.0", genesis.Params.MoaPenaltyThresholdHigh)
+	require.Equal(t, "0.9", genesis.Params.MoaPenaltyThresholdWarning)
+	require.Equal(t, "0.7", genesis.Params.MoaPenaltyThresholdMedium)
+	require.Equal(t, "0.5", genesis.Params.MoaPenaltyThresholdLow)
+	require.Equal(t, uint64(40000000), genesis.Params.MaxBlockGas)
+	require.Equal(t, uint64(22020096), genesis.Params.MaxBlockBytes)
 	require.Empty(t, genesis.Validators)
-	require.Empty(t, genesis.BlockCreators)
-	require.Empty(t, genesis.BurnProofs)
-	require.Empty(t, genesis.ActivityScores)
 }
 
 func TestValidateGenesis(t *testing.T) {
@@ -71,13 +71,16 @@ func TestDefaultParams(t *testing.T) {
 
 	require.NotNil(t, params)
 	require.Equal(t, "5s", params.BaseBlockTime)
-	require.Equal(t, uint64(1000), params.HighActivityThreshold)
-	require.Equal(t, uint64(100), params.LowActivityThreshold)
-	require.Equal(t, "1000000uvx", params.MinBurnAmount)
-	require.Equal(t, "1000000000uvx", params.MaxBurnAmount)
-	require.Equal(t, uint64(10), params.BlockCreatorSelectionRounds)
-	require.Equal(t, "0.95", params.ActivityDecayRate)
-	require.Equal(t, "0.1", params.MoaPenaltyRate)
+	require.Equal(t, "50000000uwrt", params.BaseBlockReward)
+	require.Equal(t, "0.5", params.BurnCapLambda)
+	require.Equal(t, "community_pool", params.FeePolicyBZero)
+	require.Equal(t, uint64(210000), params.HalvingInterval)
+	require.Equal(t, "1.0", params.MoaPenaltyThresholdHigh)
+	require.Equal(t, "0.9", params.MoaPenaltyThresholdWarning)
+	require.Equal(t, "0.7", params.MoaPenaltyThresholdMedium)
+	require.Equal(t, "0.5", params.MoaPenaltyThresholdLow)
+	require.Equal(t, uint64(40000000), params.MaxBlockGas)
+	require.Equal(t, uint64(22020096), params.MaxBlockBytes)
 }
 
 func TestValidateParams(t *testing.T) {
@@ -99,42 +102,68 @@ func TestValidateParams(t *testing.T) {
 		{
 			name: "empty base block time",
 			params: &types.Params{
-				BaseBlockTime:               "",
-				HighActivityThreshold:       1000,
-				LowActivityThreshold:        100,
-				MinBurnAmount:               "1000000uvx",
-				MaxBurnAmount:               "1000000000uvx",
-				BlockCreatorSelectionRounds: uint64(10),
-				ActivityDecayRate:           "0.95",
-				MoaPenaltyRate:              "0.1",
+				BaseBlockTime:              "",
+				BaseBlockReward:            "50000000uwrt",
+				BurnCapLambda:              "0.5",
+				FeePolicyBZero:             "community_pool",
+				HalvingInterval:            210000,
+				MoaPenaltyThresholdHigh:    "1.0",
+				MoaPenaltyThresholdWarning: "0.9",
+				MoaPenaltyThresholdMedium:  "0.7",
+				MoaPenaltyThresholdLow:     "0.5",
+				MaxBlockGas:                40000000,
+				MaxBlockBytes:              22020096,
 			},
 			wantErr: true,
 		},
 		{
-			name: "empty min burn amount",
+			name: "empty base block reward",
 			params: &types.Params{
-				BaseBlockTime:               "5s",
-				HighActivityThreshold:       1000,
-				LowActivityThreshold:        100,
-				MinBurnAmount:               "",
-				MaxBurnAmount:               "1000000000uvx",
-				BlockCreatorSelectionRounds: uint64(10),
-				ActivityDecayRate:           "0.95",
-				MoaPenaltyRate:              "0.1",
+				BaseBlockTime:              "5s",
+				BaseBlockReward:            "",
+				BurnCapLambda:              "0.5",
+				FeePolicyBZero:             "community_pool",
+				HalvingInterval:            210000,
+				MoaPenaltyThresholdHigh:    "1.0",
+				MoaPenaltyThresholdWarning: "0.9",
+				MoaPenaltyThresholdMedium:  "0.7",
+				MoaPenaltyThresholdLow:     "0.5",
+				MaxBlockGas:                40000000,
+				MaxBlockBytes:              22020096,
 			},
 			wantErr: true,
 		},
 		{
-			name: "empty max burn amount",
+			name: "empty burn cap lambda",
 			params: &types.Params{
-				BaseBlockTime:               "5s",
-				HighActivityThreshold:       1000,
-				LowActivityThreshold:        100,
-				MinBurnAmount:               "1000000uvx",
-				MaxBurnAmount:               "",
-				BlockCreatorSelectionRounds: uint64(10),
-				ActivityDecayRate:           "0.95",
-				MoaPenaltyRate:              "0.1",
+				BaseBlockTime:              "5s",
+				BaseBlockReward:            "50000000uwrt",
+				BurnCapLambda:              "",
+				FeePolicyBZero:             "community_pool",
+				HalvingInterval:            210000,
+				MoaPenaltyThresholdHigh:    "1.0",
+				MoaPenaltyThresholdWarning: "0.9",
+				MoaPenaltyThresholdMedium:  "0.7",
+				MoaPenaltyThresholdLow:     "0.5",
+				MaxBlockGas:                40000000,
+				MaxBlockBytes:              22020096,
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero halving interval",
+			params: &types.Params{
+				BaseBlockTime:              "5s",
+				BaseBlockReward:            "50000000uwrt",
+				BurnCapLambda:              "0.5",
+				FeePolicyBZero:             "community_pool",
+				HalvingInterval:            0,
+				MoaPenaltyThresholdHigh:    "1.0",
+				MoaPenaltyThresholdWarning: "0.9",
+				MoaPenaltyThresholdMedium:  "0.7",
+				MoaPenaltyThresholdLow:     "0.5",
+				MaxBlockGas:                40000000,
+				MaxBlockBytes:              22020096,
 			},
 			wantErr: true,
 		},

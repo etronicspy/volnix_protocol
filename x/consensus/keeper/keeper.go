@@ -89,18 +89,18 @@ func (k *Keeper) SetBankKeeper(bankKeeper BankKeeperInterface) {
 }
 
 // GetParams returns the current parameters for the consensus module
-func (k Keeper) GetParams(ctx sdk.Context) types.Params {
+func (k Keeper) GetParams(ctx sdk.Context) *types.Params {
 	var consensusParams types.ConsensusParams
 	k.paramstore.GetParamSet(ctx, &consensusParams)
 	if consensusParams.Params == nil {
-		return *types.DefaultParams()
+		return types.DefaultParams()
 	}
-	return *consensusParams.Params
+	return consensusParams.Params
 }
 
 // SetParams sets the parameters for the consensus module
-func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
-	consensusParams := types.NewConsensusParams(&params)
+func (k Keeper) SetParams(ctx sdk.Context, params *types.Params) {
+	consensusParams := types.NewConsensusParams(params)
 	k.paramstore.SetParamSet(ctx, consensusParams)
 }
 
@@ -298,14 +298,14 @@ func (k Keeper) ProcessHalving(ctx sdk.Context) error {
 }
 
 // GetHalvingInfo returns halving information
-func (k Keeper) GetHalvingInfo(ctx sdk.Context) (types.HalvingInfo, error) {
+func (k Keeper) GetHalvingInfo(ctx sdk.Context) (*types.HalvingInfo, error) {
 	store := ctx.KVStore(k.storeKey)
 	halvingKey := types.KeyHalvingInfo()
 
 	var halvingInfo types.HalvingInfo
 	bz := store.Get(halvingKey)
 	if bz == nil {
-		return types.HalvingInfo{
+		return &types.HalvingInfo{
 			LastHalvingHeight: 0,
 			NextHalvingHeight: HalvingInterval,
 			HalvingInterval:   HalvingInterval,
@@ -313,15 +313,15 @@ func (k Keeper) GetHalvingInfo(ctx sdk.Context) (types.HalvingInfo, error) {
 	}
 
 	k.cdc.MustUnmarshal(bz, &halvingInfo)
-	return halvingInfo, nil
+	return &halvingInfo, nil
 }
 
 // SetHalvingInfo sets halving information
-func (k Keeper) SetHalvingInfo(ctx sdk.Context, halvingInfo types.HalvingInfo) error {
+func (k Keeper) SetHalvingInfo(ctx sdk.Context, halvingInfo *types.HalvingInfo) error {
 	store := ctx.KVStore(k.storeKey)
 	halvingKey := types.KeyHalvingInfo()
 
-	bz := k.cdc.MustMarshal(&halvingInfo)
+	bz := k.cdc.MustMarshal(halvingInfo)
 	store.Set(halvingKey, bz)
 	return nil
 }
@@ -331,14 +331,14 @@ func (k Keeper) SetHalvingInfo(ctx sdk.Context, halvingInfo types.HalvingInfo) e
 // ============================================================================
 
 // GetConsensusState returns current consensus state
-func (k Keeper) GetConsensusState(ctx sdk.Context) (types.ConsensusState, error) {
+func (k Keeper) GetConsensusState(ctx sdk.Context) (*types.ConsensusState, error) {
 	store := ctx.KVStore(k.storeKey)
 	consensusKey := types.KeyConsensusState()
 
 	var consensusState types.ConsensusState
 	bz := store.Get(consensusKey)
 	if bz == nil {
-		return types.ConsensusState{
+		return &types.ConsensusState{
 			CurrentHeight:    uint64(ctx.BlockHeight()),
 			TotalAntBurned:   "0",
 			LastBlockTime:    timestamppb.New(ctx.BlockTime()),
@@ -347,15 +347,15 @@ func (k Keeper) GetConsensusState(ctx sdk.Context) (types.ConsensusState, error)
 	}
 
 	k.cdc.MustUnmarshal(bz, &consensusState)
-	return consensusState, nil
+	return &consensusState, nil
 }
 
 // SetConsensusState sets consensus state
-func (k Keeper) SetConsensusState(ctx sdk.Context, state types.ConsensusState) error {
+func (k Keeper) SetConsensusState(ctx sdk.Context, state *types.ConsensusState) error {
 	store := ctx.KVStore(k.storeKey)
 	consensusKey := types.KeyConsensusState()
 
-	bz := k.cdc.MustMarshal(&state)
+	bz := k.cdc.MustMarshal(state)
 	store.Set(consensusKey, bz)
 	return nil
 }
@@ -468,11 +468,11 @@ func (k Keeper) SetValidatorWeight(ctx sdk.Context, validator, weight string) er
 }
 
 // GetAllValidatorWeights returns all validator weights
-func (k Keeper) GetAllValidatorWeights(ctx sdk.Context) ([]types.ValidatorWeight, error) {
+func (k Keeper) GetAllValidatorWeights(ctx sdk.Context) ([]*types.ValidatorWeight, error) {
 	store := ctx.KVStore(k.storeKey)
 	prefix := types.KeyValidatorWeightPrefix
 
-	var weights []types.ValidatorWeight
+	var weights []*types.ValidatorWeight
 	iterator := store.Iterator(prefix, append(prefix, 0xFF))
 	defer iterator.Close()
 
@@ -481,7 +481,7 @@ func (k Keeper) GetAllValidatorWeights(ctx sdk.Context) ([]types.ValidatorWeight
 		if err := k.cdc.Unmarshal(iterator.Value(), &weight); err != nil {
 			continue
 		}
-		weights = append(weights, weight)
+		weights = append(weights, &weight)
 	}
 
 	return weights, nil
@@ -877,19 +877,18 @@ func (k Keeper) storeHeightBurnSummary(ctx sdk.Context, summary *consensusv1.Hei
 // InitGenesis initializes genesis state
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) {
 	if genState.Params != nil {
-		k.SetParams(ctx, *genState.Params)
+		k.SetParams(ctx, genState.Params)
 	}
 
 	for _, validator := range genState.Validators {
 		k.SetValidator(ctx, validator)
 	}
 
-	halvingInfo := types.HalvingInfo{
+	err := k.SetHalvingInfo(ctx, &types.HalvingInfo{
 		LastHalvingHeight: 0,
 		HalvingInterval:   210000,
 		NextHalvingHeight: 210000,
-	}
-	err := k.SetHalvingInfo(ctx, halvingInfo)
+	})
 	if err != nil {
 		ctx.Logger().Error("failed to set default halving info", "error", err)
 	}
@@ -906,7 +905,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) types.GenesisState {
 	validators := k.GetAllValidators(ctx)
 
 	return types.GenesisState{
-		Params:     &params,
+		Params:     params,
 		Validators: validators,
 	}
 }

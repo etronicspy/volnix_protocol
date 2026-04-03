@@ -13,7 +13,6 @@ import (
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 
 	anteilv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/anteil/v1"
-	identv1 "github.com/volnix-protocol/volnix-protocol/proto/gen/go/volnix/ident/v1"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/keeper"
 	"github.com/volnix-protocol/volnix-protocol/x/anteil/types"
 )
@@ -96,63 +95,6 @@ func BenchmarkGetOrder(b *testing.B) {
 	}
 }
 
-// BenchmarkPlaceBid benchmarks bid placement with role validation
-func BenchmarkPlaceBid(b *testing.B) {
-	k, ctx := setupBenchmark(b)
-	
-	// Create mock ident keeper with 100 validators (valid addresses)
-	accounts := make([]*identv1.VerifiedAccount, 100)
-	for i := 0; i < 100; i++ {
-		accounts[i] = &identv1.VerifiedAccount{
-			Address:      mustAddr(fmt.Sprintf("000000000000000000000000000000000000%04x", i+0x100)),
-			Role:         identv1.Role_ROLE_VALIDATOR,
-			IsActive:     true,
-			IdentityHash: fmt.Sprintf("hash%d", i),
-		}
-	}
-	mockIdentKeeper := &MockIdentKeeper{accounts: accounts}
-	k.SetIdentKeeper(mockIdentKeeper)
-	
-	// Create auction
-	auction := &anteilv1.Auction{
-		AuctionId:    "auction-bench",
-		BlockHeight:  1000,
-		ReservePrice: "10.0",
-		AntAmount:    "1000000",
-		Status:       anteilv1.AuctionStatus_AUCTION_STATUS_OPEN,
-	}
-	k.CreateAuction(ctx, auction)
-	
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		validatorAddr := accounts[i%100].Address
-		k.PlaceBid(ctx, "auction-bench", validatorAddr, "15.0")
-	}
-}
-
-// BenchmarkDistributeAntToCitizens benchmarks ANT distribution
-func BenchmarkDistributeAntToCitizens(b *testing.B) {
-	k, ctx := setupBenchmark(b)
-	
-	// Create mock ident keeper with 1000 citizens (valid addresses)
-	accounts := make([]*identv1.VerifiedAccount, 1000)
-	for i := 0; i < 1000; i++ {
-		accounts[i] = &identv1.VerifiedAccount{
-			Address:      mustAddr(fmt.Sprintf("0000000000000000000000000000000000%06x", i+0x1000)),
-			Role:         identv1.Role_ROLE_CITIZEN,
-			IsActive:     true,
-			IdentityHash: fmt.Sprintf("hash%d", i),
-		}
-	}
-	mockIdentKeeper := &MockIdentKeeper{accounts: accounts}
-	k.SetIdentKeeper(mockIdentKeeper)
-	
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		k.DistributeAntToCitizens(ctx)
-	}
-}
-
 // BenchmarkGetUserPosition benchmarks position retrieval
 func BenchmarkGetUserPosition(b *testing.B) {
 	k, ctx := setupBenchmark(b)
@@ -170,5 +112,3 @@ func BenchmarkGetUserPosition(b *testing.B) {
 		k.GetUserPosition(ctx, userAddrs[i%1000])
 	}
 }
-
-// Note: MockIdentKeeper is defined in keeper_test.go

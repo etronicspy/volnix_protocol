@@ -23,8 +23,8 @@ type AnteilKeeperForGovernance interface {
 
 // ConsensusKeeperForGovernance defines the interface for consensus keeper used by governance
 type ConsensusKeeperForGovernance interface {
-	GetParams(ctx sdk.Context) consensustypes.Params
-	SetParams(ctx sdk.Context, params consensustypes.Params)
+	GetParams(ctx sdk.Context) *consensustypes.Params
+	SetParams(ctx sdk.Context, params *consensustypes.Params)
 }
 
 // IdentKeeperForGovernance defines the interface for ident keeper used by governance

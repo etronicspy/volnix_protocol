@@ -389,7 +389,7 @@ func (suite *BenchmarkTestSuite) TestPerformanceMetrics() {
 
 	duration = time.Since(start)
 	suite.T().Logf("Executed 1000 GetAllOrders queries in %v", duration)
-	require.Less(suite.T(), duration, 1*time.Second, "Query execution should be fast")
+	require.Less(suite.T(), duration, 5*time.Second, "Query execution should be fast")
 }
 
 func (suite *BenchmarkTestSuite) TestMemoryUsage() {

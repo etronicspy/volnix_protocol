@@ -305,8 +305,7 @@ func (suite *KeeperTestSuite) TestTransferLizenz() {
 func (suite *KeeperTestSuite) TestSetMOAStatus() {
 	status := &lizenzv1.MOAStatus{
 		Validator:    "cosmos1validator",
-		CurrentMoa:   "1000000",
-		RequiredMoa:  "500000",
+		IsActive:     true,
 		LastActivity: timestamppb.Now(),
 		IsCompliant:  true,
 	}
@@ -318,7 +317,7 @@ func (suite *KeeperTestSuite) TestSetMOAStatus() {
 	retrieved, err := suite.keeper.GetMOAStatus(suite.ctx, "cosmos1validator")
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), status.Validator, retrieved.Validator)
-	require.Equal(suite.T(), status.CurrentMoa, retrieved.CurrentMoa)
+	require.Equal(suite.T(), status.IsActive, retrieved.IsActive)
 }
 
 func (suite *KeeperTestSuite) TestGetMOAStatus_NotFound() {
@@ -332,8 +331,7 @@ func (suite *KeeperTestSuite) TestGetAllMOAStatus() {
 	for i := range 3 {
 		status := &lizenzv1.MOAStatus{
 			Validator:    "cosmos1validator" + string(rune(i)),
-			CurrentMoa:   "1000000",
-			RequiredMoa:  "500000",
+			IsActive:     true,
 			LastActivity: timestamppb.Now(),
 			IsCompliant:  true,
 		}
@@ -350,8 +348,7 @@ func (suite *KeeperTestSuite) TestGetAllMOAStatus() {
 func (suite *KeeperTestSuite) TestCheckMOA_Compliant() {
 	status := &lizenzv1.MOAStatus{
 		Validator:    "cosmos1validator",
-		CurrentMoa:   "1000000",
-		RequiredMoa:  "500000",
+		IsActive:     true,
 		LastActivity: timestamppb.Now(),
 		IsCompliant:  true,
 	}
@@ -367,8 +364,7 @@ func (suite *KeeperTestSuite) TestCheckMOA_Compliant() {
 func (suite *KeeperTestSuite) TestCheckMOA_NonCompliant() {
 	status := &lizenzv1.MOAStatus{
 		Validator:    "cosmos1validator",
-		CurrentMoa:   "300000",
-		RequiredMoa:  "500000",
+		IsActive:     true,
 		LastActivity: timestamppb.Now(),
 		IsCompliant:  false,
 	}
@@ -755,8 +751,7 @@ func (suite *KeeperTestSuite) TestDeleteDeactivatingLizenz_NotFound() {
 func (suite *KeeperTestSuite) TestSetMOAStatus_Duplicate() {
 	status := &lizenzv1.MOAStatus{
 		Validator:    "cosmos1validator",
-		CurrentMoa:   "1000000",
-		RequiredMoa:  "500000",
+		IsActive:     true,
 		LastActivity: timestamppb.Now(),
 		IsCompliant:  true,
 	}
@@ -765,7 +760,7 @@ func (suite *KeeperTestSuite) TestSetMOAStatus_Duplicate() {
 	require.NoError(suite.T(), err)
 
 	// Update with new values (should succeed)
-	status.CurrentMoa = "1500000"
+	status.IsActive = false
 	err = suite.keeper.SetMOAStatus(suite.ctx, status)
 	require.NoError(suite.T(), err)
 }
@@ -801,8 +796,7 @@ func (suite *KeeperTestSuite) TestUpdateLizenzActivity_Success() {
 	// Create MOA status
 	status := &lizenzv1.MOAStatus{
 		Validator:    "cosmos1validator",
-		CurrentMoa:   "1000000",
-		RequiredMoa:  "500000",
+		IsActive:     true,
 		LastActivity: timestamppb.New(pastTime),
 		IsCompliant:  true,
 	}

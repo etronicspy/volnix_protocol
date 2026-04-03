@@ -241,8 +241,8 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_MinDeposit() {
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_LizenzKeeperNotSet() {
 	change := &governancev1.ParameterChange{
 		Module:    "lizenz",
-		Parameter: "activity_coefficient",
-		NewValue:  "0.2",
+		Parameter: "activation_freeze_period",
+		NewValue:  "48h",
 	}
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
 	require.Error(suite.T(), err)
@@ -252,7 +252,7 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_LizenzKeeperNot
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_AnteilKeeperNotSet() {
 	change := &governancev1.ParameterChange{
 		Module:    "anteil",
-		Parameter: "min_ant_amount",
+		Parameter: "supplier_epoch_ant_limit",
 		NewValue:  "100",
 	}
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
@@ -263,8 +263,8 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_AnteilKeeperNot
 func (suite *ParameterApplierTestSuite) TestApplyParameterChange_ConsensusKeeperNotSet() {
 	change := &governancev1.ParameterChange{
 		Module:    "consensus",
-		Parameter: "base_block_time",
-		NewValue:  "10s",
+		Parameter: "burn_cap_lambda",
+		NewValue:  "0.5",
 	}
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
 	require.Error(suite.T(), err)
@@ -276,71 +276,44 @@ func (suite *ParameterApplierTestSuite) TestApplyParameterChange_ConsensusKeeper
 // =============================================================================
 
 type mockConsensusKeeper struct {
-	params consensustypes.Params
+	params *consensustypes.Params
 }
 
-func (m *mockConsensusKeeper) GetParams(_ sdk.Context) consensustypes.Params {
+func (m *mockConsensusKeeper) GetParams(_ sdk.Context) *consensustypes.Params {
 	return m.params
 }
 
-func (m *mockConsensusKeeper) SetParams(_ sdk.Context, params consensustypes.Params) {
+func (m *mockConsensusKeeper) SetParams(_ sdk.Context, params *consensustypes.Params) {
 	m.params = params
 }
 
 func (suite *ParameterApplierTestSuite) setupConsensusKeeper() *mockConsensusKeeper {
 	mock := &mockConsensusKeeper{
-		params: *consensustypes.DefaultParams(),
+		params: consensustypes.DefaultParams(),
 	}
 	suite.keeper.SetConsensusKeeper(mock)
 	return mock
 }
 
-func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_BaseBlockTime() {
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_MaxBlockBytes() {
 	mock := suite.setupConsensusKeeper()
 
 	change := &governancev1.ParameterChange{
 		Module:    "consensus",
-		Parameter: "base_block_time",
-		OldValue:  "5s",
-		NewValue:  "10s",
+		Parameter: "max_block_bytes",
+		NewValue:  "44040192",
 	}
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), "10s", mock.params.BaseBlockTime)
+	require.Equal(suite.T(), uint64(44040192), mock.params.MaxBlockBytes)
 }
 
-func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_BaseBlockTimeInvalid() {
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_MaxBlockGasInvalid() {
 	suite.setupConsensusKeeper()
 
 	change := &governancev1.ParameterChange{
 		Module:    "consensus",
-		Parameter: "base_block_time",
-		NewValue:  "not-a-duration",
-	}
-	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
-	require.Error(suite.T(), err)
-	require.Contains(suite.T(), err.Error(), "invalid duration")
-}
-
-func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_HighActivityThreshold() {
-	mock := suite.setupConsensusKeeper()
-
-	change := &governancev1.ParameterChange{
-		Module:    "consensus",
-		Parameter: "high_activity_threshold",
-		NewValue:  "5000",
-	}
-	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
-	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), uint64(5000), mock.params.HighActivityThreshold)
-}
-
-func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_HighActivityThresholdInvalid() {
-	suite.setupConsensusKeeper()
-
-	change := &governancev1.ParameterChange{
-		Module:    "consensus",
-		Parameter: "high_activity_threshold",
+		Parameter: "max_block_gas",
 		NewValue:  "not-a-number",
 	}
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
@@ -348,17 +321,43 @@ func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_HighActivityThr
 	require.Contains(suite.T(), err.Error(), "invalid uint64")
 }
 
-func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_LowActivityThreshold() {
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_BurnCapLambda() {
 	mock := suite.setupConsensusKeeper()
 
 	change := &governancev1.ParameterChange{
 		Module:    "consensus",
-		Parameter: "low_activity_threshold",
-		NewValue:  "100",
+		Parameter: "burn_cap_lambda",
+		NewValue:  "0.6",
 	}
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), uint64(100), mock.params.LowActivityThreshold)
+	require.Equal(suite.T(), "0.6", mock.params.BurnCapLambda)
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_BurnCapLambdaInvalid() {
+	suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "burn_cap_lambda",
+		NewValue:  "0.8",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.Error(suite.T(), err)
+	require.Contains(suite.T(), err.Error(), "constitutional")
+}
+
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_FeePolicyBZero() {
+	mock := suite.setupConsensusKeeper()
+
+	change := &governancev1.ParameterChange{
+		Module:    "consensus",
+		Parameter: "fee_policy_b_zero",
+		NewValue:  "burn",
+	}
+	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), "burn", mock.params.FeePolicyBZero)
 }
 
 func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_UnknownParam() {
@@ -375,16 +374,16 @@ func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_UnknownParam() 
 	require.Contains(suite.T(), err.Error(), "constitutional")
 }
 
-func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_LowActivityThresholdInvalid() {
-	suite.setupConsensusKeeper()
+func (suite *ParameterApplierTestSuite) TestApplyConsensusChange_MaxBlockGas() {
+	mock := suite.setupConsensusKeeper()
 
 	change := &governancev1.ParameterChange{
 		Module:    "consensus",
-		Parameter: "low_activity_threshold",
-		NewValue:  "xyz",
+		Parameter: "max_block_gas",
+		NewValue:  "50000000",
 	}
 	err := suite.keeper.ApplyParameterChange(suite.ctx, change)
-	require.Error(suite.T(), err)
-	require.Contains(suite.T(), err.Error(), "invalid uint64")
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), uint64(50000000), mock.params.MaxBlockGas)
 }
 

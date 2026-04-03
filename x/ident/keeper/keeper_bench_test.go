@@ -41,7 +41,7 @@ func setupBenchmark(b *testing.B) (*keeper.Keeper, sdk.Context) {
 	
 	// Set default params
 	params := types.DefaultParams()
-	params.MaxIdentitiesPerAddress = 10000
+	params.MaxActiveSuppliers = 10000
 	k.SetParams(ctx, params)
 
 	return k, ctx
@@ -55,7 +55,7 @@ func BenchmarkSetVerifiedAccount(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:      fmt.Sprintf("cosmos1test%d", i),
-			Role:         identv1.Role_ROLE_CITIZEN,
+			Role:         identv1.Role_ROLE_SUPPLIER,
 			IdentityHash: fmt.Sprintf("hash%d", i),
 			IsActive:     true,
 		}
@@ -71,7 +71,7 @@ func BenchmarkGetVerifiedAccount(b *testing.B) {
 	for i := 0; i < 1000; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:      fmt.Sprintf("cosmos1test%d", i),
-			Role:         identv1.Role_ROLE_CITIZEN,
+			Role:         identv1.Role_ROLE_SUPPLIER,
 			IdentityHash: fmt.Sprintf("hash%d", i),
 			IsActive:     true,
 		}
@@ -92,7 +92,7 @@ func BenchmarkCheckDuplicateIdentityHash(b *testing.B) {
 	for i := 0; i < 1000; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:      fmt.Sprintf("cosmos1test%d", i),
-			Role:         identv1.Role_ROLE_CITIZEN,
+			Role:         identv1.Role_ROLE_SUPPLIER,
 			IdentityHash: fmt.Sprintf("hash%d", i),
 			IsActive:     true,
 		}
@@ -120,7 +120,7 @@ func BenchmarkGetAllVerifiedAccounts(b *testing.B) {
 			for i := 0; i < count; i++ {
 				account := &identv1.VerifiedAccount{
 					Address:      fmt.Sprintf("cosmos1test%d", i),
-					Role:         identv1.Role_ROLE_CITIZEN,
+					Role:         identv1.Role_ROLE_SUPPLIER,
 					IdentityHash: fmt.Sprintf("hash%d", i),
 					IsActive:     true,
 				}
@@ -143,7 +143,7 @@ func BenchmarkChangeAccountRole(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		account := &identv1.VerifiedAccount{
 			Address:      fmt.Sprintf("cosmos1test%d", i),
-			Role:         identv1.Role_ROLE_CITIZEN,
+			Role:         identv1.Role_ROLE_SUPPLIER,
 			IdentityHash: fmt.Sprintf("hash%d", i),
 			IsActive:     true,
 		}
@@ -155,7 +155,7 @@ func BenchmarkChangeAccountRole(b *testing.B) {
 		// Toggle between CITIZEN and VALIDATOR
 		newRole := identv1.Role_ROLE_VALIDATOR
 		if i%2 == 0 {
-			newRole = identv1.Role_ROLE_CITIZEN
+			newRole = identv1.Role_ROLE_SUPPLIER
 		}
 		k.ChangeAccountRole(ctx, fmt.Sprintf("cosmos1test%d", i%100), newRole)
 	}
@@ -170,7 +170,7 @@ func BenchmarkGetVerifiedAccountsByRole(b *testing.B) {
 		role  identv1.Role
 		count int
 	}{
-		{identv1.Role_ROLE_CITIZEN, 500},
+		{identv1.Role_ROLE_SUPPLIER, 500},
 		{identv1.Role_ROLE_VALIDATOR, 300},
 		{identv1.Role_ROLE_GUEST, 200},
 	}
@@ -191,7 +191,7 @@ func BenchmarkGetVerifiedAccountsByRole(b *testing.B) {
 	
 	b.Run("citizens", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			k.GetVerifiedAccountsByRole(ctx, identv1.Role_ROLE_CITIZEN)
+			k.GetVerifiedAccountsByRole(ctx, identv1.Role_ROLE_SUPPLIER)
 		}
 	})
 	

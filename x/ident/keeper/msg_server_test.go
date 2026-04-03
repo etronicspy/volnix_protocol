@@ -111,7 +111,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 		ZkpProof:             zkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &coin,
-		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+		DesiredRole:          identv1.Role_ROLE_SUPPLIER,
 	}
 
 	resp, err := suite.msgServer.VerifyIdentity(suite.ctx, msg)
@@ -121,7 +121,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 	// Verify account was created with chosen role
 	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTest)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, account.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, account.Role)
 	require.NotEmpty(suite.T(), account.IdentityHash)
 
 	// Test duplicate verification (should fail)
@@ -137,7 +137,7 @@ func (suite *MsgServerTestSuite) TestVerifyIdentity() {
 		ZkpProof:             invalidZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &invalidCoin,
-		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+		DesiredRole:          identv1.Role_ROLE_SUPPLIER,
 	}
 
 	_, err = suite.msgServer.VerifyIdentity(suite.ctx, invalidMsg)
@@ -204,7 +204,7 @@ func (suite *MsgServerTestSuite) TestChangeRole() {
 		ZkpProof:             createZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
-		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+		DesiredRole:          identv1.Role_ROLE_SUPPLIER,
 	}
 
 	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)
@@ -242,7 +242,7 @@ func (suite *MsgServerTestSuite) TestChangeRole_EmptyZkpProof() {
 		ZkpProof:             createZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
-		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+		DesiredRole:          identv1.Role_ROLE_SUPPLIER,
 	}
 	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)
 	require.NoError(suite.T(), err)
@@ -269,7 +269,7 @@ func (suite *MsgServerTestSuite) TestChangeRole_InvalidRole() {
 		ZkpProof:             createZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
-		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+		DesiredRole:          identv1.Role_ROLE_SUPPLIER,
 	}
 	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)
 	require.NoError(suite.T(), err)
@@ -326,7 +326,7 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 		ZkpProof:             migrateZkpProof,
 		VerificationProvider: "provider123",
 		VerificationCost:     &createCoin,
-		DesiredRole:          identv1.Role_ROLE_CITIZEN,
+		DesiredRole:          identv1.Role_ROLE_SUPPLIER,
 	}
 
 	_, err := suite.msgServer.VerifyIdentity(suite.ctx, createMsg)
@@ -358,7 +358,7 @@ func (suite *MsgServerTestSuite) TestMigrateRole() {
 	// Verify target account is created
 	account, err := suite.keeper.GetVerifiedAccount(suite.ctx, suite.addrTarget)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), identv1.Role_ROLE_CITIZEN, account.Role)
+	require.Equal(suite.T(), identv1.Role_ROLE_SUPPLIER, account.Role)
 	
 	// Note: The migration might fail due to account limits, which is expected behavior
 	// The important thing is that the source account is deleted

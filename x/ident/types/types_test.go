@@ -15,9 +15,9 @@ func TestDefaultParams(t *testing.T) {
 	params := types.DefaultParams()
 
 	require.NotNil(t, params)
-	require.Greater(t, params.MaxIdentitiesPerAddress, uint64(0))
-	require.Greater(t, params.CitizenActivityPeriod, time.Duration(0))
-	require.Greater(t, params.ValidatorActivityPeriod, time.Duration(0))
+	require.Greater(t, params.MaxActiveSuppliers, uint64(0))
+	require.Greater(t, params.MoaSupplierWindow, time.Duration(0))
+	require.Greater(t, params.MoaValidatorWindow, time.Duration(0))
 }
 
 func TestParamsValidate(t *testing.T) {
@@ -53,13 +53,13 @@ func TestParamKeyTable(t *testing.T) {
 func TestNewVerifiedAccount(t *testing.T) {
 	account := types.NewVerifiedAccount(
 		"cosmos1test",
-		identv1.Role_ROLE_CITIZEN,
+		identv1.Role_ROLE_SUPPLIER,
 		"hash123",
 	)
 
 	require.NotNil(t, account)
 	require.Equal(t, "cosmos1test", account.Address)
-	require.Equal(t, identv1.Role_ROLE_CITIZEN, account.Role)
+	require.Equal(t, identv1.Role_ROLE_SUPPLIER, account.Role)
 	require.Equal(t, "hash123", account.IdentityHash)
 	require.NotNil(t, account.LastActive)
 }
@@ -77,7 +77,7 @@ func TestIsAccountActive(t *testing.T) {
 			name: "active citizen",
 			account: &identv1.VerifiedAccount{
 				Address:      "cosmos1test",
-				Role:         identv1.Role_ROLE_CITIZEN,
+				Role:         identv1.Role_ROLE_SUPPLIER,
 				LastActive:   timestamppb.New(now),
 				IdentityHash: "hash123",
 			},
@@ -87,7 +87,7 @@ func TestIsAccountActive(t *testing.T) {
 			name: "inactive citizen",
 			account: &identv1.VerifiedAccount{
 				Address:      "cosmos1test",
-				Role:         identv1.Role_ROLE_CITIZEN,
+				Role:         identv1.Role_ROLE_SUPPLIER,
 				LastActive:   timestamppb.New(now.Add(-400 * 24 * time.Hour)),
 				IdentityHash: "hash123",
 			},
@@ -137,7 +137,7 @@ func TestUpdateAccountActivity(t *testing.T) {
 	oldTime := time.Now().Add(-24 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:      "cosmos1test",
-		Role:         identv1.Role_ROLE_CITIZEN,
+		Role:         identv1.Role_ROLE_SUPPLIER,
 		LastActive:   timestamppb.New(oldTime),
 		IdentityHash: "hash123",
 	}
@@ -151,7 +151,7 @@ func TestChangeAccountRole(t *testing.T) {
 	oldTime := time.Now().Add(-24 * time.Hour)
 	account := &identv1.VerifiedAccount{
 		Address:      "cosmos1test",
-		Role:         identv1.Role_ROLE_CITIZEN,
+		Role:         identv1.Role_ROLE_SUPPLIER,
 		LastActive:   timestamppb.New(oldTime),
 		IdentityHash: "hash123",
 	}
@@ -175,7 +175,7 @@ func TestValidateAccount(t *testing.T) {
 			name: "valid account",
 			account: &identv1.VerifiedAccount{
 				Address:      validAddrStr,
-				Role:         identv1.Role_ROLE_CITIZEN,
+				Role:         identv1.Role_ROLE_SUPPLIER,
 				IdentityHash: "hash123",
 			},
 			wantErr: nil,
@@ -184,7 +184,7 @@ func TestValidateAccount(t *testing.T) {
 			name: "empty address",
 			account: &identv1.VerifiedAccount{
 				Address:      "",
-				Role:         identv1.Role_ROLE_CITIZEN,
+				Role:         identv1.Role_ROLE_SUPPLIER,
 				IdentityHash: "hash123",
 			},
 			wantErr: types.ErrEmptyAddress,
@@ -193,7 +193,7 @@ func TestValidateAccount(t *testing.T) {
 			name: "empty identity hash",
 			account: &identv1.VerifiedAccount{
 				Address:      validAddrStr,
-				Role:         identv1.Role_ROLE_CITIZEN,
+				Role:         identv1.Role_ROLE_SUPPLIER,
 				IdentityHash: "",
 			},
 			wantErr: types.ErrEmptyIdentityHash,
