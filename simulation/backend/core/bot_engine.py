@@ -2,8 +2,8 @@ import asyncio
 import random
 import time
 import uuid
-from core.state import StateManager
-from core.models import Role, Transaction, TransactionType
+from core.state import StateManager, SIM_TREASURY_ADDR
+from core.models import Role, Transaction, TransactionType, OrderType
 
 class BotEngine:
     def __init__(self, state_manager: StateManager):
@@ -43,32 +43,46 @@ class BotEngine:
                 asset_type="wrt",
                 timestamp=time.time()
             )
-            supervisor = self.state.accounts.get("supervisor")
-            if supervisor and supervisor.wrt_balance >= tx.amount:
+            treasury = self.state.accounts.get(SIM_TREASURY_ADDR)
+            if treasury and treasury.wrt_balance >= tx.amount:
                 self.state.mempool.append(tx)
             return
 
-        # 2. Choose random action based on weights
-        # 30% transfer, 25% trade, 10% cancel_order, 15% mint, 10% set_role, 10% burn
+        # 2. Random action: declare = §5.4 (b_i, s_i), mint from sim treasury, etc.
         action = random.choices(
-            ["transfer", "trade", "cancel_order", "mint", "set_role", "burn"], 
-            weights=[0.30, 0.25, 0.10, 0.15, 0.10, 0.10]
+            ["transfer", "trade", "cancel_order", "mint", "set_role", "declare"],
+            weights=[0.30, 0.25, 0.10, 0.15, 0.10, 0.10],
         )[0]
 
-        if action == "burn":
-            validators = [acc for acc in accounts if acc.role == Role.VALIDATOR and acc.ant_balance > 0.1]
+        if action == "declare":
+            validators = [
+                acc for acc in accounts
+                if acc.role == Role.VALIDATOR and acc.lzn_frozen_mining > 0 and acc.ant_balance > 0.01
+            ]
             if validators:
                 val = random.choice(validators)
-                amount = round(random.uniform(0.1, val.ant_balance * 0.5), 2)
-                tx = Transaction(
-                    tx_hash=uuid.uuid4().hex,
-                    tx_type=TransactionType.BURN,
-                    sender=val.address,
-                    amount=amount,
-                    asset_type="ant",
-                    timestamp=time.time()
-                )
-                self.state.mempool.append(tx)
+                cap = float(val.lzn_frozen_mining)
+                ant = float(val.ant_balance)
+                mx = min(cap, ant)
+                if mx >= 0.02:
+                    total = round(random.uniform(0.01, mx), 4)
+                    b = round(random.uniform(0.01, max(0.01, total * 0.85)), 4)
+                    s = round(min(total - b, cap - b, ant - b), 4)
+                    if s < 0:
+                        s = 0.0
+                    if b + s > cap + 1e-9 or b + s > ant + 1e-9:
+                        s = max(0.0, min(cap - b, ant - b))
+                    if b + s <= ant + 1e-9 and b + s <= cap + 1e-9 and b + s >= 0.01:
+                        tx = Transaction(
+                            tx_hash=uuid.uuid4().hex,
+                            tx_type=TransactionType.DECLARE_PARTICIPATION,
+                            sender=val.address,
+                            amount=b,
+                            stake_amount=s,
+                            asset_type="ant",
+                            timestamp=time.time(),
+                        )
+                        self.state.mempool.append(tx)
             return
 
         elif action == "set_role":
@@ -76,7 +90,7 @@ class BotEngine:
             new_role = random.choice([Role.CITIZEN, Role.PROVIDER, Role.VALIDATOR, Role.GUEST])
             
             # Rule: Cannot become validator without LZN
-            if new_role == Role.VALIDATOR and target.lzn_balance <= 0:
+            if new_role == Role.VALIDATOR and (target.lzn_balance + target.lzn_frozen_mining) <= 0:
                 new_role = Role.PROVIDER
                 
             if target.role != new_role:
@@ -108,13 +122,13 @@ class BotEngine:
                 timestamp=time.time()
             )
             
-            supervisor = self.state.accounts.get("supervisor")
-            if supervisor:
-                if asset == "wrt" and supervisor.wrt_balance >= amount:
+            treasury = self.state.accounts.get(SIM_TREASURY_ADDR)
+            if treasury:
+                if asset == "wrt" and treasury.wrt_balance >= amount:
                     self.state.mempool.append(tx)
-                elif asset == "lzn" and supervisor.lzn_balance >= amount:
+                elif asset == "lzn" and treasury.lzn_balance >= amount:
                     self.state.mempool.append(tx)
-                elif asset == "ant" and supervisor.ant_balance >= amount:
+                elif asset == "ant" and treasury.ant_balance >= amount:
                     self.state.mempool.append(tx)
             return
 
@@ -180,7 +194,7 @@ class BotEngine:
                     timestamp=time.time()
                 )
                 self.state.mempool.append(tx)
-            elif order_type == OrderType.SELL and trader.ant_balance >= shares_amount:
+            elif order_type == OrderType.SELL and trader.role == Role.PROVIDER and trader.ant_balance >= shares_amount:
                 tx = Transaction(
                     tx_hash=uuid.uuid4().hex,
                     tx_type=TransactionType.CREATE_ORDER,

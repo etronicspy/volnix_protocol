@@ -22,7 +22,11 @@ class ConnectionManager:
                 pass
 
 from core.models import Role, Transaction, TransactionType, Order, OrderType
+from core.state import BLOCKS_PER_EPOCH
 import uuid
+
+COEFF_MIN = 0.75
+COEFF_MAX = 1.5
 
 class SimulationEngine:
     def __init__(self, state_manager):
@@ -75,6 +79,8 @@ class SimulationEngine:
                     buyer.ant_balance += match_amount
                     seller.ant_balance -= match_amount
                     seller.wrt_balance += total_cost
+                    if seller.role == Role.PROVIDER:
+                        self.state.epoch_ant_sold_volume += match_amount
                     
                     highest_bid.filled += match_amount
                     lowest_ask.filled += match_amount
@@ -109,9 +115,95 @@ class SimulationEngine:
                 
         return matched_txs
 
+    def _apply_declare_or_burn(self, tx: Transaction, txs_in_block: list, declared_addrs: set) -> dict:
+        """§5.4: b_i + s_i ≤ L_i (L_i = активированный LZN); оба сжигаются. Один declare на валидатора за блок."""
+        if tx.sender in declared_addrs:
+            return {}
+        sender = self.state.accounts.get(tx.sender)
+        if not sender or sender.role != Role.VALIDATOR:
+            return {}
+        if tx.tx_type == TransactionType.BURN:
+            b = float(tx.amount or 0)
+            s = 0.0
+        else:
+            b = float(tx.amount or 0)
+            s = float(tx.stake_amount or 0)
+        L_i = float(sender.lzn_frozen_mining)
+        if L_i <= 0 or b < 0 or s < 0:
+            return {}
+        if b + s > L_i + 1e-9:
+            return {}
+        total = b + s
+        if sender.ant_balance + 1e-9 < total:
+            return {}
+        sender.ant_balance -= total
+        self.state.current_epoch_burn += total
+        declared_addrs.add(tx.sender)
+        d = tx.model_dump(mode="json")
+        d["amount"] = b
+        d["stake_amount"] = s
+        txs_in_block.append(d)
+        return {"b": b, "s": s, "L_i": L_i}
+
+    def _epoch_boundary(self, block_height: int, txs_in_block: list):
+        """§5.5: сброс ANT у Поставщиков; эмиссия = sold×coeff; обновление coeff."""
+        if block_height <= 0 or block_height % BLOCKS_PER_EPOCH != 0:
+            return
+
+        for oid, order in list(self.state.orders.items()):
+            owner = self.state.accounts.get(order.owner)
+            if not owner:
+                del self.state.orders[oid]
+                continue
+            if order.order_type == OrderType.BUY:
+                owner.wrt_balance += order.price * (order.amount - order.filled)
+            del self.state.orders[oid]
+
+        providers = [a for a in self.state.accounts.values() if a.role == Role.PROVIDER]
+        wiped_balance = sum(p.ant_balance for p in providers)
+        for p in providers:
+            p.ant_balance = 0.0
+
+        sold_epoch = self.state.epoch_ant_sold_volume
+        coeff = self.state.epoch_emission_coefficient
+        sold_prev = self.state.epoch_ant_sold_last
+        emission = sold_epoch * coeff
+
+        if sold_prev > 1e-12:
+            ratio = sold_epoch / sold_prev
+            new_coeff = coeff / max(ratio, 1e-12)
+        else:
+            new_coeff = coeff
+        self.state.epoch_emission_coefficient = max(COEFF_MIN, min(COEFF_MAX, new_coeff))
+        self.state.epoch_ant_sold_last = sold_epoch
+        self.state.epoch_ant_sold_volume = 0.0
+
+        if providers and emission > 0:
+            per = emission / len(providers)
+            for p in providers:
+                p.ant_balance += per
+
+        txs_in_block.append({
+            "tx_hash": uuid.uuid4().hex,
+            "tx_type": TransactionType.EPOCH_EMISSION.value,
+            "amount": emission,
+            "asset_type": "ant",
+            "details": (
+                f"§5.5 epoch boundary height {block_height}: wiped provider ANT (balances + SELL escrow) ≈ {wiped_balance:.4f}; "
+                f"sold_last_epoch={sold_epoch:.4f}×coeff={coeff:.4f}→emit {emission:.4f} ANT "
+                f"evenly among {len(providers)} provider(s); coeff→{self.state.epoch_emission_coefficient:.4f}"
+            ),
+            "timestamp": time.time(),
+        })
+        self.state.current_epoch_burn = 0.0
+
     async def produce_block(self):
-        # Process mempool
         txs_in_block = []
+        ts = time.time()
+        declared_this_block: set = set()
+        participation: dict = {}  # address -> {b, L_i} для §5.1
+
+        # Process mempool
         for tx in self.state.mempool:
             if tx.tx_type == TransactionType.TRANSFER:
                 sender = self.state.accounts.get(tx.sender)
@@ -120,7 +212,7 @@ class SimulationEngine:
                 if sender and receiver and sender.wrt_balance >= tx.amount:
                     sender.wrt_balance -= tx.amount
                     receiver.wrt_balance += tx.amount
-                    txs_in_block.append(tx.dict())
+                    txs_in_block.append(tx.model_dump(mode="json"))
             elif tx.tx_type == TransactionType.MINT:
                 receiver = self.state.accounts.get(tx.receiver)
                 if not receiver:
@@ -137,101 +229,79 @@ class SimulationEngine:
                         receiver.lzn_balance += tx.amount
                     elif asset == "ant":
                         receiver.ant_balance += tx.amount
-                    txs_in_block.append(tx.dict())
+                    txs_in_block.append(tx.model_dump(mode="json"))
             elif tx.tx_type == TransactionType.SET_ROLE:
                 receiver = self.state.accounts.get(tx.receiver)
                 if receiver:
-                    if tx.role == Role.VALIDATOR and receiver.lzn_balance <= 0:
-                        pass # Cannot become validator without LZN
+                    total_lzn = receiver.lzn_balance + receiver.lzn_frozen_mining
+                    if tx.role == Role.VALIDATOR and total_lzn <= 0:
+                        pass
                     else:
                         receiver.role = tx.role
-                        txs_in_block.append(tx.dict())
-            elif tx.tx_type == TransactionType.BURN:
-                sender = self.state.accounts.get(tx.sender)
-                if sender and sender.role == Role.VALIDATOR and sender.ant_balance >= tx.amount:
-                    sender.ant_balance -= tx.amount
-                    self.state.current_epoch_burn += tx.amount
-                    txs_in_block.append(tx.dict())
+                        txs_in_block.append(tx.model_dump(mode="json"))
+            elif tx.tx_type in (TransactionType.BURN, TransactionType.DECLARE_PARTICIPATION):
+                info = self._apply_declare_or_burn(tx, txs_in_block, declared_this_block)
+                if info and tx.sender:
+                    participation[tx.sender] = {"b": info["b"], "L_i": info["L_i"]}
             elif tx.tx_type == TransactionType.CREATE_ORDER:
                 owner = self.state.accounts.get(tx.sender)
                 if owner and owner.role != Role.GUEST:
-                    # Basic validation
                     if tx.order_type == OrderType.BUY and owner.wrt_balance >= (tx.price * tx.amount):
-                        # Lock funds (simplified: we just check at match time, but let's lock for realism)
                         owner.wrt_balance -= (tx.price * tx.amount)
                         order = Order(id=tx.tx_hash, owner=tx.sender, order_type=tx.order_type, price=tx.price, amount=tx.amount, timestamp=tx.timestamp)
                         self.state.orders[tx.tx_hash] = order
-                        txs_in_block.append(tx.dict())
-                    elif tx.order_type == OrderType.SELL and owner.ant_balance >= tx.amount:
-                        owner.ant_balance -= tx.amount
-                        order = Order(id=tx.tx_hash, owner=tx.sender, order_type=tx.order_type, price=tx.price, amount=tx.amount, timestamp=tx.timestamp)
-                        self.state.orders[tx.tx_hash] = order
-                        txs_in_block.append(tx.dict())
+                        txs_in_block.append(tx.model_dump(mode="json"))
+                    elif tx.order_type == OrderType.SELL:
+                        if owner.role != Role.PROVIDER:
+                            pass
+                        elif owner.ant_balance >= tx.amount:
+                            owner.ant_balance -= tx.amount
+                            order = Order(id=tx.tx_hash, owner=tx.sender, order_type=tx.order_type, price=tx.price, amount=tx.amount, timestamp=tx.timestamp)
+                            self.state.orders[tx.tx_hash] = order
+                            txs_in_block.append(tx.model_dump(mode="json"))
             elif tx.tx_type == TransactionType.CANCEL_ORDER:
                 order = self.state.orders.get(tx.order_id)
                 if order and order.owner == tx.sender:
                     owner = self.state.accounts.get(tx.sender)
-                    if order.order_type == OrderType.BUY:
-                        owner.wrt_balance += (order.price * (order.amount - order.filled))
-                    else:
-                        owner.ant_balance += (order.amount - order.filled)
-                    del self.state.orders[tx.order_id]
-                    txs_in_block.append(tx.dict())
+                    if owner:
+                        if order.order_type == OrderType.BUY:
+                            owner.wrt_balance += (order.price * (order.amount - order.filled))
+                        else:
+                            owner.ant_balance += (order.amount - order.filled)
+                        del self.state.orders[tx.order_id]
+                        txs_in_block.append(tx.model_dump(mode="json"))
         
         # Run Matching Engine
         trades = self._match_orders()
         txs_in_block.extend(trades)
         
-        # Block Reward (WRT Emission)
+        # §5.1: базовая награда WRT только среди валидаторов с b_i > 0; доля ∝ активированному LZN (L_i)
         reward_amount = 50.0
-        validators = [acc for acc in self.state.accounts.values() if acc.role == Role.VALIDATOR and acc.lzn_balance > 0]
-        
-        if validators:
-            total_lzn = sum(v.lzn_balance for v in validators)
-            for v in validators:
-                share = (v.lzn_balance / total_lzn) * reward_amount
-                v.wrt_balance += share
-                
-            details = "Block reward distributed to validators"
-            if self.state.current_height == 0: # Producing Block 1
-                details = "The Times 03/Apr/2026 Volnix Protocol Genesis: Overcoming the Justice Trilemma"
-                
+        eligible = [
+            (addr, data["L_i"])
+            for addr, data in participation.items()
+            if data["b"] > 0 and data["L_i"] > 0
+        ]
+        if eligible:
+            total_L = sum(L for _, L in eligible)
+            for addr, L_i in eligible:
+                v = self.state.accounts.get(addr)
+                if v:
+                    share = (L_i / total_L) * reward_amount
+                    v.wrt_balance += share
             txs_in_block.append({
                 "tx_hash": uuid.uuid4().hex,
-                "tx_type": TransactionType.BLOCK_REWARD,
+                "tx_type": TransactionType.BLOCK_REWARD.value,
                 "receiver": "validators",
                 "amount": reward_amount,
                 "asset_type": "wrt",
-                "details": details,
-                "timestamp": time.time()
+                "details": "§5.1: WRT block reward only if b_i>0; split by activated LZN among burners this height",
+                "timestamp": time.time(),
             })
-        
-        # Epoch Logic (every 10 blocks)
-        if self.state.current_height > 0 and self.state.current_height % 10 == 0:
-            providers = [acc for acc in self.state.accounts.values() if acc.role == Role.PROVIDER]
-            
-            wiped_ant = 0.0
-            for p in providers:
-                wiped_ant += p.ant_balance
-                p.ant_balance = 0.0
-                
-            # Distribute new ANT based on previous burn
-            emission = max(self.state.current_epoch_burn * 1.0, 100.0) # Base emission for sim
-            if providers:
-                per_provider = emission / len(providers)
-                for p in providers:
-                    p.ant_balance += per_provider
-                    
-            txs_in_block.append({
-                "tx_hash": uuid.uuid4().hex,
-                "tx_type": TransactionType.EPOCH_EMISSION,
-                "amount": emission,
-                "asset_type": "ant",
-                "details": f"Wiped {wiped_ant:.2f} ANT. Emitted {emission:.2f} ANT to {len(providers)} providers",
-                "timestamp": time.time()
-            })
-            self.state.current_epoch_burn = 0.0
-        
+
+        next_height = self.state.current_height + 1
+        self._epoch_boundary(next_height, txs_in_block)
+
         import hashlib
         block_hash = hashlib.sha256(f"{self.state.current_height + 1}{time.time()}".encode()).hexdigest()[:16]
         

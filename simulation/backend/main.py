@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from core.engine import SimulationEngine
-from core.state import StateManager
+from core.state import StateManager, SIM_TREASURY_ADDR
 from core.models import Role
 from core.bot_engine import BotEngine
 
@@ -25,8 +25,9 @@ bot_engine = BotEngine(state_manager)
 
 @app.on_event("startup")
 async def startup_event():
-    # Load state from file if it exists
     state_manager.load_state()
+    if not state_manager.blocks:
+        state_manager.init_genesis()
     asyncio.create_task(engine.start())
     # Bot engine starts stopped by default
 
@@ -78,43 +79,29 @@ class MintRequest(BaseModel):
 
 @app.post("/api/god-mode/mint")
 def mint_tokens(req: MintRequest):
-    import uuid
-    import time
-    from core.models import Transaction, TransactionType
-    
     try:
-        # Instead of direct minting, we simulate a transfer from supervisor
         acc = state_manager.accounts.get(req.address)
         if not acc:
             acc = state_manager.create_account(req.address)
             
         if req.asset_type == "ant" and acc.role == Role.GUEST:
             return {"status": "error", "message": "Guests cannot hold ANT tokens"}
-            
-        tx = Transaction(
-            tx_hash=uuid.uuid4().hex,
-            tx_type=TransactionType.TRANSFER,
-            sender="supervisor",
-            receiver=req.address,
-            amount=req.amount,
-            asset_type=req.asset_type,
-            timestamp=time.time()
-        )
-        
-        # Execute immediately for God Mode feedback, or add to mempool
-        # For immediate feedback:
-        supervisor = state_manager.accounts["supervisor"]
-        if req.asset_type == "wrt" and supervisor.wrt_balance >= req.amount:
-            supervisor.wrt_balance -= req.amount
+
+        treasury = state_manager.accounts.get(SIM_TREASURY_ADDR)
+        if not treasury:
+            return {"status": "error", "message": "Simulation treasury not initialized"}
+
+        if req.asset_type == "wrt" and treasury.wrt_balance >= req.amount:
+            treasury.wrt_balance -= req.amount
             acc.wrt_balance += req.amount
-        elif req.asset_type == "lzn" and supervisor.lzn_balance >= req.amount:
-            supervisor.lzn_balance -= req.amount
+        elif req.asset_type == "lzn" and treasury.lzn_balance >= req.amount:
+            treasury.lzn_balance -= req.amount
             acc.lzn_balance += req.amount
-        elif req.asset_type == "ant" and supervisor.ant_balance >= req.amount:
-            supervisor.ant_balance -= req.amount
+        elif req.asset_type == "ant" and treasury.ant_balance >= req.amount:
+            treasury.ant_balance -= req.amount
             acc.ant_balance += req.amount
         else:
-            return {"status": "error", "message": "Supervisor has insufficient funds"}
+            return {"status": "error", "message": "Simulation treasury has insufficient funds"}
             
         return {
             "status": "success", 
@@ -146,7 +133,11 @@ def create_order(req: OrderRequest):
     from core.models import Transaction, TransactionType, OrderType
     import uuid
     import time
-    
+
+    acc = state_manager.accounts.get(req.address)
+    if req.order_type == "sell" and (not acc or acc.role != Role.PROVIDER):
+        return {"status": "error", "message": "Only providers may place SELL orders (§5.2)"}
+
     tx = Transaction(
         tx_hash=uuid.uuid4().hex,
         tx_type=TransactionType.CREATE_ORDER,

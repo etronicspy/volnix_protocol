@@ -5,6 +5,7 @@ interface Account {
   address: string;
   wrt_balance: number;
   lzn_balance: number;
+  lzn_frozen_mining?: number;
   ant_balance: number;
   role: string;
 }
@@ -59,6 +60,12 @@ interface NetworkState {
   market: Market;
   blocks: Block[];
   tps_history: {time: string, tps: number}[];
+  blocks_per_epoch?: number;
+  epoch_ant_sold_volume?: number;
+  epoch_emission_coefficient?: number;
+  genesis_validator?: string;
+  genesis_provider?: string;
+  sim_treasury?: string;
 }
 
 function App() {
@@ -71,7 +78,8 @@ function App() {
     recent_txs: [],
     market: { bids: [], asks: [], last_price: 0, history: [] },
     blocks: [],
-    tps_history: []
+    tps_history: [],
+    blocks_per_epoch: 10080
   })
   
   const [blockTimeInput, setBlockTimeInput] = useState<string>("5.0")
@@ -116,6 +124,12 @@ function App() {
           market: msg.data.state.market,
           blocks: msg.data.state.blocks,
           tps_history: msg.data.state.tps_history,
+          blocks_per_epoch: msg.data.state.blocks_per_epoch ?? prev.blocks_per_epoch,
+          epoch_ant_sold_volume: msg.data.state.epoch_ant_sold_volume,
+          epoch_emission_coefficient: msg.data.state.epoch_emission_coefficient,
+          genesis_validator: msg.data.state.genesis_validator,
+          genesis_provider: msg.data.state.genesis_provider,
+          sim_treasury: msg.data.state.sim_treasury,
           recent_txs: [...txs, ...prev.recent_txs].slice(0, 10) // Keep last 10 txs
         }))
         // Only set the block time input on initial load, not on every block
@@ -221,7 +235,12 @@ function App() {
     <div className="min-h-screen bg-gray-900 text-white p-8">
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-blue-400">Volnix Protocol Simulation</h1>
+          <div>
+            <h1 className="text-4xl font-bold text-blue-400">Volnix Protocol Simulation</h1>
+            <p className="text-gray-500 text-sm mt-1">
+              §5.5: {state.blocks_per_epoch ?? 10080} blocks/epoch · Genesis #0: Provider + Validator (§6.3), no supervisor · ANT sold this epoch: {Number(state.epoch_ant_sold_volume ?? 0).toFixed(2)} · coeff: {Number(state.epoch_emission_coefficient ?? 1).toFixed(4)}
+            </p>
+          </div>
           <div className={`px-4 py-2 rounded-full font-semibold ${state.status.includes('Live') ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
             {state.status}
           </div>
@@ -351,7 +370,7 @@ function App() {
                     <tbody>
                       {selectedBlock.transactions.map((tx, idx) => (
                         <tr key={idx} className="border-b border-gray-800">
-                          <td className="py-2 font-mono text-xs text-gray-500" title={tx.tx_hash}>{tx.tx_hash.substring(0, 8)}...</td>
+                          <td className="py-2 font-mono text-xs text-gray-500" title={tx.tx_hash}>{tx.tx_hash ? `${tx.tx_hash.substring(0, 8)}...` : '—'}</td>
                           <td className="py-2">
                             <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs uppercase">{tx.tx_type}</span>
                           </td>
@@ -644,7 +663,7 @@ function App() {
                   <tr className="border-b border-gray-700 text-gray-400">
                     <th className="pb-3 font-medium">Address</th>
                     <th className="pb-3 font-medium">WRT Balance</th>
-                    <th className="pb-3 font-medium">LZN Balance</th>
+                    <th className="pb-3 font-medium">LZN (liq. / frozen)</th>
                     <th className="pb-3 font-medium">ANT Balance</th>
                     <th className="pb-3 font-medium">Role</th>
                     <th className="pb-3 font-medium">Actions</th>
@@ -655,7 +674,11 @@ function App() {
                     <tr key={acc.address} className="border-b border-gray-700/50">
                       <td className="py-3 font-mono text-sm text-blue-300">{acc.address}</td>
                       <td className="py-3 text-green-400">{acc.wrt_balance?.toFixed(2) || '0.00'}</td>
-                      <td className="py-3 text-purple-400">{acc.lzn_balance?.toFixed(2) || '0.00'}</td>
+                      <td className="py-3 text-purple-400 text-sm">
+                        {(acc.lzn_balance ?? 0).toFixed(2)}
+                        <span className="text-gray-500"> / </span>
+                        <span className="text-amber-400/90" title="LZN frozen for mining">{(acc.lzn_frozen_mining ?? 0).toFixed(0)}</span>
+                      </td>
                       <td className="py-3 text-orange-400">{acc.ant_balance?.toFixed(2) || '0.00'}</td>
                       <td className="py-3">
                         <span className={`px-2 py-1 rounded text-xs uppercase tracking-wider ${
