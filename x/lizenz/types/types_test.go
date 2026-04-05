@@ -242,6 +242,14 @@ func TestCalculateMOA(t *testing.T) {
 	require.NotEmpty(t, moa)
 }
 
+func TestMaxActivatedLznPerValidator(t *testing.T) {
+	require.Equal(t, int64(0), types.MaxActivatedLznPerValidator(-1))
+	require.Equal(t, int64(0), types.MaxActivatedLznPerValidator(0))
+	require.Equal(t, int64(3), types.MaxActivatedLznPerValidator(10))
+	require.Equal(t, int64(3333333), types.MaxActivatedLznPerValidator(10_000_000))
+	require.Equal(t, int64(3333333), types.MaxActivatedLznPerValidator(9_999_999))
+}
+
 func TestCalculateLizenzPrice(t *testing.T) {
 	// Test basic license price calculation
 	price, err := types.CalculateLizenzPrice("basic", 30)

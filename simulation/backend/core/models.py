@@ -15,6 +15,8 @@ class Account(BaseModel):
     lzn_frozen_mining: float = 0.0  # LZN, замороженный под майнинг / активированный (как в протоколе)
     ant_balance: float = 0.0  # ANT (Anteil) - Internal market coin
     role: Role = Role.CITIZEN
+    # §3.1 ZKP: в симуляции — флаг после tx verify_zkp; genesis §6.3 без реального ZKP, но флаг true в genesis
+    zkp_verified: bool = False
 
 class TransactionType(str, Enum):
     TRANSFER = "transfer"
@@ -24,13 +26,18 @@ class TransactionType(str, Enum):
     CANCEL_ORDER = "cancel_order"
     BURN = "burn"
     EPOCH_EMISSION = "epoch_emission"
+    EPOCH_ANT_WIPE = "epoch_ant_wipe"
+    EPOCH_ANT_CREDIT = "epoch_ant_credit"
     BLOCK_REWARD = "block_reward"
     GENESIS_MESSAGE = "genesis_message"
     GENESIS_VALIDATOR_LZN = "genesis_validator_lzn"
     GENESIS_LZN_ACTIVATE = "genesis_lzn_activate"
     GENESIS_PROVIDER_ANT = "genesis_provider_ant"
+    GENESIS_VALIDATOR_ANT = "genesis_validator_ant"
     DECLARE_PARTICIPATION = "declare_participation"
     GENESIS_MARKET_SEED = "genesis_market_seed"
+    ACTIVATE_LZN = "activate_lzn"
+    ZKP_VERIFY = "zkp_verify"
 
 class OrderType(str, Enum):
     BUY = "buy"
@@ -60,3 +67,6 @@ class Transaction(BaseModel):
     # §5.4: b_i = amount (сжигание), s_i = stake_amount (ставка), оба сжигаются
     stake_amount: Optional[float] = None
     timestamp: float
+    # Рыночная заявка: немедленное исполнение по книге (без постановки лимитного ордера)
+    market: bool = False
+    max_wrt: Optional[float] = None  # для market BUY — потолок расхода WRT (по умолчанию в валидации = весь баланс)

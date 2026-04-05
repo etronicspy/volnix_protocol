@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { WalletPanel } from './components/WalletPanel'
+import { API_BASE, WS_URL } from './config'
 
 interface Account {
   address: string;
@@ -8,6 +10,7 @@ interface Account {
   lzn_frozen_mining?: number;
   ant_balance: number;
   role: string;
+  zkp_verified?: boolean;
 }
 
 interface Order {
@@ -40,14 +43,16 @@ interface Transaction {
   buyer?: string;
   seller?: string;
   details?: string;
+  stake_amount?: number;
 }
 
+/** Сырой блок с цепочки: транзакции — произвольные объекты (trade, declare, протокол и т.д.). */
 interface Block {
   height: number;
   hash: string;
   tx_count: number;
   timestamp: number;
-  transactions: Transaction[];
+  transactions: Record<string, unknown>[];
 }
 
 interface NetworkState {
@@ -55,6 +60,7 @@ interface NetworkState {
   block_height: number;
   block_time: number;
   accounts_count: number;
+  mempool_size?: number;
   accounts: Record<string, Account>;
   recent_txs: Transaction[];
   market: Market;
@@ -62,6 +68,7 @@ interface NetworkState {
   tps_history: {time: string, tps: number}[];
   blocks_per_epoch?: number;
   epoch_ant_sold_volume?: number;
+  epoch_ant_sold_last?: number;
   epoch_emission_coefficient?: number;
   genesis_validator?: string;
   genesis_provider?: string;
@@ -94,10 +101,13 @@ function App() {
   const [orderType, setOrderType] = useState<string>("buy")
   const [orderPrice, setOrderPrice] = useState<string>("10.0")
   const [orderAmount, setOrderAmount] = useState<string>("5.0")
+  const [orderMarket, setOrderMarket] = useState(false)
+  const [orderMaxWrt, setOrderMaxWrt] = useState<string>("")
+  const [selectedWallet, setSelectedWallet] = useState<string>("")
 
   useEffect(() => {
     // Fetch initial bot status
-    fetch('http://localhost:8000/api/bot/status')
+    fetch(`${API_BASE}/api/bot/status`)
       .then(res => res.json())
       .then(data => {
         setBotStatus(data)
@@ -105,7 +115,7 @@ function App() {
       })
 
     // Connect to WebSocket
-    const ws = new WebSocket('ws://localhost:8000/ws')
+    const ws = new WebSocket(WS_URL)
 
     ws.onopen = () => {
       setState(prev => ({ ...prev, status: 'Connected (Live)' }))
@@ -120,12 +130,14 @@ function App() {
           block_height: msg.data.state.height,
           block_time: msg.data.block_time,
           accounts_count: msg.data.state.accounts_count,
+          mempool_size: msg.data.state.mempool_size,
           accounts: msg.data.state.accounts,
           market: msg.data.state.market,
           blocks: msg.data.state.blocks,
           tps_history: msg.data.state.tps_history,
           blocks_per_epoch: msg.data.state.blocks_per_epoch ?? prev.blocks_per_epoch,
           epoch_ant_sold_volume: msg.data.state.epoch_ant_sold_volume,
+          epoch_ant_sold_last: msg.data.state.epoch_ant_sold_last,
           epoch_emission_coefficient: msg.data.state.epoch_emission_coefficient,
           genesis_validator: msg.data.state.genesis_validator,
           genesis_provider: msg.data.state.genesis_provider,
@@ -150,7 +162,7 @@ function App() {
 
   const handleBotControl = async (action: 'start' | 'stop') => {
     const intensity = parseFloat(botIntensityInput)
-    await fetch('http://localhost:8000/api/bot/control', {
+    await fetch(`${API_BASE}/api/bot/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, intensity })
@@ -164,21 +176,46 @@ function App() {
       alert("Please select an account")
       return
     }
-    await fetch('http://localhost:8000/api/god-mode/order', {
+    const amt = parseFloat(orderAmount)
+    if (Number.isNaN(amt) || amt <= 0) {
+      alert('Amount must be positive')
+      return
+    }
+    const body: Record<string, unknown> = {
+      op: 'create_order',
+      address: orderAccount,
+      side: orderType,
+      amount: amt,
+    }
+    if (orderMarket) {
+      body.market = true
+      if (orderType === 'buy' && orderMaxWrt.trim() !== '') {
+        const cap = parseFloat(orderMaxWrt)
+        if (Number.isNaN(cap) || cap <= 0) {
+          alert('max_wrt must be positive')
+          return
+        }
+        body.max_wrt = cap
+      }
+    } else {
+      const p = parseFloat(orderPrice)
+      if (Number.isNaN(p) || p <= 0) {
+        alert('Price must be positive for limit orders')
+        return
+      }
+      body.price = p
+    }
+    const res = await fetch(`${API_BASE}/api/wallet/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        address: orderAccount,
-        order_type: orderType,
-        price: parseFloat(orderPrice),
-        amount: parseFloat(orderAmount)
-      })
+      body: JSON.stringify(body),
     })
-    alert("Order added to mempool! Will be processed in the next block.")
+    const data = await res.json()
+    alert(data.accepted ? `Принято в мемпул. tx ${(data.tx_hash || '').slice(0, 14)}…` : data.message || 'Отклонено')
   }
 
   const handleCreateAccounts = async () => {
-    await fetch('http://localhost:8000/api/god-mode/accounts', {
+    await fetch(`${API_BASE}/api/god-mode/accounts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count: 5 })
@@ -186,20 +223,20 @@ function App() {
   }
 
   const handleSaveState = async () => {
-    await fetch('http://localhost:8000/api/god-mode/save', { method: 'POST' })
+    await fetch(`${API_BASE}/api/god-mode/save`, { method: 'POST' })
     alert('State saved to disk!')
   }
 
   const handleResetState = async () => {
     if (confirm('Are you sure you want to completely reset and delete the blockchain state?')) {
-      await fetch('http://localhost:8000/api/god-mode/reset', { method: 'POST' })
+      await fetch(`${API_BASE}/api/god-mode/reset`, { method: 'POST' })
     }
   }
 
   const handleUpdateBlockTime = async () => {
     const time = parseFloat(blockTimeInput)
     if (!isNaN(time) && time >= 0.1 && time <= 300) {
-      await fetch('http://localhost:8000/api/god-mode/block-time', {
+      await fetch(`${API_BASE}/api/god-mode/block-time`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ time_sec: time })
@@ -212,7 +249,7 @@ function App() {
   }
 
   const handleMint = async (address: string, asset_type: string = "wrt") => {
-    const res = await fetch('http://localhost:8000/api/god-mode/mint', {
+    const res = await fetch(`${API_BASE}/api/god-mode/mint`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, amount: 1000, asset_type })
@@ -220,16 +257,12 @@ function App() {
     const data = await res.json()
     if (data.status === "error") {
       alert(data.message)
+    } else if (data.status === "queued") {
+      alert(`В мемпул: ${data.message}\ntx ${(data.tx_hash || "").slice(0, 16)}… — исполнение в следующем блоке`)
     }
   }
 
-  const handleSetRole = async (address: string, role: string) => {
-    await fetch('http://localhost:8000/api/god-mode/role', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, role })
-    })
-  }
+  const selectedAccount = selectedWallet ? state.accounts[selectedWallet] : undefined
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -238,7 +271,7 @@ function App() {
           <div>
             <h1 className="text-4xl font-bold text-blue-400">Volnix Protocol Simulation</h1>
             <p className="text-gray-500 text-sm mt-1">
-              §5.5: {state.blocks_per_epoch ?? 10080} blocks/epoch · Genesis #0: Provider + Validator (§6.3), no supervisor · ANT sold this epoch: {Number(state.epoch_ant_sold_volume ?? 0).toFixed(2)} · coeff: {Number(state.epoch_emission_coefficient ?? 1).toFixed(4)}
+              §5.5: {state.blocks_per_epoch ?? 10080} blocks/epoch · Mempool: {state.mempool_size ?? 0} tx · Sold epoch: {Number(state.epoch_ant_sold_volume ?? 0).toFixed(2)} ANT · Prev epoch sold: {Number(state.epoch_ant_sold_last ?? 0).toFixed(2)} · coeff: {Number(state.epoch_emission_coefficient ?? 1).toFixed(4)}
             </p>
           </div>
           <div className={`px-4 py-2 rounded-full font-semibold ${state.status.includes('Live') ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
@@ -247,10 +280,16 @@ function App() {
         </div>
         
         {/* Network Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Block Height</h2>
             <p className="text-3xl font-mono text-white">{state.block_height}</p>
+          </div>
+
+          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+            <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Mempool</h2>
+            <p className="text-3xl font-mono text-amber-300">{state.mempool_size ?? 0}</p>
+            <p className="text-xs text-gray-500 mt-1">ожидают следующий блок</p>
           </div>
 
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
@@ -279,6 +318,19 @@ function App() {
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Total Accounts</h2>
             <p className="text-3xl font-mono text-white">{state.accounts_count}</p>
           </div>
+        </div>
+
+        <div className="mb-8">
+          <h2 className="text-lg font-bold text-emerald-400/90 mb-3">Кошелёк / аккаунт</h2>
+          <WalletPanel
+            apiBase={API_BASE}
+            address={selectedWallet}
+            account={selectedAccount}
+            blockHeight={state.block_height}
+            simTreasury={state.sim_treasury}
+            genesisValidator={state.genesis_validator}
+            genesisProvider={state.genesis_provider}
+          />
         </div>
 
         {/* Blockchain & Consensus Explorer */}
@@ -319,9 +371,9 @@ function App() {
             {/* TPS Chart */}
             <div className="lg:col-span-1">
               <h3 className="text-gray-400 text-sm uppercase tracking-wider mb-3">Network Load (TPS)</h3>
-              <div className="h-32 w-full bg-gray-900 rounded p-2 border border-gray-700">
+              <div className="h-32 min-h-32 min-w-0 w-full bg-gray-900 rounded p-2 border border-gray-700">
                 {state.tps_history && state.tps_history.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={120}>
                     <LineChart data={state.tps_history}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
                       <XAxis dataKey="time" hide />
@@ -346,50 +398,45 @@ function App() {
             </div>
           </div>
 
-          {/* Selected Block Details */}
+          {/* Selected Block Details — полное содержимое блока (JSON) */}
           {selectedBlock && (
             <div className="mt-6 bg-gray-900 p-4 rounded border border-blue-500/50">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-blue-300">Block #{selectedBlock.height} Details</h3>
-                <button onClick={() => setSelectedBlockHeight(null)} className="text-gray-500 hover:text-white">✕</button>
+              <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+                <h3 className="text-lg font-bold text-blue-300">Block #{selectedBlock.height}</h3>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBlockHeight(null)}
+                  className="text-gray-500 hover:text-white"
+                >
+                  ✕
+                </button>
               </div>
-              {selectedBlock.transactions.length === 0 ? (
-                <p className="text-gray-500">Empty block.</p>
-              ) : (
-                <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="sticky top-0 bg-gray-900">
-                      <tr className="border-b border-gray-700 text-gray-400">
-                        <th className="pb-2">Tx Hash</th>
-                        <th className="pb-2">Type</th>
-                        <th className="pb-2">Sender</th>
-                        <th className="pb-2">Receiver</th>
-                        <th className="pb-2">Details</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedBlock.transactions.map((tx, idx) => (
-                        <tr key={idx} className="border-b border-gray-800">
-                          <td className="py-2 font-mono text-xs text-gray-500" title={tx.tx_hash}>{tx.tx_hash ? `${tx.tx_hash.substring(0, 8)}...` : '—'}</td>
-                          <td className="py-2">
-                            <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs uppercase">{tx.tx_type}</span>
-                          </td>
-                          <td className="py-2 font-mono text-xs text-gray-400">{tx.sender ? tx.sender.substring(0, 12) + '...' : '-'}</td>
-                          <td className="py-2 font-mono text-xs text-gray-400">{tx.receiver ? tx.receiver.substring(0, 12) + '...' : '-'}</td>
-                          <td className="py-2 text-green-400 font-mono text-xs">
-                            {tx.amount ? `${tx.amount.toFixed(2)}` : ''}
-                            {tx.asset_type ? ` ${tx.asset_type.toUpperCase()}` : ''}
-                            {tx.role ? ` Role:${tx.role}` : ''}
-                            {tx.price ? ` @ ${tx.price.toFixed(2)} WRT` : ''}
-                            {tx.tx_type === 'epoch_emission' ? ` (Epoch)` : ''}
-                            {tx.details ? ` - ${tx.details}` : ''}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm mb-4 border-b border-gray-700/80 pb-4">
+                <div>
+                  <dt className="text-gray-500 text-xs uppercase">Hash</dt>
+                  <dd className="font-mono text-xs text-gray-200 break-all">{selectedBlock.hash}</dd>
                 </div>
-              )}
+                <div>
+                  <dt className="text-gray-500 text-xs uppercase">Time (UTC)</dt>
+                  <dd className="font-mono text-gray-300">
+                    {new Date(selectedBlock.timestamp * 1000).toISOString()}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500 text-xs uppercase">tx_count</dt>
+                  <dd className="font-mono text-gray-300">{selectedBlock.tx_count}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500 text-xs uppercase">transactions.length</dt>
+                  <dd className="font-mono text-gray-300">{selectedBlock.transactions.length}</dd>
+                </div>
+              </dl>
+              <p className="text-xs text-gray-500 mb-2">Полное тело блока (все поля каждой записи в ленте):</p>
+              <div className="max-h-[min(70vh,720px)] overflow-auto rounded border border-gray-700 bg-black/40 p-3">
+                <pre className="text-xs font-mono text-gray-300 whitespace-pre-wrap break-words">
+                  {JSON.stringify(selectedBlock, null, 2)}
+                </pre>
+              </div>
             </div>
           )}
         </div>
@@ -398,6 +445,10 @@ function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <h2 className="text-xl font-bold mb-4 text-purple-400">⚡ God Mode Control Panel</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Mint из казначейства и смена роли через God Mode тоже идут в мемпул и исполняются в блоке (как на узле).
+              Прямое изменение балансов снято. Эпохальная эмиссия ANT — только системные tx в блоке границы эпохи (§5.5: на кошельки Поставщиков).
+            </p>
             <div className="flex flex-wrap gap-4">
               <button 
                 onClick={handleCreateAccounts}
@@ -477,9 +528,9 @@ function App() {
           </div>
           
           {/* Chart */}
-          <div className="h-64 w-full mb-8 bg-gray-900/50 rounded p-4 border border-gray-700/50">
+          <div className="h-64 min-h-64 min-w-0 w-full mb-8 bg-gray-900/50 rounded p-4 border border-gray-700/50">
             {state.market?.history && state.market.history.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                 <LineChart data={state.market.history}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis dataKey="time" stroke="#9CA3AF" tick={{fontSize: 12}} />
@@ -498,7 +549,7 @@ function App() {
 
           {/* Manual Order Form */}
           <div className="bg-gray-900/50 p-4 rounded border border-gray-700/50 mb-8">
-            <h3 className="text-lg font-semibold text-gray-300 mb-3">Manual Order Creation</h3>
+            <h3 className="text-lg font-semibold text-gray-300 mb-3">Быстрый ордер (тот же API кошелька)</h3>
             <form onSubmit={handleCreateOrder} className="flex flex-wrap gap-4 items-end">
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-gray-400">Account</label>
@@ -509,7 +560,9 @@ function App() {
                   required
                 >
                   <option value="" disabled>Select Account</option>
-                  {Object.values(state.accounts).filter(a => a.role !== 'guest').map(acc => (
+                  {Object.values(state.accounts)
+                    .filter((a) => (orderType === 'buy' ? a.role === 'validator' : a.role === 'provider'))
+                    .map((acc) => (
                     <option key={acc.address} value={acc.address}>{acc.address.substring(0, 12)}... ({acc.wrt_balance?.toFixed(0)} WRT / {acc.ant_balance?.toFixed(0)} ANT)</option>
                   ))}
                 </select>
@@ -520,27 +573,67 @@ function App() {
                 <select 
                   className="bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none"
                   value={orderType}
-                  onChange={(e) => setOrderType(e.target.value)}
+                  onChange={(e) => {
+                    setOrderType(e.target.value)
+                    setOrderAccount('')
+                  }}
                 >
-                  <option value="buy">Buy ANT for WRT</option>
-                  <option value="sell">Sell ANT for WRT</option>
+                  <option value="buy">Buy ANT (Validator)</option>
+                  <option value="sell">Sell ANT (Provider)</option>
                 </select>
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Price (WRT per ANT)</label>
-                <input 
-                  type="number" step="0.1" min="0.1" required
-                  value={orderPrice}
-                  onChange={(e) => setOrderPrice(e.target.value)}
-                  className="bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none w-32"
-                />
+                <label className="text-xs text-gray-400 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={orderMarket}
+                    onChange={(e) => setOrderMarket(e.target.checked)}
+                    className="rounded"
+                  />
+                  Market (IOC по книге)
+                </label>
               </div>
 
+              {!orderMarket && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-gray-400">Price (WRT per ANT)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    required={!orderMarket}
+                    value={orderPrice}
+                    onChange={(e) => setOrderPrice(e.target.value)}
+                    className="bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none w-32"
+                  />
+                </div>
+              )}
+
+              {orderMarket && orderType === 'buy' && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-gray-400">Max WRT (optional)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    placeholder="All WRT if empty"
+                    value={orderMaxWrt}
+                    onChange={(e) => setOrderMaxWrt(e.target.value)}
+                    className="bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none w-36"
+                  />
+                </div>
+              )}
+
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-400">Amount (ANT)</label>
-                <input 
-                  type="number" step="0.1" min="0.1" required
+                <label className="text-xs text-gray-400">
+                  {orderMarket && orderType === 'buy' ? 'Max ANT to buy' : 'Amount (ANT)'}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  required
                   value={orderAmount}
                   onChange={(e) => setOrderAmount(e.target.value)}
                   className="bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none w-24"
@@ -665,6 +758,7 @@ function App() {
                     <th className="pb-3 font-medium">WRT Balance</th>
                     <th className="pb-3 font-medium">LZN (liq. / frozen)</th>
                     <th className="pb-3 font-medium">ANT Balance</th>
+                    <th className="pb-3 font-medium">ZKP</th>
                     <th className="pb-3 font-medium">Role</th>
                     <th className="pb-3 font-medium">Actions</th>
                   </tr>
@@ -680,6 +774,13 @@ function App() {
                         <span className="text-amber-400/90" title="LZN frozen for mining">{(acc.lzn_frozen_mining ?? 0).toFixed(0)}</span>
                       </td>
                       <td className="py-3 text-orange-400">{acc.ant_balance?.toFixed(2) || '0.00'}</td>
+                      <td className="py-3 text-center text-lg" title="ZKP (симуляция): verify_zkp из кошелька">
+                        {acc.zkp_verified ? (
+                          <span className="text-emerald-400">✓</span>
+                        ) : (
+                          <span className="text-gray-600">—</span>
+                        )}
+                      </td>
                       <td className="py-3">
                         <span className={`px-2 py-1 rounded text-xs uppercase tracking-wider ${
                           acc.role === 'guest' ? 'bg-gray-700 text-gray-300' :
@@ -691,20 +792,21 @@ function App() {
                         </span>
                       </td>
                       <td className="py-3">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedWallet(acc.address)}
+                            className={`px-2 py-1 rounded text-xs transition-colors ${
+                              selectedWallet === acc.address
+                                ? 'bg-emerald-800 text-white'
+                                : 'bg-gray-700 hover:bg-gray-600'
+                            }`}
+                          >
+                            Кошелёк
+                          </button>
                           <button onClick={() => handleMint(acc.address, 'wrt')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+1000 WRT</button>
                           <button onClick={() => handleMint(acc.address, 'lzn')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 LZN</button>
                           <button onClick={() => handleMint(acc.address, 'ant')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 ANT</button>
-                          <select 
-                            className="bg-gray-700 border border-gray-600 rounded text-xs px-2 py-1 focus:outline-none"
-                            value={acc.role}
-                            onChange={(e) => handleSetRole(acc.address, e.target.value)}
-                          >
-                            <option value="guest">Guest</option>
-                            <option value="citizen">Citizen</option>
-                            <option value="provider">Provider</option>
-                            <option value="validator">Validator</option>
-                          </select>
                         </div>
                       </td>
                     </tr>

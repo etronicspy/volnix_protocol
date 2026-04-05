@@ -135,7 +135,7 @@ func (k Keeper) SetActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.ActivatedLi
 		return err
 	}
 
-	// Validate 33% limit: no validator can activate more than 33% of total pool
+	// Validate one-third limit: activated amount ≤ ⌊aggregate/3⌋ (integer min units)
 	if err := k.ValidateMaxLznActivationLimit(ctx, lizenz.Validator, lizenz.Amount); err != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func (k Keeper) UpdateActivatedLizenz(ctx sdk.Context, lizenz *lizenzv1.Activate
 		return types.ErrLizenzNotFound
 	}
 
-	// Validate 33% limit when updating amount
+	// Validate one-third limit when updating amount
 	if err := k.ValidateMaxLznActivationLimit(ctx, lizenz.Validator, lizenz.Amount); err != nil {
 		return err
 	}
@@ -383,18 +383,10 @@ func (k Keeper) GetTotalActivatedLizenz(ctx sdk.Context) (string, error) {
 	return strconv.FormatInt(total, 10), nil
 }
 
-// ValidateMaxLznActivationLimit checks if a validator's activation would exceed 33% of total pool
-// According to whitepaper: "Максимум 33% от общего пула LZN может быть активировано одним валидатором"
+// ValidateMaxLznActivationLimit checks that the validator's activated amount does not exceed
+// one third of the aggregate pool after the transition: newAmount ≤ ⌊newTotal/3⌋
+// (equivalently 3×newAmount ≤ newTotal for integer min units). No floating-point share.
 func (k Keeper) ValidateMaxLznActivationLimit(ctx sdk.Context, validator string, newAmount string) error {
-	// 33% limit from whitepaper: "не более 33% на один кошелек"
-	// This is a hardcoded constant as per whitepaper, but could be made configurable via governance in the future
-	const maxValidatorShare = 0.33 // 33% limit from whitepaper
-	
-	// Validate share is between 0.0 and 1.0 (safety check)
-	if maxValidatorShare <= 0.0 || maxValidatorShare > 1.0 {
-		return fmt.Errorf("invalid maxValidatorShare: must be between 0.0 and 1.0, got %f", maxValidatorShare)
-	}
-
 	// Get total activated LZN
 	totalActivated, err := k.GetTotalActivatedLizenz(ctx)
 	if err != nil {
@@ -440,15 +432,19 @@ func (k Keeper) ValidateMaxLznActivationLimit(ctx sdk.Context, validator string,
 		return nil
 	}
 
-	// Calculate maximum allowed (33% of new total)
-	maxAllowed := int64(float64(newTotal) * maxValidatorShare)
+	maxAllowed := types.MaxActivatedLznPerValidator(newTotal)
 
 	// Check if validator's new amount exceeds the limit
 	if newAmountInt > maxAllowed {
-		return fmt.Errorf("%w: validator would have %d LZN (%.2f%%), maximum allowed is %d LZN (33%%)",
+		var pct float64
+		if newTotal > 0 {
+			pct = float64(newAmountInt) / float64(newTotal) * 100
+		}
+		return fmt.Errorf("%w: validator would have %d (min units), %.4f%% of new total %d; max is %d (⌊total/3⌋)",
 			types.ErrExceedsMaxLznActivation,
 			newAmountInt,
-			float64(newAmountInt)/float64(newTotal)*100,
+			pct,
+			newTotal,
 			maxAllowed)
 	}
 

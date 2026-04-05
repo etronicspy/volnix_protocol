@@ -1,6 +1,8 @@
 import asyncio
 import uuid
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from typing import Optional
+
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -8,6 +10,7 @@ from core.engine import SimulationEngine
 from core.state import StateManager, SIM_TREASURY_ADDR
 from core.models import Role
 from core.bot_engine import BotEngine
+from core.wallet_validate import validate_and_build_tx, validate_treasury_mint
 
 app = FastAPI(title="Volnix Simulation API")
 
@@ -79,39 +82,19 @@ class MintRequest(BaseModel):
 
 @app.post("/api/god-mode/mint")
 def mint_tokens(req: MintRequest):
-    try:
-        acc = state_manager.accounts.get(req.address)
-        if not acc:
-            acc = state_manager.create_account(req.address)
-            
-        if req.asset_type == "ant" and acc.role == Role.GUEST:
-            return {"status": "error", "message": "Guests cannot hold ANT tokens"}
-
-        treasury = state_manager.accounts.get(SIM_TREASURY_ADDR)
-        if not treasury:
-            return {"status": "error", "message": "Simulation treasury not initialized"}
-
-        if req.asset_type == "wrt" and treasury.wrt_balance >= req.amount:
-            treasury.wrt_balance -= req.amount
-            acc.wrt_balance += req.amount
-        elif req.asset_type == "lzn" and treasury.lzn_balance >= req.amount:
-            treasury.lzn_balance -= req.amount
-            acc.lzn_balance += req.amount
-        elif req.asset_type == "ant" and treasury.ant_balance >= req.amount:
-            treasury.ant_balance -= req.amount
-            acc.ant_balance += req.amount
-        else:
-            return {"status": "error", "message": "Simulation treasury has insufficient funds"}
-            
-        return {
-            "status": "success", 
-            "address": req.address, 
-            "wrt_balance": acc.wrt_balance,
-            "lzn_balance": acc.lzn_balance,
-            "ant_balance": acc.ant_balance
-        }
-    except ValueError as e:
-        return {"status": "error", "message": str(e)}
+    """Как в узле: только tx mint из казначейства → мемпул → исполнение в блоке."""
+    ok, msg, tx = validate_treasury_mint(
+        state_manager, req.address.strip(), req.amount, req.asset_type
+    )
+    if not ok or tx is None:
+        return {"status": "error", "message": msg}
+    state_manager.mempool.append(tx)
+    return {
+        "status": "queued",
+        "message": msg,
+        "tx_hash": tx.tx_hash,
+        "address": req.address,
+    }
 
 class RoleRequest(BaseModel):
     address: str
@@ -119,36 +102,49 @@ class RoleRequest(BaseModel):
 
 @app.post("/api/god-mode/role")
 def set_role(req: RoleRequest):
-    state_manager.set_role(req.address, req.role)
-    return {"status": "success", "address": req.address, "role": req.role}
+    """Те же правила, что у кошелька: set_role только через мемпул."""
+    ok, msg, tx = validate_and_build_tx(
+        state_manager,
+        "set_role",
+        req.address.strip(),
+        role=req.role,
+    )
+    if not ok or tx is None:
+        return {"status": "error", "message": msg}
+    state_manager.mempool.append(tx)
+    return {
+        "status": "queued",
+        "message": msg,
+        "tx_hash": tx.tx_hash,
+        "address": req.address,
+        "role": req.role.value,
+    }
 
 class OrderRequest(BaseModel):
     address: str
     order_type: str # "buy" or "sell"
-    price: float
+    price: Optional[float] = None
     amount: float
+    market: bool = False
+    max_wrt: Optional[float] = None
 
 @app.post("/api/god-mode/order")
 def create_order(req: OrderRequest):
-    from core.models import Transaction, TransactionType, OrderType
-    import uuid
-    import time
-
-    acc = state_manager.accounts.get(req.address)
-    if req.order_type == "sell" and (not acc or acc.role != Role.PROVIDER):
-        return {"status": "error", "message": "Only providers may place SELL orders (§5.2)"}
-
-    tx = Transaction(
-        tx_hash=uuid.uuid4().hex,
-        tx_type=TransactionType.CREATE_ORDER,
-        sender=req.address,
-        order_type=OrderType.BUY if req.order_type == "buy" else OrderType.SELL,
+    """Те же проверки, что у кошелька (баланс, роль SELL)."""
+    ok, msg, tx = validate_and_build_tx(
+        state_manager,
+        "create_order",
+        req.address.strip(),
+        side=req.order_type,
         price=req.price,
         amount=req.amount,
-        timestamp=time.time()
+        market=bool(req.market),
+        max_wrt=req.max_wrt,
     )
+    if not ok or tx is None:
+        return {"status": "error", "message": msg}
     state_manager.mempool.append(tx)
-    return {"status": "success", "message": "Order added to mempool"}
+    return {"status": "queued", "message": msg, "tx_hash": tx.tx_hash}
 
 @app.post("/api/god-mode/save")
 def save_state():
@@ -192,6 +188,54 @@ def get_bot_status():
         "is_running": bot_engine.is_running,
         "intensity": bot_engine.tx_per_second
     }
+
+# --- Wallet (on-chain style: validate → mempool → next block) ---
+
+class WalletSubmitBody(BaseModel):
+    op: str
+    address: str
+    to_address: Optional[str] = None
+    amount: Optional[float] = None
+    asset: str = "wrt"
+    role: Optional[Role] = None
+    price: Optional[float] = None
+    order_id: Optional[str] = None
+    side: Optional[str] = None
+    burn_b: Optional[float] = None
+    stake_s: Optional[float] = None
+    market: bool = False
+    max_wrt: Optional[float] = None
+
+
+@app.post("/api/wallet/submit")
+def wallet_submit_tx(body: WalletSubmitBody):
+    ok, msg, tx = validate_and_build_tx(
+        state_manager,
+        body.op,
+        body.address.strip(),
+        to_address=(body.to_address or "").strip() or None,
+        amount=body.amount,
+        asset=body.asset or "wrt",
+        role=body.role,
+        price=body.price,
+        order_id=body.order_id,
+        side=body.side,
+        burn_b=body.burn_b,
+        stake_s=body.stake_s,
+        market=bool(body.market),
+        max_wrt=body.max_wrt,
+    )
+    if not ok or tx is None:
+        return {"accepted": False, "message": msg}
+    state_manager.mempool.append(tx)
+    return {"accepted": True, "message": msg, "tx_hash": tx.tx_hash}
+
+
+@app.get("/api/wallet/open-orders")
+def wallet_open_orders(address: str):
+    if not address:
+        return {"orders": []}
+    return {"orders": state_manager.list_open_orders_for_address(address)}
 
 # --- WebSocket ---
 

@@ -38,8 +38,8 @@ var (
 	// ErrBelowMinAmount indicates that the amount is below minimum required
 	ErrBelowMinAmount = errors.Register(ModuleName, 11, "amount below minimum required")
 
-	// ErrExceedsMaxLznActivation indicates that validator exceeds 33% limit of total activated LZN
-	ErrExceedsMaxLznActivation = errors.Register(ModuleName, 12, "validator exceeds maximum LZN activation limit (33% of total pool)")
+	// ErrExceedsMaxLznActivation indicates validator exceeds one-third of aggregate activated LZN (integer ⌊total/3⌋).
+	ErrExceedsMaxLznActivation = errors.Register(ModuleName, 12, "validator exceeds maximum LZN activation limit (one third of total pool, integer division)")
 	
 	// ErrIdentityNotVerified indicates that validator has not verified their identity
 	ErrIdentityNotVerified = errors.Register(ModuleName, 13, "validator must have verified identity to activate LZN")

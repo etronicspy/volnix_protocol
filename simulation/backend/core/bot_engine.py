@@ -2,7 +2,12 @@ import asyncio
 import random
 import time
 import uuid
-from core.state import StateManager, SIM_TREASURY_ADDR
+from core.state import (
+    StateManager,
+    SIM_TREASURY_ADDR,
+    eligible_for_provider_role,
+    eligible_for_validator_role,
+)
 from core.models import Role, Transaction, TransactionType, OrderType
 
 class BotEngine:
@@ -38,6 +43,7 @@ class BotEngine:
             tx = Transaction(
                 tx_hash=uuid.uuid4().hex,
                 tx_type=TransactionType.MINT,
+                sender=SIM_TREASURY_ADDR,
                 receiver=new_addr,
                 amount=round(random.uniform(50, 200), 2),
                 asset_type="wrt",
@@ -50,8 +56,8 @@ class BotEngine:
 
         # 2. Random action: declare = §5.4 (b_i, s_i), mint from sim treasury, etc.
         action = random.choices(
-            ["transfer", "trade", "cancel_order", "mint", "set_role", "declare"],
-            weights=[0.30, 0.25, 0.10, 0.15, 0.10, 0.10],
+            ["transfer", "trade", "cancel_order", "mint", "set_role", "declare", "zkp_verify"],
+            weights=[0.28, 0.23, 0.10, 0.14, 0.08, 0.10, 0.07],
         )[0]
 
         if action == "declare":
@@ -85,23 +91,57 @@ class BotEngine:
                         self.state.mempool.append(tx)
             return
 
+        elif action == "zkp_verify":
+            candidates = [
+                a
+                for a in accounts
+                if not a.zkp_verified and a.address != SIM_TREASURY_ADDR
+            ]
+            if candidates:
+                t = random.choice(candidates)
+                self.state.mempool.append(
+                    Transaction(
+                        tx_hash=uuid.uuid4().hex,
+                        tx_type=TransactionType.ZKP_VERIFY,
+                        sender=t.address,
+                        receiver=t.address,
+                        timestamp=time.time(),
+                    )
+                )
+            return
+
         elif action == "set_role":
-            target = random.choice(accounts)
-            new_role = random.choice([Role.CITIZEN, Role.PROVIDER, Role.VALIDATOR, Role.GUEST])
-            
-            # Rule: Cannot become validator without LZN
-            if new_role == Role.VALIDATOR and (target.lzn_balance + target.lzn_frozen_mining) <= 0:
-                new_role = Role.PROVIDER
-                
-            if target.role != new_role:
-                tx = Transaction(
+            pool = [a for a in accounts if a.address != SIM_TREASURY_ADDR]
+            if not pool:
+                return
+            target = random.choice(pool)
+            order = [Role.CITIZEN, Role.PROVIDER, Role.VALIDATOR, Role.GUEST]
+            random.shuffle(order)
+            new_role = None
+            for nr in order:
+                if nr == target.role:
+                    continue
+                if nr == Role.VALIDATOR and not eligible_for_validator_role(target.address, target):
+                    continue
+                if nr == Role.PROVIDER:
+                    if target.role == Role.GUEST:
+                        continue
+                    if not eligible_for_provider_role(target.address, target):
+                        continue
+                new_role = nr
+                break
+            if new_role is None:
+                return
+            self.state.mempool.append(
+                Transaction(
                     tx_hash=uuid.uuid4().hex,
                     tx_type=TransactionType.SET_ROLE,
+                    sender=target.address,
                     receiver=target.address,
                     role=new_role,
-                    timestamp=time.time()
+                    timestamp=time.time(),
                 )
-                self.state.mempool.append(tx)
+            )
             return
 
         elif action == "mint":
@@ -116,6 +156,7 @@ class BotEngine:
             tx = Transaction(
                 tx_hash=uuid.uuid4().hex,
                 tx_type=TransactionType.MINT,
+                sender=SIM_TREASURY_ADDR,
                 receiver=target.address,
                 amount=amount,
                 asset_type=asset,
@@ -173,16 +214,22 @@ class BotEngine:
             return
 
         elif action == "trade":
-            valid_traders = [acc for acc in accounts if acc.role != Role.GUEST]
-            if not valid_traders:
-                return
-            trader = random.choice(valid_traders)
-            
+            validators = [acc for acc in accounts if acc.role == Role.VALIDATOR]
+            providers = [acc for acc in accounts if acc.role == Role.PROVIDER]
             order_type = random.choice([OrderType.BUY, OrderType.SELL])
             base_price = self.state.last_price if self.state.last_price > 0 else 10.0
             price = round(base_price * random.uniform(0.8, 1.2), 2)
             shares_amount = round(random.uniform(1, 20), 2)
-            
+
+            if order_type == OrderType.BUY:
+                if not validators:
+                    return
+                trader = random.choice(validators)
+            else:
+                if not providers:
+                    return
+                trader = random.choice(providers)
+
             if order_type == OrderType.BUY and trader.wrt_balance >= (price * shares_amount):
                 tx = Transaction(
                     tx_hash=uuid.uuid4().hex,

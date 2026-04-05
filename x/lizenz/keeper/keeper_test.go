@@ -884,9 +884,7 @@ func (suite *KeeperTestSuite) TestGetTotalActivatedLizenz() {
 	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
 	require.NoError(suite.T(), err)
 
-	// Add second validator with amount within 33% limit (above minimum)
-	// Total will be 10000000 + 3000000 = 13000000
-	// 33% of 13000000 = 4290000, so 3000000 is within limit
+	// Add second validator within ⌊newTotal/3⌋: newTotal=13M → max 4333333; 3M OK
 	lizenz2 := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator2",
 		Amount:               "3000000",
@@ -919,9 +917,7 @@ func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_WithinLimit() {
 	err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
 	require.NoError(suite.T(), err)
 
-	// Try to add another validator with 30% of new total (should be within 33% limit)
-	// Total will be 10000000 + 3000000 = 13000000
-	// 33% of 13000000 = 4290000, so 3000000 is within limit
+	// Second validator: newTotal=13M, ⌊13M/3⌋=4333333; 3M is within limit
 	lizenz2 := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator2",
 		Amount:               "3000000",
@@ -948,9 +944,7 @@ func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_ExceedsLimit() {
 	err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
 	require.NoError(suite.T(), err)
 
-	// Try to add validator with more than 33% of total
-	// Total will be 1000000 + 5000000 = 6000000
-	// 33% of 6000000 = 1980000, but we're trying to add 5000000
+	// newTotal=6M, ⌊6M/3⌋=2M; second amount 5M exceeds max
 	lizenz2 := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator2",
 		Amount:               "5000000",
@@ -978,9 +972,7 @@ func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_AtLimit() {
 	err := suite.keeper.SetActivatedLizenz(suite.ctx, lizenz1)
 	require.NoError(suite.T(), err)
 
-	// Try to add validator with exactly 33% of new total
-	// Total will be 6700000 + 3300000 = 10000000
-	// 33% of 10000000 = 3300000 (exactly at limit, should be allowed)
+	// newTotal=10M, ⌊10M/3⌋=3333333; 3.3M ≤ 3333333 (strict one-third floor)
 	lizenz2 := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator2",
 		Amount:               "3300000",
@@ -1018,9 +1010,7 @@ func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_UpdateExisting()
 	err = suite.keeper.UpdateActivatedLizenz(suite.ctx, lizenz1)
 	require.NoError(suite.T(), err)
 
-	// Add second validator with amount within 33% limit
-	// Total will be 10000000 + 3000000 = 13000000
-	// 33% of 13000000 = 4290000, so 3000000 is within limit
+	// newTotal=13M, ⌊13M/3⌋=4333333; 3M OK
 	lizenz2 := &lizenzv1.ActivatedLizenz{
 		Validator:            "cosmos1validator2",
 		Amount:               "3000000",
@@ -1032,10 +1022,7 @@ func (suite *KeeperTestSuite) TestValidateMaxLznActivationLimit_UpdateExisting()
 	err = suite.keeper.SetActivatedLizenz(suite.ctx, lizenz2)
 	require.NoError(suite.T(), err)
 
-	// Now try to update first validator to exceed limit
-	// Current total: 10000000 + 3000000 = 13000000
-	// After update: 13000000 - 10000000 + 15000000 = 18000000
-	// 33% of 18000000 = 5940000, but we're trying to set 15000000
+	// After update newTotal=18M, ⌊18M/3⌋=6M; 15M for val1 exceeds max
 	lizenz1.Amount = "15000000"
 	err = suite.keeper.UpdateActivatedLizenz(suite.ctx, lizenz1)
 	require.Error(suite.T(), err)
