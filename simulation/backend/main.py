@@ -1,4 +1,6 @@
 import asyncio
+import os
+import shutil
 import uuid
 from typing import Optional
 
@@ -28,18 +30,27 @@ state_manager = StateManager()
 engine = SimulationEngine(state_manager)
 bot_engine = BotEngine(state_manager)
 
+
+def _mempool_append_persist(tx) -> None:
+    state_manager.mempool.append(tx)
+    state_manager.try_save_state()
+
 @app.on_event("startup")
 async def startup_event():
     state_manager.load_state()
+    engine.set_block_time(state_manager.sim_block_interval_sec)
     if not state_manager.blocks:
         state_manager.init_genesis()
+        try:
+            state_manager.save_state()
+        except OSError as e:
+            print(f"Warning: save_state after genesis failed: {e}")
     asyncio.create_task(engine.start())
     # Bot engine starts stopped by default
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    # Save state on shutdown
-    state_manager.save_state()
+    state_manager.try_save_state()
     bot_engine.stop()
     engine.stop()
 
@@ -94,20 +105,24 @@ def api_market_bars(interval_sec: int = 0, limit_ticks: int = 50_000):
     }
 
 
-# --- God Mode API ---
+# --- Панель оператора симуляции (HTTP API) ---
 
 class BlockTimeRequest(BaseModel):
     time_sec: float
 
-@app.post("/api/god-mode/block-time")
+@app.post("/api/sim-operator/block-time")
 def set_block_time(req: BlockTimeRequest):
     engine.set_block_time(req.time_sec)
+    try:
+        state_manager.save_state()
+    except OSError as e:
+        print(f"Warning: save_state after block-time change failed: {e}")
     return {"status": "success", "new_block_time": engine.block_time}
 
 class CreateAccountsRequest(BaseModel):
     count: int
 
-@app.post("/api/god-mode/accounts")
+@app.post("/api/sim-operator/accounts")
 def create_accounts(req: CreateAccountsRequest):
     new_accounts = []
     for _ in range(req.count):
@@ -121,7 +136,7 @@ class MintRequest(BaseModel):
     amount: float
     asset_type: str = "wrt" # "wrt", "lzn", or "ant"
 
-@app.post("/api/god-mode/mint")
+@app.post("/api/sim-operator/mint")
 def mint_tokens(req: MintRequest):
     """Как в узле: только tx mint из казначейства → мемпул → исполнение в блоке."""
     ok, msg, tx = validate_treasury_mint(
@@ -130,7 +145,7 @@ def mint_tokens(req: MintRequest):
     if not ok or tx is None:
         log_wallet_rejection(state_manager, "mint", msg, req.address.strip())
         return {"status": "error", "message": msg}
-    state_manager.mempool.append(tx)
+    _mempool_append_persist(tx)
     return {
         "status": "queued",
         "message": msg,
@@ -142,7 +157,7 @@ class RoleRequest(BaseModel):
     address: str
     role: Role
 
-@app.post("/api/god-mode/role")
+@app.post("/api/sim-operator/role")
 def set_role(req: RoleRequest):
     """Те же правила, что у кошелька: set_role только через мемпул."""
     ok, msg, tx = validate_and_build_tx(
@@ -154,7 +169,7 @@ def set_role(req: RoleRequest):
     if not ok or tx is None:
         log_wallet_rejection(state_manager, "set_role", msg, req.address.strip())
         return {"status": "error", "message": msg}
-    state_manager.mempool.append(tx)
+    _mempool_append_persist(tx)
     return {
         "status": "queued",
         "message": msg,
@@ -171,7 +186,7 @@ class OrderRequest(BaseModel):
     market: bool = False
     max_wrt: Optional[float] = None
 
-@app.post("/api/god-mode/order")
+@app.post("/api/sim-operator/order")
 def create_order(req: OrderRequest):
     """Те же проверки, что у кошелька (баланс, роль SELL)."""
     ok, msg, tx = validate_and_build_tx(
@@ -187,27 +202,33 @@ def create_order(req: OrderRequest):
     if not ok or tx is None:
         log_wallet_rejection(state_manager, "create_order", msg, req.address.strip())
         return {"status": "error", "message": msg}
-    state_manager.mempool.append(tx)
+    _mempool_append_persist(tx)
     return {"status": "queued", "message": msg, "tx_hash": tx.tx_hash}
 
-@app.post("/api/god-mode/save")
-def save_state():
-    state_manager.save_state()
-    return {"status": "success", "message": "State saved to disk"}
-
-@app.post("/api/god-mode/reset")
+@app.post("/api/sim-operator/reset")
 async def reset_state():
-    state_manager.reset_state()
-    # Force UI update immediately
-    await engine.ws_manager.broadcast({
-        "type": "new_block",
-        "data": {
-            "block": {"height": 0, "transactions": [], "tx_count": 0},
-            "state": state_manager.get_full_state(),
-            "block_time": engine.block_time
-        }
-    })
-    return {"status": "success", "message": "State reset and deleted from disk"}
+    fp = state_manager._active_state_path or os.path.join(state_manager.data_dir, "state.json")
+    async with engine._state_lock:
+        if os.path.isfile(fp):
+            try:
+                shutil.copy2(fp, fp + ".bak")
+            except OSError as e:
+                print(f"Warning: could not write {fp}.bak before reset: {e}")
+        state_manager.reset_state()
+        engine.set_block_time(state_manager.sim_block_interval_sec)
+        # Force UI update immediately
+        await engine.ws_manager.broadcast({
+            "type": "new_block",
+            "data": {
+                "block": {"height": 0, "transactions": [], "tx_count": 0},
+                "state": state_manager.get_full_state(),
+                "block_time": engine.block_time
+            }
+        })
+    return {
+        "status": "success",
+        "message": "State reset; предыдущий state.json при наличии скопирован в state.json.bak",
+    }
 
 # --- Bot Engine API ---
 
@@ -272,7 +293,7 @@ def wallet_submit_tx(body: WalletSubmitBody):
     if not ok or tx is None:
         log_wallet_rejection(state_manager, body.op, msg, body.address.strip())
         return {"accepted": False, "message": msg}
-    state_manager.mempool.append(tx)
+    _mempool_append_persist(tx)
     return {"accepted": True, "message": msg, "tx_hash": tx.tx_hash}
 
 

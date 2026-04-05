@@ -89,7 +89,7 @@ def validate_and_build_tx(
     ts = time.time()
     acc = _acc(sm, address)
     if not acc:
-        return False, "Unknown address: create an account first (God Mode) or receive a transfer", None
+        return False, "Unknown address: create an account first (simulation operator panel) or receive a transfer", None
 
     op = op.strip().lower()
 

@@ -8,6 +8,8 @@ from core.canon_log import CanonLogBuffer
 
 # Эпоха ANT: технические блоки (§5.5, §7.2 п.11) — эталон 1 блок/мин × 7 суток
 BLOCKS_PER_EPOCH = 7 * 24 * 60  # 10080
+# Интервал между блоками в эталонной цепи (1 тех. блок ≈ 1 мин). В симуляции хранится в state и может быть иным для тестов.
+CANONICAL_BLOCK_INTERVAL_SEC = 60.0
 # §4.2: не более ⌊эталон/3⌋ активированных LZN на адрес (целые токены; эталон 10_000 → 3333).
 # Genesis-валидатор: 6667 активированных (остаток ликвидности = 10_000 − 6667).
 LZN_TOTAL_SUPPLY_REF = 10_000
@@ -19,11 +21,15 @@ GENESIS_VALIDATOR_ADDR = "volnix1gval0validator0genesis0"
 # Симуляция: стартовый ANT на genesis-валидаторе (удобство declare / рынок; не смешивать с §6.3 провайдера)
 GENESIS_VALIDATOR_ANT_BALANCE = 1_000_000_000.0
 GENESIS_PROVIDER_ADDR = "volnix1gprov0provider00genesis0"
-# Вне цепочки: резерв симулятора для God Mode (не в genesis-блоке)
-SIM_TREASURY_ADDR = "sim_treasury_reserve_godmode"
+# Вне цепочки: резерв симулятора для минта оператором (не в genesis-блоке)
+SIM_TREASURY_ADDR = "sim_treasury_reserve"
+# Исторический ключ казны в старых state.json — миграция в load_state
+SIM_TREASURY_ADDR_LEGACY = "sim_treasury_reserve_godmode"
 
 # Сколько последних тиков отдаём в WebSocket/API (полная история остаётся в памяти и price_history.jsonl).
 MARKET_HISTORY_WS_MAX = 30_000
+# Верхняя граница tx мемпула в state.json (защита от раздувания файла)
+MEMPOOL_PERSIST_MAX = 1_000
 
 
 def account_total_lzn(acc: Account) -> float:
@@ -35,6 +41,20 @@ def eligible_for_validator_role(address: str, acc: Account) -> bool:
     if address == GENESIS_VALIDATOR_ADDR:
         return True
     return acc.zkp_verified and account_total_lzn(acc) > 0
+
+
+def _deserialize_mempool(raw: object) -> List[Transaction]:
+    if not isinstance(raw, list):
+        return []
+    out: List[Transaction] = []
+    for item in raw[:MEMPOOL_PERSIST_MAX]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            out.append(Transaction.model_validate(item))
+        except Exception:
+            continue
+    return out
 
 
 def eligible_for_provider_role(address: str, acc: Account) -> bool:
@@ -63,6 +83,7 @@ class StateManager:
         self.canon_log = CanonLogBuffer(maxlen=400)
         # После каждого блока: изменение балансов за блок (для бота — цена vs фактические WRT/ANT)
         self.last_block_wallet_delta: Dict[str, Dict[str, float]] = {}
+        self.sim_block_interval_sec: float = CANONICAL_BLOCK_INTERVAL_SEC
 
     @staticmethod
     def _price_history_jsonl_path(state_json_path: str) -> str:
@@ -257,11 +278,20 @@ class StateManager:
             "sim_treasury": SIM_TREASURY_ADDR,
             "canon_log": self.canon_log.to_list_newest_first(),
             "last_block_wallet_delta": self.last_block_wallet_delta,
+            "canonical_block_interval_sec": CANONICAL_BLOCK_INTERVAL_SEC,
+            "sim_block_interval_sec": self.sim_block_interval_sec,
         }
         
     def add_block(self, block: dict):
         self.blocks.append(block)
         self.current_height += 1
+
+    def try_save_state(self) -> None:
+        """Сохранить state.json (включая мемпул). Ошибки диска — только в лог, без raise."""
+        try:
+            self.save_state()
+        except OSError as e:
+            print(f"Warning: try_save_state failed: {e}")
 
     def save_state(self, filepath: Optional[str] = None):
         filepath = filepath or os.path.join(self.data_dir, "state.json")
@@ -269,6 +299,11 @@ class StateManager:
         d = os.path.dirname(filepath)
         if d:
             os.makedirs(d, exist_ok=True)
+        mp_cap = self.mempool[:MEMPOOL_PERSIST_MAX]
+        if len(self.mempool) > MEMPOOL_PERSIST_MAX:
+            print(
+                f"Warning: mempool {len(self.mempool)} tx — в state.json сохранены первые {MEMPOOL_PERSIST_MAX}"
+            )
         data = {
             "current_height": self.current_height,
             "last_price": self.last_price,
@@ -279,12 +314,14 @@ class StateManager:
             "epoch_ant_sold_last": self.epoch_ant_sold_last,
             "epoch_emission_coefficient": self.epoch_emission_coefficient,
             "last_block_wallet_delta": self.last_block_wallet_delta,
+            "sim_block_interval_sec": self.sim_block_interval_sec,
             "genesis_validator": GENESIS_VALIDATOR_ADDR,
             "genesis_provider": GENESIS_PROVIDER_ADDR,
             "sim_treasury": SIM_TREASURY_ADDR,
             "accounts": {addr: acc.model_dump(mode="json") for addr, acc in self.accounts.items()},
             "orders": {oid: o.model_dump(mode="json") for oid, o in self.orders.items()},
-            "blocks": self.blocks
+            "blocks": self.blocks,
+            "mempool": [tx.model_dump(mode="json") for tx in mp_cap],
         }
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f)
@@ -306,7 +343,9 @@ class StateManager:
             self.epoch_emission_coefficient = data.get("epoch_emission_coefficient", 1.0)
             self.blocks = data.get("blocks", [])
             self.last_block_wallet_delta = data.get("last_block_wallet_delta", {})
-            
+            _iv = float(data.get("sim_block_interval_sec", CANONICAL_BLOCK_INTERVAL_SEC))
+            self.sim_block_interval_sec = max(0.1, min(300.0, _iv))
+
             accounts_data = data.get("accounts", {})
             merged_accounts = {}
             for addr, raw in accounts_data.items():
@@ -317,12 +356,18 @@ class StateManager:
                 if acc_data.get("role") == "guest":
                     acc_data["role"] = Role.CITIZEN.value
                 merged_accounts[addr] = Account(**acc_data)
+            if SIM_TREASURY_ADDR_LEGACY in merged_accounts:
+                legacy_acc = merged_accounts.pop(SIM_TREASURY_ADDR_LEGACY)
+                if SIM_TREASURY_ADDR not in merged_accounts:
+                    ld = legacy_acc.model_dump()
+                    ld["address"] = SIM_TREASURY_ADDR
+                    merged_accounts[SIM_TREASURY_ADDR] = Account(**ld)
             self.accounts = merged_accounts
             
             orders_data = data.get("orders", {})
             self.orders = {oid: Order(**o_data) for oid, o_data in orders_data.items()}
-            
-            self.mempool = []
+
+            self.mempool = _deserialize_mempool(data.get("mempool", []))
 
         jsonl_path = self._price_history_jsonl_path(filepath)
         jsonl_rows = self._read_price_history_jsonl(jsonl_path)
@@ -356,6 +401,7 @@ class StateManager:
         self.epoch_ant_sold_last = 0.0
         self.epoch_emission_coefficient = 1.0
         self.last_block_wallet_delta = {}
+        self.sim_block_interval_sec = CANONICAL_BLOCK_INTERVAL_SEC
         self.canon_log.clear()
         self.init_genesis()
         if os.path.exists(filepath):
@@ -366,3 +412,7 @@ class StateManager:
         tmp = jpath + ".tmp"
         if os.path.exists(tmp):
             os.remove(tmp)
+        try:
+            self.save_state(filepath)
+        except OSError as e:
+            print(f"Warning: save_state after reset failed: {e}")

@@ -25,6 +25,7 @@ from core.models import Role, Transaction, TransactionType, Order, OrderType
 from core.canon_audit import audit_block_ledger, log_engine_skip
 from core.state import (
     BLOCKS_PER_EPOCH,
+    CANONICAL_BLOCK_INTERVAL_SEC,
     LZN_MAX_FROZEN_PER_ADDRESS,
     SIM_TREASURY_ADDR,
     eligible_for_provider_role,
@@ -46,12 +47,18 @@ BURN_TARGET_ATOL = 0.5
 class SimulationEngine:
     def __init__(self, state_manager):
         self.state = state_manager
-        self.block_time = 5.0 # default 5 seconds
+        # Дефолт = эталон цепи (60 с); после load_state startup выставит из state.json
+        self.block_time = float(
+            getattr(state_manager, "sim_block_interval_sec", CANONICAL_BLOCK_INTERVAL_SEC)
+        )
         self.is_running = False
         self.ws_manager = ConnectionManager()
+        # Сброс состояния и produce_block не должны пересекаться — иначе старый блок перезаписывает сброс.
+        self._state_lock = asyncio.Lock()
 
     def set_block_time(self, time_sec: float):
         self.block_time = max(0.1, min(time_sec, 300.0))
+        self.state.sim_block_interval_sec = self.block_time
 
     def _release_orders_for_owner(self, owner_addr: str, acc):
         """Вернуть эскроу ордеров владельцу и удалить ордера из книги."""
@@ -608,6 +615,18 @@ class SimulationEngine:
         )
 
     async def produce_block(self):
+        """
+        Цикл блока по порядку, близкому к CometBFT + Cosmos SDK (каноническая цепь):
+        BeginBlock → DeliverTx (мемпул по сообщениям) → пакет declare §5.4 →
+        внутриблочный матчинг §5.2 → EndBlock (награды, комиссии, эпоха §5.5) →
+        запись блока и персистентность.
+        Интервал между блоками в эталоне — CANONICAL_BLOCK_INTERVAL_SEC (60 с);
+        в симуляции задаётся sim_block_interval_sec (тесты 0.1–300 с).
+        """
+        async with self._state_lock:
+            await self._produce_block_body()
+
+    async def _produce_block_body(self):
         balance_snap = {
             addr: (float(acc.wrt_balance), float(acc.ant_balance))
             for addr, acc in self.state.accounts.items()
@@ -618,7 +637,7 @@ class SimulationEngine:
         declare_buffer: List[Transaction] = []
         participation: Dict[str, dict] = {}
         fee_ledger_ops = 0  # только успешные пользовательские tx (не begin_block / protocol_*)
-
+    
         # Process mempool (declare/burn — пакетно после §5.4 λ/K)
         for tx in self.state.mempool:
             if tx.tx_type in (TransactionType.BURN, TransactionType.DECLARE_PARTICIPATION):
@@ -834,18 +853,18 @@ class SimulationEngine:
                         "timestamp": time.time(),
                     }
                 )
-
+    
         # DeliverTx: мемпул (кроме declare), затем пакет declare §5.4, затем матчинг ордеров
         requeue_declare: List[Transaction] = []
         B_applied, _ndecl = self._finalize_declares_batch(
             declare_buffer, txs_in_block, participation, requeue_declare
         )
         fee_tx_count = fee_ledger_ops + _ndecl
-
+    
         trades = self._match_orders()
         txs_in_block.extend(trades)
         fee_tx_count += len(trades)
-
+    
         L_total = self._network_lzn_total_validators()
         cap = BURN_CAP_LAMBDA * L_total
         burn_band_ok = L_total <= 1e-18 or (
@@ -853,11 +872,11 @@ class SimulationEngine:
             and B_applied >= cap - BURN_TARGET_ATOL
             and B_applied <= cap + BURN_TARGET_ATOL
         )
-
+    
         self._end_block(block_height, txs_in_block, participation, B_applied, cap, burn_band_ok, fee_tx_count)
-
+    
         audit_block_ledger(self.state, txs_in_block, block_height)
-
+    
         delta_map: Dict[str, Dict[str, float]] = {}
         for addr, acc in self.state.accounts.items():
             w0, a0 = balance_snap.get(addr, (0.0, 0.0))
@@ -866,7 +885,7 @@ class SimulationEngine:
             if abs(dw) > 1e-9 or abs(da) > 1e-9:
                 delta_map[addr] = {"wrt": dw, "ant": da}
         self.state.last_block_wallet_delta = delta_map
-
+    
         import hashlib
         block_hash = hashlib.sha256(f"{self.state.current_height + 1}{time.time()}".encode()).hexdigest()[:16]
         
@@ -889,8 +908,12 @@ class SimulationEngine:
         
         self.state.mempool = requeue_declare
         self.state.add_block(block)
-
-        
+    
+        try:
+            self.state.save_state()
+        except OSError as e:
+            print(f"Warning: save_state failed after block {block['height']}: {e}")
+    
         # Broadcast new state to all connected clients
         await self.ws_manager.broadcast({
             "type": "new_block",

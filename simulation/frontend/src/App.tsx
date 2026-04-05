@@ -89,6 +89,68 @@ interface NetworkState {
   genesis_provider?: string;
   sim_treasury?: string;
   canon_log?: CanonLogEntry[];
+  /** Эталон основной цепи, сек (обычно 60) */
+  canonical_block_interval_sec?: number;
+  /** Интервал блока в этой симуляции, сек */
+  sim_block_interval_sec?: number;
+}
+
+/** Тело GET /api/state и поле `state` в сообщениях WebSocket. */
+interface SimulatorApiState {
+  height: number
+  mempool_size?: number
+  accounts_count: number
+  accounts: Record<string, Account>
+  market: Market
+  blocks: Block[]
+  tps_history: { time: string; tps: number }[]
+  blocks_per_epoch?: number
+  epoch_ant_sold_volume?: number
+  epoch_ant_sold_last?: number
+  epoch_emission_coefficient?: number
+  genesis_validator?: string
+  genesis_provider?: string
+  sim_treasury?: string
+  canon_log?: CanonLogEntry[]
+  canonical_block_interval_sec?: number
+  sim_block_interval_sec?: number
+}
+
+function mergeFromSimulatorApi(
+  prev: NetworkState,
+  snapshot: SimulatorApiState,
+  blockTime: number,
+  opts: { recent: 'append' | 'keep' | 'clear'; blockTxs?: Record<string, unknown>[] }
+): NetworkState {
+  const { recent, blockTxs = [] } = opts
+  let recent_txs = prev.recent_txs
+  if (recent === 'clear') {
+    recent_txs = []
+  } else if (recent === 'append') {
+    recent_txs = [...(blockTxs as unknown as Transaction[]), ...prev.recent_txs].slice(0, 10)
+  }
+  return {
+    ...prev,
+    block_height: snapshot.height,
+    block_time: blockTime,
+    accounts_count: snapshot.accounts_count,
+    mempool_size: snapshot.mempool_size,
+    accounts: snapshot.accounts,
+    market: snapshot.market,
+    blocks: snapshot.blocks,
+    tps_history: snapshot.tps_history,
+    blocks_per_epoch: snapshot.blocks_per_epoch ?? prev.blocks_per_epoch,
+    epoch_ant_sold_volume: snapshot.epoch_ant_sold_volume,
+    epoch_ant_sold_last: snapshot.epoch_ant_sold_last,
+    epoch_emission_coefficient: snapshot.epoch_emission_coefficient,
+    genesis_validator: snapshot.genesis_validator,
+    genesis_provider: snapshot.genesis_provider,
+    sim_treasury: snapshot.sim_treasury,
+    canonical_block_interval_sec: snapshot.canonical_block_interval_sec ?? prev.canonical_block_interval_sec,
+    sim_block_interval_sec: snapshot.sim_block_interval_sec ?? prev.sim_block_interval_sec,
+    canon_log: snapshot.canon_log ?? prev.canon_log ?? [],
+    recent_txs,
+  }
 }
 
 function App() {
@@ -106,7 +168,7 @@ function App() {
     canon_log: [],
   })
   
-  const [blockTimeInput, setBlockTimeInput] = useState<string>("5.0")
+  const [blockTimeInput, setBlockTimeInput] = useState<string>("60")
   const [botStatus, setBotStatus] = useState({ is_running: false, intensity: 1.0 })
   const [botIntensityInput, setBotIntensityInput] = useState<string>("1.0")
   const [selectedBlockHeight, setSelectedBlockHeight] = useState<number | null>(null)
@@ -139,30 +201,29 @@ function App() {
     }
 
     ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data)
+      const msg = JSON.parse(event.data) as {
+        type: string
+        data: {
+          state: SimulatorApiState
+          block_time: number
+          block?: { height?: number; transactions?: Record<string, unknown>[] }
+        }
+      }
       if (msg.type === 'init' || msg.type === 'new_block') {
-        const txs = msg.data.block?.transactions || []
-        setState(prev => ({
-          ...prev,
-          block_height: msg.data.state.height,
-          block_time: msg.data.block_time,
-          accounts_count: msg.data.state.accounts_count,
-          mempool_size: msg.data.state.mempool_size,
-          accounts: msg.data.state.accounts,
-          market: msg.data.state.market,
-          blocks: msg.data.state.blocks,
-          tps_history: msg.data.state.tps_history,
-          blocks_per_epoch: msg.data.state.blocks_per_epoch ?? prev.blocks_per_epoch,
-          epoch_ant_sold_volume: msg.data.state.epoch_ant_sold_volume,
-          epoch_ant_sold_last: msg.data.state.epoch_ant_sold_last,
-          epoch_emission_coefficient: msg.data.state.epoch_emission_coefficient,
-          genesis_validator: msg.data.state.genesis_validator,
-          genesis_provider: msg.data.state.genesis_provider,
-          sim_treasury: msg.data.state.sim_treasury,
-          canon_log: msg.data.state.canon_log ?? prev.canon_log ?? [],
-          recent_txs: [...txs, ...prev.recent_txs].slice(0, 10) // Keep last 10 txs
-        }))
-        // Only set the block time input on initial load, not on every block
+        const block = msg.data.block
+        const txs = block?.transactions ?? []
+        const isResetSnapshot =
+          msg.type === 'new_block' &&
+          msg.data.state.height === 0 &&
+          block?.height === 0
+        const recent: 'append' | 'keep' | 'clear' = isResetSnapshot
+          ? 'clear'
+          : msg.type === 'init'
+            ? 'keep'
+            : 'append'
+        setState(prev =>
+          mergeFromSimulatorApi(prev, msg.data.state, msg.data.block_time, { recent, blockTxs: txs })
+        )
         if (msg.type === 'init') {
           setBlockTimeInput(msg.data.block_time.toString())
         }
@@ -237,28 +298,37 @@ function App() {
   }
 
   const handleCreateAccounts = async () => {
-    await fetch(`${API_BASE}/api/god-mode/accounts`, {
+    await fetch(`${API_BASE}/api/sim-operator/accounts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count: 5 })
     })
   }
 
-  const handleSaveState = async () => {
-    await fetch(`${API_BASE}/api/god-mode/save`, { method: 'POST' })
-    alert('State saved to disk!')
-  }
-
   const handleResetState = async () => {
-    if (confirm('Are you sure you want to completely reset and delete the blockchain state?')) {
-      await fetch(`${API_BASE}/api/god-mode/reset`, { method: 'POST' })
+    if (!confirm('Are you sure you want to completely reset and delete the blockchain state?')) {
+      return
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/sim-operator/reset`, { method: 'POST' })
+      if (!res.ok) {
+        alert(`Сброс не удался (HTTP ${res.status}).`)
+        return
+      }
+      const root = (await fetch(`${API_BASE}/`).then((r) => r.json())) as { block_time: number }
+      const st = (await fetch(`${API_BASE}/api/state`).then((r) => r.json())) as SimulatorApiState
+      setState((prev) => mergeFromSimulatorApi(prev, st, root.block_time, { recent: 'clear' }))
+      setBlockTimeInput(String(root.block_time))
+      setSelectedBlockHeight(null)
+    } catch {
+      alert('Сброс: ошибка сети или сервера.')
     }
   }
 
   const handleUpdateBlockTime = async () => {
     const time = parseFloat(blockTimeInput)
     if (!isNaN(time) && time >= 0.1 && time <= 300) {
-      await fetch(`${API_BASE}/api/god-mode/block-time`, {
+      await fetch(`${API_BASE}/api/sim-operator/block-time`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ time_sec: time })
@@ -266,12 +336,12 @@ function App() {
       // Update local state to reflect the change immediately
       setState(prev => ({ ...prev, block_time: time }))
     } else {
-      alert("Block time must be between 0.1 and 300 seconds.")
+      alert("Интервал симуляции: от 0.1 до 300 с. В эталонной цепи блок ≈ 60 с (1 мин).")
     }
   }
 
   const handleMint = async (address: string, asset_type: string = "wrt") => {
-    const res = await fetch(`${API_BASE}/api/god-mode/mint`, {
+    const res = await fetch(`${API_BASE}/api/sim-operator/mint`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, amount: 1000, asset_type })
@@ -286,22 +356,49 @@ function App() {
 
   const selectedAccount = selectedWallet ? state.accounts[selectedWallet] : undefined
 
+  const MAIN_TABS = [
+    { id: 'overview' as const, label: 'Обзор' },
+    { id: 'chain' as const, label: 'Блокчейн' },
+    { id: 'market' as const, label: 'Рынок' },
+    { id: 'accounts' as const, label: 'Счета' },
+    { id: 'sim' as const, label: 'Симуляция' },
+  ]
+  const [mainTab, setMainTab] = useState<(typeof MAIN_TABS)[number]['id']>('overview')
+
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
       <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-4xl font-bold text-blue-400">Volnix Protocol Simulation</h1>
             <p className="text-gray-500 text-sm mt-1">
-              §5.5: {state.blocks_per_epoch ?? 10080} blocks/epoch · Mempool: {state.mempool_size ?? 0} tx · Sold epoch: {Number(state.epoch_ant_sold_volume ?? 0).toFixed(2)} ANT · Prev epoch sold: {Number(state.epoch_ant_sold_last ?? 0).toFixed(2)} · coeff: {Number(state.epoch_emission_coefficient ?? 1).toFixed(4)}
+              §5.5: {state.blocks_per_epoch ?? 10080} blocks/epoch (эталон 1 блок/мин × 7 сут) · Mempool: {state.mempool_size ?? 0} tx · Sold epoch: {Number(state.epoch_ant_sold_volume ?? 0).toFixed(2)} ANT · Prev epoch sold: {Number(state.epoch_ant_sold_last ?? 0).toFixed(2)} · coeff: {Number(state.epoch_emission_coefficient ?? 1).toFixed(4)}
             </p>
           </div>
           <div className={`px-4 py-2 rounded-full font-semibold ${state.status.includes('Live') ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
             {state.status}
           </div>
         </div>
-        
-        {/* Network Stats */}
+
+        <div className="flex flex-wrap gap-1 border-b border-gray-700 mb-6 -mx-1 px-1">
+          {MAIN_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setMainTab(t.id)}
+              className={`px-4 py-2.5 rounded-t-lg text-sm font-medium transition-colors border border-b-0 ${
+                mainTab === t.id
+                  ? 'bg-gray-800 text-blue-300 border-gray-600 relative z-[1] mb-[-1px]'
+                  : 'bg-gray-900/80 text-gray-400 border-transparent hover:text-gray-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {mainTab === 'overview' && (
+          <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Block Height</h2>
@@ -312,11 +409,20 @@ function App() {
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Mempool</h2>
             <p className="text-3xl font-mono text-amber-300">{state.mempool_size ?? 0}</p>
             <p className="text-xs text-gray-500 mt-1">ожидают следующий блок</p>
+            <p className="text-xs text-gray-500 mt-2 leading-snug">
+              Не в цепи: <span className="text-amber-200/90 font-mono">{state.mempool_size ?? 0}</span> tx — после
+              приёма через API мемпул сразу пишется в state.json; после каждого блока — вместе с цепочкой.
+            </p>
           </div>
 
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-            <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Block Time</h2>
-            <div className="flex items-center gap-2">
+            <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Интервал блока (симуляция)</h2>
+            <p className="text-xs text-gray-500 mb-2">
+              Порядок фаз блока — как в каноне (BeginBlock → DeliverTx → EndBlock). В основной цепи —{' '}
+              <span className="text-gray-400">{state.canonical_block_interval_sec ?? 60} с</span> на блок; здесь можно
+              задать другое значение для нагрузочных тестов (0.1–300 с), сохраняется в state.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
               <input 
                 type="number" 
                 step="0.1" 
@@ -333,6 +439,9 @@ function App() {
               >
                 Set
               </button>
+              {state.block_time > 0 ? (
+                <span className="text-xs text-gray-500">активно: {state.block_time}s</span>
+              ) : null}
             </div>
           </div>
 
@@ -354,8 +463,11 @@ function App() {
             genesisProvider={state.genesis_provider}
           />
         </div>
+          </>
+        )}
 
-        {/* Blockchain & Consensus Explorer */}
+        {mainTab === 'chain' && (
+        <>
         <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 mb-8">
           <h2 className="text-xl font-bold mb-4 text-blue-300">🔗 Blockchain & Consensus Explorer</h2>
           
@@ -463,13 +575,60 @@ function App() {
           )}
         </div>
 
-        {/* God Mode Panel */}
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 mb-8">
+          <h2 className="text-xl font-bold mb-4">Recent Transactions (Last 10)</h2>
+          {state.recent_txs.length === 0 ? (
+            <p className="text-gray-500">No recent transactions in blocks.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-gray-700 text-gray-400">
+                    <th className="pb-3 font-medium">Type</th>
+                    <th className="pb-3 font-medium">Sender</th>
+                    <th className="pb-3 font-medium">Receiver</th>
+                    <th className="pb-3 font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.recent_txs.map((tx, idx) => (
+                    <tr key={idx} className="border-b border-gray-700/50">
+                      <td className="py-2">
+                        <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs uppercase">
+                          {tx.tx_type}
+                        </span>
+                      </td>
+                      <td className="py-2 font-mono text-xs text-gray-400">{tx.sender || '-'}</td>
+                      <td className="py-2 font-mono text-xs text-gray-400">{tx.receiver || '-'}</td>
+                      <td className="py-2 text-green-400 font-mono">
+                        {tx.amount ? `${tx.amount.toFixed(2)}` : '-'}
+                        {tx.asset_type ? ` ${tx.asset_type.toUpperCase()}` : ''}
+                        {tx.tx_type === 'epoch_emission' ? ` (Epoch)` : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+          </>
+        )}
+
+        {mainTab === 'sim' && (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-            <h2 className="text-xl font-bold mb-4 text-purple-400">⚡ God Mode Control Panel</h2>
+            <h2 className="text-xl font-bold mb-4 text-purple-400">Панель оператора симуляции</h2>
             <p className="text-xs text-gray-500 mb-3">
-              Mint из казначейства и смена роли через God Mode тоже идут в мемпул и исполняются в блоке (как на узле).
+              Mint из казначейства и смена роли через панель оператора тоже идут в мемпул и исполняются в блоке (как на узле).
               Прямое изменение балансов снято. Эпохальная эмиссия ANT — только системные tx в блоке границы эпохи (§5.5: на кошельки Поставщиков).
+              Цепочка и счета сохраняются на диск автоматически после каждого блока; при остановке сервера — ещё раз при завершении.
+              Мемпул сериализуется в state.json (лимит 1000 tx) и поднимается при старте; tx бота до следующего блока на диск не сбрасываются отдельно.
+            </p>
+            <p className="text-xs text-gray-500 mb-3">
+              Перед сбросом цепочки текущий <span className="font-mono text-gray-400">state.json</span> копируется в{' '}
+              <span className="font-mono text-gray-400">state.json.bak</span> (если файл был).
             </p>
             <div className="flex flex-wrap gap-4">
               <button 
@@ -477,12 +636,6 @@ function App() {
                 className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded transition-colors"
               >
                 + Generate 5 Accounts
-              </button>
-              <button 
-                onClick={handleSaveState}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition-colors"
-              >
-                💾 Save State
               </button>
               <button 
                 onClick={handleResetState}
@@ -544,7 +697,7 @@ function App() {
         <div className="bg-gray-800 p-6 rounded-lg border border-cyan-800/40 mb-8">
           <h2 className="text-xl font-bold mb-2 text-cyan-300">📜 Канон-аудит симуляции</h2>
           <p className="text-xs text-gray-500 mb-4">
-            Записи: отклонения до мемпула (кошелёк/God Mode), намерения бота, пост-разбор ленты блока (переводы §4.1, рынок
+            Записи: отклонения до мемпула (кошелёк / панель оператора), намерения бота, пост-разбор ленты блока (переводы §4.1, рынок
             §5.2, declare §5.4, эпоха §5.5). Статус <span className="text-emerald-400">ok</span> — соответствует правилам;
             <span className="text-red-400/90"> reject</span> — tx не прошла или отклонена намеренно при тесте;
             <span className="text-amber-400/90"> warn</span> — внимание.
@@ -585,8 +738,10 @@ function App() {
             )}
           </div>
         </div>
+        </>
+        )}
 
-        {/* Market / Orderbook */}
+        {mainTab === 'market' && (
         <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 mb-8">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold text-blue-300">📈 Anteil Market</h2>
@@ -762,51 +917,13 @@ function App() {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Recent Transactions */}
+        {mainTab === 'accounts' && (
         <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 mb-8">
-          <h2 className="text-xl font-bold mb-4">Recent Transactions (Last 10)</h2>
-          {state.recent_txs.length === 0 ? (
-            <p className="text-gray-500">No recent transactions in blocks.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-gray-700 text-gray-400">
-                    <th className="pb-3 font-medium">Type</th>
-                    <th className="pb-3 font-medium">Sender</th>
-                    <th className="pb-3 font-medium">Receiver</th>
-                    <th className="pb-3 font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.recent_txs.map((tx, idx) => (
-                    <tr key={idx} className="border-b border-gray-700/50">
-                      <td className="py-2">
-                        <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs uppercase">
-                          {tx.tx_type}
-                        </span>
-                      </td>
-                      <td className="py-2 font-mono text-xs text-gray-400">{tx.sender || '-'}</td>
-                      <td className="py-2 font-mono text-xs text-gray-400">{tx.receiver || '-'}</td>
-                      <td className="py-2 text-green-400 font-mono">
-                        {tx.amount ? `${tx.amount.toFixed(2)}` : '-'}
-                        {tx.asset_type ? ` ${tx.asset_type.toUpperCase()}` : ''}
-                        {tx.tx_type === 'epoch_emission' ? ` (Epoch)` : ''}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Accounts List */}
-        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
           <h2 className="text-xl font-bold mb-4">Accounts</h2>
           {Object.keys(state.accounts).length === 0 ? (
-            <p className="text-gray-500">No accounts yet. Use God Mode to generate some.</p>
+            <p className="text-gray-500">Нет аккаунтов — создайте через вкладку «Симуляция» (панель оператора).</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -873,6 +990,7 @@ function App() {
             </div>
           )}
         </div>
+        )}
 
       </div>
     </div>
