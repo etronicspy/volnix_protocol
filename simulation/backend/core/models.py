@@ -3,10 +3,11 @@ from typing import Optional, List, Dict
 from enum import Enum
 
 class Role(str, Enum):
+    """§4.2 (канон v4.20): три типа кошелька — Гражданин, Поставщик, Валидатор.
+    «Граждане DAO» (§4.1) — держатели WRT для голосования; не путать с типом 1 «Гражданин» (§4.2)."""
     CITIZEN = "citizen"
     PROVIDER = "provider"
     VALIDATOR = "validator"
-    GUEST = "guest"
 
 class Account(BaseModel):
     address: str

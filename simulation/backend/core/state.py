@@ -1,8 +1,10 @@
 import json
 import os
-from typing import Dict, List
+import time
+from typing import Dict, List, Optional
 
 from core.models import Account, Role, Transaction, Order, OrderType, TransactionType
+from core.canon_log import CanonLogBuffer
 
 # Эпоха ANT: технические блоки (§5.5, §7.2 п.11) — эталон 1 блок/мин × 7 суток
 BLOCKS_PER_EPOCH = 7 * 24 * 60  # 10080
@@ -19,6 +21,9 @@ GENESIS_VALIDATOR_ANT_BALANCE = 1_000_000_000.0
 GENESIS_PROVIDER_ADDR = "volnix1gprov0provider00genesis0"
 # Вне цепочки: резерв симулятора для God Mode (не в genesis-блоке)
 SIM_TREASURY_ADDR = "sim_treasury_reserve_godmode"
+
+# Сколько последних тиков отдаём в WebSocket/API (полная история остаётся в памяти и price_history.jsonl).
+MARKET_HISTORY_WS_MAX = 30_000
 
 
 def account_total_lzn(acc: Account) -> float:
@@ -40,7 +45,9 @@ def eligible_for_provider_role(address: str, acc: Account) -> bool:
 
 
 class StateManager:
-    def __init__(self):
+    def __init__(self, data_dir: str = "data"):
+        self.data_dir = data_dir
+        self._active_state_path = os.path.join(data_dir, "state.json")
         self.current_height = 0
         self.accounts: Dict[str, Account] = {}
         self.mempool: List[Transaction] = []
@@ -53,9 +60,52 @@ class StateManager:
         self.epoch_ant_sold_volume = 0.0  # §5.5: объём ANT, проданного поставщиками за текущую эпоху
         self.epoch_ant_sold_last = 0.0  # продажи за предыдущую эпоху (для ratio коэффициента)
         self.epoch_emission_coefficient = 1.0  # §5.5: genesis = 1, границы 0.75–1.5
+        self.canon_log = CanonLogBuffer(maxlen=400)
+        # После каждого блока: изменение балансов за блок (для бота — цена vs фактические WRT/ANT)
+        self.last_block_wallet_delta: Dict[str, Dict[str, float]] = {}
+
+    @staticmethod
+    def _price_history_jsonl_path(state_json_path: str) -> str:
+        d = os.path.dirname(os.path.abspath(state_json_path))
+        return os.path.join(d if d else ".", "price_history.jsonl")
+
+    @staticmethod
+    def _read_price_history_jsonl(jsonl_path: str) -> List[dict]:
+        if not os.path.exists(jsonl_path):
+            return []
+        out: List[dict] = []
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return out
+
+    @staticmethod
+    def _append_price_history_jsonl(jsonl_path: str, row: dict) -> None:
+        d = os.path.dirname(jsonl_path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(jsonl_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            f.flush()
+
+    @staticmethod
+    def _rewrite_price_history_jsonl(jsonl_path: str, rows: List[dict]) -> None:
+        d = os.path.dirname(jsonl_path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        tmp = jsonl_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        os.replace(tmp, jsonl_path)
 
     def init_genesis(self):
-        import time
         import uuid
 
         ts = time.time()
@@ -170,7 +220,23 @@ class StateManager:
         bids.sort(key=lambda x: (-x["price"], x["timestamp"]))
         asks.sort(key=lambda x: (x["price"], x["timestamp"]))
         
-        return {"bids": bids[:10], "asks": asks[:10], "last_price": self.last_price, "history": self.price_history}
+        hist = self.price_history
+        if len(hist) > MARKET_HISTORY_WS_MAX:
+            hist = hist[-MARKET_HISTORY_WS_MAX:]
+        return {"bids": bids[:10], "asks": asks[:10], "last_price": self.last_price, "history": hist}
+
+    def record_trade_price(self, match_price: float) -> None:
+        """Добавить тик цены с Unix-временем; сразу дописывает на диск (восстановление после перезапуска/сбоя)."""
+        t = time.time()
+        self.last_price = match_price
+        row = {
+            "time": time.strftime("%H:%M:%S", time.localtime(t)),
+            "price": match_price,
+            "ts": t,
+        }
+        self.price_history.append(row)
+        jsonl = self._price_history_jsonl_path(self._active_state_path)
+        self._append_price_history_jsonl(jsonl, row)
 
     def get_full_state(self):
         return {
@@ -189,14 +255,20 @@ class StateManager:
             "genesis_validator": GENESIS_VALIDATOR_ADDR,
             "genesis_provider": GENESIS_PROVIDER_ADDR,
             "sim_treasury": SIM_TREASURY_ADDR,
+            "canon_log": self.canon_log.to_list_newest_first(),
+            "last_block_wallet_delta": self.last_block_wallet_delta,
         }
         
     def add_block(self, block: dict):
         self.blocks.append(block)
         self.current_height += 1
 
-    def save_state(self, filepath="data/state.json"):
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    def save_state(self, filepath: Optional[str] = None):
+        filepath = filepath or os.path.join(self.data_dir, "state.json")
+        self._active_state_path = filepath
+        d = os.path.dirname(filepath)
+        if d:
+            os.makedirs(d, exist_ok=True)
         data = {
             "current_height": self.current_height,
             "last_price": self.last_price,
@@ -206,6 +278,7 @@ class StateManager:
             "epoch_ant_sold_volume": self.epoch_ant_sold_volume,
             "epoch_ant_sold_last": self.epoch_ant_sold_last,
             "epoch_emission_coefficient": self.epoch_emission_coefficient,
+            "last_block_wallet_delta": self.last_block_wallet_delta,
             "genesis_validator": GENESIS_VALIDATOR_ADDR,
             "genesis_provider": GENESIS_PROVIDER_ADDR,
             "sim_treasury": SIM_TREASURY_ADDR,
@@ -213,12 +286,15 @@ class StateManager:
             "orders": {oid: o.model_dump(mode="json") for oid, o in self.orders.items()},
             "blocks": self.blocks
         }
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f)
+        self._rewrite_price_history_jsonl(self._price_history_jsonl_path(filepath), self.price_history)
 
-    def load_state(self, filepath="data/state.json"):
+    def load_state(self, filepath: Optional[str] = None):
+        filepath = filepath or os.path.join(self.data_dir, "state.json")
+        self._active_state_path = filepath
         if os.path.exists(filepath):
-            with open(filepath, "r") as f:
+            with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self.current_height = data.get("current_height", 0)
             self.last_price = data.get("last_price", 0.0)
@@ -229,6 +305,7 @@ class StateManager:
             self.epoch_ant_sold_last = data.get("epoch_ant_sold_last", 0.0)
             self.epoch_emission_coefficient = data.get("epoch_emission_coefficient", 1.0)
             self.blocks = data.get("blocks", [])
+            self.last_block_wallet_delta = data.get("last_block_wallet_delta", {})
             
             accounts_data = data.get("accounts", {})
             merged_accounts = {}
@@ -236,6 +313,9 @@ class StateManager:
                 acc_data = dict(raw)
                 acc_data.setdefault("lzn_frozen_mining", 0.0)
                 acc_data.setdefault("zkp_verified", False)
+                # Канон v4.20: тип 1 §4.2 — «Гражданин» (в state/json — citizen); старые guest → citizen
+                if acc_data.get("role") == "guest":
+                    acc_data["role"] = Role.CITIZEN.value
                 merged_accounts[addr] = Account(**acc_data)
             self.accounts = merged_accounts
             
@@ -244,7 +324,25 @@ class StateManager:
             
             self.mempool = []
 
-    def reset_state(self, filepath="data/state.json"):
+        jsonl_path = self._price_history_jsonl_path(filepath)
+        jsonl_rows = self._read_price_history_jsonl(jsonl_path)
+        if jsonl_rows:
+            self.price_history = jsonl_rows
+        elif self.price_history:
+            self._rewrite_price_history_jsonl(jsonl_path, self.price_history)
+
+        # jsonl — источник истины для тиков; last_price в state.json мог устареть (0 при ненулевой истории).
+        if self.price_history:
+            try:
+                p = float(self.price_history[-1].get("price", 0) or 0)
+                if p >= 0:
+                    self.last_price = p
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+
+    def reset_state(self, filepath: Optional[str] = None):
+        filepath = filepath or os.path.join(self.data_dir, "state.json")
+        self._active_state_path = filepath
         self.current_height = 0
         self.accounts = {}
         self.mempool = []
@@ -257,6 +355,14 @@ class StateManager:
         self.epoch_ant_sold_volume = 0.0
         self.epoch_ant_sold_last = 0.0
         self.epoch_emission_coefficient = 1.0
+        self.last_block_wallet_delta = {}
+        self.canon_log.clear()
         self.init_genesis()
         if os.path.exists(filepath):
             os.remove(filepath)
+        jpath = self._price_history_jsonl_path(filepath)
+        if os.path.exists(jpath):
+            os.remove(jpath)
+        tmp = jpath + ".tmp"
+        if os.path.exists(tmp):
+            os.remove(tmp)

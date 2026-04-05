@@ -8,11 +8,11 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 import "cosmos/base/v1beta1/coin.proto";
 
-// Roles per §4.2: Guest, Supplier (Поставщик), Validator
+// Roles per §4.2: Citizen (Гражданин; on-chain name ROLE_GUEST), Supplier (Поставщик), Validator
 enum Role {
   ROLE_UNSPECIFIED = 0;
-  ROLE_GUEST = 1;
-  ROLE_SUPPLIER = 2;   // Поставщик — verified ANT supplier (§4.2); NOT the same as DAO citizen (§4.1)
+  ROLE_GUEST = 1; // spec name: Citizen (unverified wallet); legacy enum identifier unchanged
+  ROLE_SUPPLIER = 2;   // Поставщик — verified ANT supplier (§4.2); NOT the same as DAO voter (WRT) (§4.1)
   ROLE_VALIDATOR = 3;
 }
 

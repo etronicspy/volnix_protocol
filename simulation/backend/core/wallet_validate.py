@@ -41,7 +41,7 @@ def validate_treasury_mint(
     if a not in ("wrt", "lzn", "ant"):
         return False, "asset must be wrt, lzn, or ant", None
     if a == "ant" and recv.role not in (Role.PROVIDER, Role.VALIDATOR):
-        return False, "ANT только у ролей Поставщик и Валидатор (§4.1–4.2); Citizen/ Guest — нет", None
+        return False, "ANT только у Поставщика и Валидатора (§4.1–4.2); у Гражданина (тип 1) — нет", None
     if a == "wrt" and tr.wrt_balance + 1e-12 < amount:
         return False, "Simulation treasury has insufficient WRT", None
     if a == "lzn" and tr.lzn_balance + 1e-12 < amount:
@@ -108,8 +108,6 @@ def validate_and_build_tx(
                         None,
                     )
                 return False, "Валидатор: нужен хотя бы 1 LZN (ликвидный или активированный)", None
-        if new_role == Role.PROVIDER and acc.role == Role.GUEST:
-            return False, "Guest cannot become Provider: become Citizen first (on-chain set_role)", None
         if new_role == Role.PROVIDER:
             if not eligible_for_provider_role(address, acc):
                 if address != GENESIS_PROVIDER_ADDR and not acc.zkp_verified:
@@ -119,8 +117,6 @@ def validate_and_build_tx(
                         None,
                     )
                 return False, "Поставщик: нужен хотя бы 1 LZN (ликвидный или активированный)", None
-        if new_role == Role.GUEST and acc.role == Role.GUEST:
-            return False, "Already a Guest", None
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.SET_ROLE,
@@ -192,10 +188,8 @@ def validate_and_build_tx(
         return True, "accepted", tx
 
     if op == "create_order":
-        if acc.role == Role.GUEST:
-            return False, "Guests cannot trade on the internal market", None
         if acc.role == Role.CITIZEN:
-            return False, "Citizen не торгует ANT на внутреннем рынке (§4.2: только Поставщик/Валидатор)", None
+            return False, "Гражданин (тип 1 §4.2) не торгует ANT на внутреннем рынке — только Поставщик/Валидатор", None
         if side not in ("buy", "sell"):
             return False, "side must be buy or sell", None
         ot = OrderType.BUY if side == "buy" else OrderType.SELL

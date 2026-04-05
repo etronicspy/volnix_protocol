@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WalletPanel } from './components/WalletPanel'
+import { TradingViewMarketWidget } from './components/TradingViewMarketWidget'
 import { API_BASE, WS_URL } from './config'
 
 interface Account {
@@ -27,7 +28,7 @@ interface Market {
   bids: Order[];
   asks: Order[];
   last_price: number;
-  history: {time: string, price: number}[];
+  history: { time: string; price: number; ts?: number }[];
 }
 
 interface Transaction {
@@ -55,6 +56,20 @@ interface Block {
   transactions: Record<string, unknown>[];
 }
 
+interface CanonLogEntry {
+  id: number
+  ts: number
+  source: string
+  status: string
+  category: string
+  canon: string
+  title: string
+  detail: string
+  tx_hash: string
+  block_height: number | null
+  meta?: Record<string, unknown>
+}
+
 interface NetworkState {
   status: string;
   block_height: number;
@@ -73,6 +88,7 @@ interface NetworkState {
   genesis_validator?: string;
   genesis_provider?: string;
   sim_treasury?: string;
+  canon_log?: CanonLogEntry[];
 }
 
 function App() {
@@ -86,7 +102,8 @@ function App() {
     market: { bids: [], asks: [], last_price: 0, history: [] },
     blocks: [],
     tps_history: [],
-    blocks_per_epoch: 10080
+    blocks_per_epoch: 10080,
+    canon_log: [],
   })
   
   const [blockTimeInput, setBlockTimeInput] = useState<string>("5.0")
@@ -142,6 +159,7 @@ function App() {
           genesis_validator: msg.data.state.genesis_validator,
           genesis_provider: msg.data.state.genesis_provider,
           sim_treasury: msg.data.state.sim_treasury,
+          canon_log: msg.data.state.canon_log ?? prev.canon_log ?? [],
           recent_txs: [...txs, ...prev.recent_txs].slice(0, 10) // Keep last 10 txs
         }))
         // Only set the block time input on initial load, not on every block
@@ -161,13 +179,17 @@ function App() {
   }, [])
 
   const handleBotControl = async (action: 'start' | 'stop') => {
-    const intensity = parseFloat(botIntensityInput)
+    const parsed = parseFloat(botIntensityInput)
+    const intensity = Number.isFinite(parsed) ? parsed : 1.0
     await fetch(`${API_BASE}/api/bot/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, intensity })
+      body: JSON.stringify({ action, intensity }),
     })
-    setBotStatus({ is_running: action === 'start', intensity })
+    const statusRes = await fetch(`${API_BASE}/api/bot/status`)
+    const data = (await statusRes.json()) as { is_running: boolean; intensity: number }
+    setBotStatus({ is_running: data.is_running, intensity: data.intensity })
+    setBotIntensityInput(String(data.intensity))
   }
 
   const handleCreateOrder = async (e: React.FormEvent) => {
@@ -511,9 +533,56 @@ function App() {
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                * Bots only send tokens if they have a role (Citizen/Provider/Validator) and balance &gt; 0.
+                Бот ставит tx в мемпул и логирует намерение; в блоке узел проверяет канон (docs/volnix_protocol.md). Есть
+                редкие <span className="text-amber-600/90">canon_probe</span> — ожидаемые отклонения (§4.1–4.2).
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Канон-аудит / логи проверок */}
+        <div className="bg-gray-800 p-6 rounded-lg border border-cyan-800/40 mb-8">
+          <h2 className="text-xl font-bold mb-2 text-cyan-300">📜 Канон-аудит симуляции</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Записи: отклонения до мемпула (кошелёк/God Mode), намерения бота, пост-разбор ленты блока (переводы §4.1, рынок
+            §5.2, declare §5.4, эпоха §5.5). Статус <span className="text-emerald-400">ok</span> — соответствует правилам;
+            <span className="text-red-400/90"> reject</span> — tx не прошла или отклонена намеренно при тесте;
+            <span className="text-amber-400/90"> warn</span> — внимание.
+          </p>
+          <div className="max-h-[420px] overflow-y-auto rounded border border-gray-700 bg-gray-950/80">
+            {(state.canon_log ?? []).length === 0 ? (
+              <p className="p-4 text-gray-600 text-sm">Пока нет записей — дождитесь блока или включите бота.</p>
+            ) : (
+              <ul className="divide-y divide-gray-800">
+                {(state.canon_log ?? []).map((e) => (
+                  <li key={e.id} className="px-3 py-2.5 text-sm hover:bg-gray-900/50">
+                    <div className="flex flex-wrap items-baseline gap-2 gap-y-1">
+                      <span
+                        className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                          e.status === 'ok'
+                            ? 'bg-emerald-900/50 text-emerald-300'
+                            : e.status === 'reject'
+                              ? 'bg-red-900/40 text-red-300'
+                              : e.status === 'warn'
+                                ? 'bg-amber-900/40 text-amber-200'
+                                : 'bg-slate-700 text-slate-300'
+                        }`}
+                      >
+                        {e.status}
+                      </span>
+                      <span className="text-[10px] text-gray-500">{e.source}</span>
+                      <span className="text-[10px] text-cyan-700/90 font-mono">{e.canon}</span>
+                      <span className="text-[10px] text-gray-600">
+                        {e.block_height != null ? `h=${e.block_height}` : ''}{' '}
+                        {e.tx_hash ? `· ${e.tx_hash.slice(0, 10)}…` : ''}
+                      </span>
+                    </div>
+                    <div className="text-gray-200 mt-1">{e.title}</div>
+                    {e.detail ? <div className="text-xs text-gray-500 mt-0.5 break-words">{e.detail}</div> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
 
@@ -527,24 +596,13 @@ function App() {
             </div>
           </div>
           
-          {/* Chart */}
-          <div className="h-64 min-h-64 min-w-0 w-full mb-8 bg-gray-900/50 rounded p-4 border border-gray-700/50">
-            {state.market?.history && state.market.history.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
-                <LineChart data={state.market.history}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="time" stroke="#9CA3AF" tick={{fontSize: 12}} />
-                  <YAxis stroke="#9CA3AF" tick={{fontSize: 12}} domain={['auto', 'auto']} />
-                  <Tooltip 
-                    contentStyle={{backgroundColor: '#1F2937', border: '1px solid #374151', color: '#fff'}}
-                    itemStyle={{color: '#4ADE80'}}
-                  />
-                  <Line type="monotone" dataKey="price" stroke="#4ADE80" strokeWidth={2} dot={false} isAnimationActive={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-gray-500">No price history yet. Start trading!</div>
-            )}
+          {/* Виджет графика (стиль TradingView + Lightweight Charts, данные симуляции) */}
+          <div className="min-w-0 w-full mb-8">
+            <TradingViewMarketWidget
+              history={state.market?.history ?? []}
+              lastPrice={state.market?.last_price ?? 0}
+              height={360}
+            />
           </div>
 
           {/* Manual Order Form */}
@@ -783,8 +841,7 @@ function App() {
                       </td>
                       <td className="py-3">
                         <span className={`px-2 py-1 rounded text-xs uppercase tracking-wider ${
-                          acc.role === 'guest' ? 'bg-gray-700 text-gray-300' :
-                          acc.role === 'citizen' ? 'bg-blue-900/50 text-blue-300' :
+                          acc.role === 'guest' || acc.role === 'citizen' ? 'bg-blue-900/50 text-blue-300' :
                           acc.role === 'provider' ? 'bg-orange-900/50 text-orange-300' :
                           'bg-green-900/50 text-green-300'
                         }`}>

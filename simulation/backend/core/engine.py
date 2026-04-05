@@ -22,6 +22,7 @@ class ConnectionManager:
                 pass
 
 from core.models import Role, Transaction, TransactionType, Order, OrderType
+from core.canon_audit import audit_block_ledger, log_engine_skip
 from core.state import (
     BLOCKS_PER_EPOCH,
     LZN_MAX_FROZEN_PER_ADDRESS,
@@ -65,7 +66,7 @@ class SimulationEngine:
 
     def _sanitize_ant_ineligible_roles(self, txs_in_block: list):
         """
-        §4.1–4.2: ANT только у Поставщика и Валидатора; Guest/Citizen — без ANT и без ордеров на рынке.
+        §4.1–4.2: ANT только у Поставщика и Валидатора; Гражданин (тип 1) — без ANT и без ордеров на рынке.
         Казначейство симуляции исключено.
         """
         bad_order_owners: set = set()
@@ -73,7 +74,7 @@ class SimulationEngine:
             owner = self.state.accounts.get(order.owner)
             if not owner or owner.address == SIM_TREASURY_ADDR:
                 continue
-            if owner.role in (Role.GUEST, Role.CITIZEN):
+            if owner.role == Role.CITIZEN:
                 bad_order_owners.add(owner.address)
         for addr in bad_order_owners:
             acc = self.state.accounts.get(addr)
@@ -83,13 +84,13 @@ class SimulationEngine:
                     "tx_hash": uuid.uuid4().hex,
                     "tx_type": "protocol_order_cancel",
                     "receiver": addr,
-                    "details": "Снятие ордеров: Guest/Citizen не участвуют в рынке ANT (§4.2)",
+                    "details": "Снятие ордеров: Гражданин (тип 1 §4.2) не участвует в рынке ANT",
                     "timestamp": time.time(),
                 })
         for acc in self.state.accounts.values():
             if acc.address == SIM_TREASURY_ADDR:
                 continue
-            if acc.role not in (Role.GUEST, Role.CITIZEN):
+            if acc.role != Role.CITIZEN:
                 continue
             if acc.ant_balance > 1e-12:
                 burnt = acc.ant_balance
@@ -100,7 +101,7 @@ class SimulationEngine:
                     "receiver": acc.address,
                     "amount": burnt,
                     "asset_type": "ant",
-                    "details": "§4.1: ANT сжёжен — роль Guest/Citizen не держит ANT",
+                    "details": "§4.1: ANT сжёжен — тип кошелька Гражданин (§4.2 тип 1) не держит ANT",
                     "timestamp": time.time(),
                 })
 
@@ -156,13 +157,7 @@ class SimulationEngine:
 
                     highest_bid.filled += match_amount
                     lowest_ask.filled += match_amount
-                    self.state.last_price = match_price
-
-                    self.state.price_history.append(
-                        {"time": time.strftime("%H:%M:%S"), "price": match_price}
-                    )
-                    if len(self.state.price_history) > 50:
-                        self.state.price_history.pop(0)
+                    self.state.record_trade_price(match_price)
 
                     matched_txs.append(
                         {
@@ -191,10 +186,7 @@ class SimulationEngine:
         return matched_txs
 
     def _push_trade_price(self, match_price: float) -> None:
-        self.state.last_price = match_price
-        self.state.price_history.append({"time": time.strftime("%H:%M:%S"), "price": match_price})
-        if len(self.state.price_history) > 50:
-            self.state.price_history.pop(0)
+        self.state.record_trade_price(match_price)
 
     def _execute_market_buy(self, tx: Transaction) -> List[dict]:
         """Покупка до amount ANT по лучшим ask, не более max_wrt WRT (списание с баланса по мере сделок)."""
@@ -616,6 +608,10 @@ class SimulationEngine:
         )
 
     async def produce_block(self):
+        balance_snap = {
+            addr: (float(acc.wrt_balance), float(acc.ant_balance))
+            for addr, acc in self.state.accounts.items()
+        }
         txs_in_block = []
         block_height = self.state.current_height + 1
         self._begin_block(block_height, txs_in_block)
@@ -648,6 +644,37 @@ class SimulationEngine:
                             recv.lzn_balance += amt
                             txs_in_block.append(tx.model_dump(mode="json"))
                             fee_ledger_ops += 1
+                        else:
+                            if asset not in ("wrt", "lzn"):
+                                log_engine_skip(
+                                    self.state,
+                                    block_height=block_height,
+                                    tx_hash=tx.tx_hash,
+                                    tx_type="transfer",
+                                    canon="§4.1",
+                                    title="Перевод отклонён: по канону только WRT и LZN (не ANT MsgSend)",
+                                    detail=f"asset={asset}",
+                                )
+                            elif asset == "wrt":
+                                log_engine_skip(
+                                    self.state,
+                                    block_height=block_height,
+                                    tx_hash=tx.tx_hash,
+                                    tx_type="transfer",
+                                    canon="§4.1",
+                                    title="Перевод WRT не исполнен",
+                                    detail="Недостаточно баланса отправителя",
+                                )
+                            elif asset == "lzn":
+                                log_engine_skip(
+                                    self.state,
+                                    block_height=block_height,
+                                    tx_hash=tx.tx_hash,
+                                    tx_type="transfer",
+                                    canon="§4.1",
+                                    title="Перевод LZN не исполнен",
+                                    detail="Недостаточно ликвидного LZN",
+                                )
             elif tx.tx_type == TransactionType.MINT:
                 if tx.sender != SIM_TREASURY_ADDR:
                     continue
@@ -663,6 +690,15 @@ class SimulationEngine:
                 if amt <= 0:
                     continue
                 if asset == "ant" and receiver.role not in (Role.PROVIDER, Role.VALIDATOR):
+                    log_engine_skip(
+                        self.state,
+                        block_height=block_height,
+                        tx_hash=tx.tx_hash,
+                        tx_type="mint",
+                        canon="§4.1–4.2",
+                        title="Mint ANT отклонён — соответствует канону",
+                        detail=f"Получатель role={receiver.role.value}; ANT на кошельке только у Поставщика и Валидатора.",
+                    )
                     continue
                 ok = False
                 if asset == "wrt" and treasury.wrt_balance + 1e-12 >= amt:
@@ -682,35 +718,39 @@ class SimulationEngine:
                     fee_ledger_ops += 1
             elif tx.tx_type == TransactionType.SET_ROLE:
                 addr = tx.sender or tx.receiver
-                if not addr or not tx.role:
-                    pass
-                else:
+                role_applied = False
+                if addr and tx.role:
                     rcv = self.state.accounts.get(addr)
                     if not rcv:
                         rcv = self.state.create_account(addr)
                     new_role = tx.role
-                    if new_role == Role.GUEST:
-                        self._release_orders_for_owner(addr, rcv)
-                        rcv.ant_balance = 0.0
-                        rcv.role = Role.GUEST
-                        txs_in_block.append(tx.model_dump(mode="json"))
-                        fee_ledger_ops += 1
-                    elif new_role == Role.CITIZEN:
+                    if new_role == Role.CITIZEN:
                         self._release_orders_for_owner(addr, rcv)
                         rcv.ant_balance = 0.0
                         rcv.role = Role.CITIZEN
                         txs_in_block.append(tx.model_dump(mode="json"))
                         fee_ledger_ops += 1
+                        role_applied = True
                     elif new_role == Role.VALIDATOR and eligible_for_validator_role(addr, rcv):
                         rcv.role = Role.VALIDATOR
                         txs_in_block.append(tx.model_dump(mode="json"))
                         fee_ledger_ops += 1
-                    elif new_role == Role.PROVIDER and rcv.role != Role.GUEST and eligible_for_provider_role(
-                        addr, rcv
-                    ):
+                        role_applied = True
+                    elif new_role == Role.PROVIDER and eligible_for_provider_role(addr, rcv):
                         rcv.role = Role.PROVIDER
                         txs_in_block.append(tx.model_dump(mode="json"))
                         fee_ledger_ops += 1
+                        role_applied = True
+                    if not role_applied:
+                        log_engine_skip(
+                            self.state,
+                            block_height=block_height,
+                            tx_hash=tx.tx_hash,
+                            tx_type="set_role",
+                            canon="§4.2 / §3.1",
+                            title="set_role не применён",
+                            detail=f"Запрошено {tx.role.value}: не выполнены ZKP/LZN или правила §4.2.",
+                        )
             elif tx.tx_type == TransactionType.ZKP_VERIFY:
                 zaddr = tx.sender or tx.receiver
                 if zaddr:
@@ -731,7 +771,7 @@ class SimulationEngine:
                             fee_ledger_ops += 1
             elif tx.tx_type == TransactionType.CREATE_ORDER:
                 owner = self.state.accounts.get(tx.sender)
-                if owner and owner.role not in (Role.GUEST, Role.CITIZEN):
+                if owner and owner.role in (Role.PROVIDER, Role.VALIDATOR):
                     if getattr(tx, "market", False):
                         mtr: List[dict] = []
                         if tx.order_type == OrderType.BUY:
@@ -743,6 +783,16 @@ class SimulationEngine:
                             fee_ledger_ops += 1
                             txs_in_block.extend(mtr)
                             fee_ledger_ops += len(mtr)
+                        else:
+                            log_engine_skip(
+                                self.state,
+                                block_height=block_height,
+                                tx_hash=tx.tx_hash,
+                                tx_type="create_order",
+                                canon="§5.2",
+                                title="Рыночная заявка без исполнения",
+                                detail="Нет подходящей ликвидности в книге или исчерпан лимит WRT/ANT.",
+                            )
                     elif (
                         tx.order_type == OrderType.BUY
                         and owner.role == Role.VALIDATOR
@@ -805,6 +855,17 @@ class SimulationEngine:
         )
 
         self._end_block(block_height, txs_in_block, participation, B_applied, cap, burn_band_ok, fee_tx_count)
+
+        audit_block_ledger(self.state, txs_in_block, block_height)
+
+        delta_map: Dict[str, Dict[str, float]] = {}
+        for addr, acc in self.state.accounts.items():
+            w0, a0 = balance_snap.get(addr, (0.0, 0.0))
+            dw = float(acc.wrt_balance) - w0
+            da = float(acc.ant_balance) - a0
+            if abs(dw) > 1e-9 or abs(da) > 1e-9:
+                delta_map[addr] = {"wrt": dw, "ant": da}
+        self.state.last_block_wallet_delta = delta_map
 
         import hashlib
         block_hash = hashlib.sha256(f"{self.state.current_height + 1}{time.time()}".encode()).hexdigest()[:16]

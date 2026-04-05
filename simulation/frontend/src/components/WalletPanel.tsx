@@ -115,8 +115,7 @@ export function WalletPanel({
   }
 
   const role = account.role
-  const isGuest = role === 'guest'
-  const isCitizen = role === 'citizen'
+  const isCitizenWallet = role === 'citizen' || role === 'guest'
   const isValidator = role === 'validator'
   const isProvider = role === 'provider'
   /** §4.2: ордера на рынке ANT — только Валидатор (BUY) и Поставщик (SELL). */
@@ -159,9 +158,9 @@ export function WalletPanel({
           <div>
             <div className="text-gray-500 text-xs uppercase">ANT</div>
             <div className="font-mono text-orange-300">
-              {isGuest || isCitizen ? '—' : account.ant_balance.toFixed(4)}
+              {isCitizenWallet ? '—' : account.ant_balance.toFixed(4)}
             </div>
-            {(isGuest || isCitizen) && (
+            {isCitizenWallet && (
               <div className="text-[10px] text-gray-600 mt-0.5">не хранится</div>
             )}
           </div>
@@ -203,9 +202,11 @@ export function WalletPanel({
       <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
         <h3 className="text-sm font-semibold text-gray-300 mb-2">Смена роли (tx set_role)</h3>
         <p className="text-xs text-gray-500 mb-3">
-          Поставщик / Валидатор (не genesis): нужны ZKP и хотя бы 1 LZN (ликвидный или активированный). Поставщик: нельзя из
-          Guest — сначала Citizen. Guest/Citizen: без ANT (§4.1–4.2). Переход в Guest или Citizen сжигает ANT и снимает
-          ордера.
+          Канон §4.2 (v4.20): три типа кошелька — <strong className="text-gray-400">Гражданин</strong> (тип 1),{' '}
+          <strong className="text-gray-400">Поставщик</strong>, <strong className="text-gray-400">Валидатор</strong>.{' '}
+          Поставщик/Валидатор (не genesis): ZKP и ≥1 LZN. Гражданин: WRT/LZN, баланс ANT недоступен (§4.2). Переход в
+          Гражданина сжигает ANT и снимает ордера. Отдельно: <strong className="text-gray-500">граждане DAO</strong> (§4.1)
+          — держатели WRT с правом голоса; не путать с типом кошелька «Гражданин» и с «Поставщиком» (§4.1–4.2).
         </p>
         <RoleChangeForm
           currentRole={role}
@@ -241,10 +242,10 @@ export function WalletPanel({
         </section>
       )}
 
-      {isCitizen && (
+      {isCitizenWallet && (
         <p className="text-sm text-gray-500 bg-gray-900/30 p-3 rounded border border-gray-700/50">
-          Citizen в симуляции = неверифицированный кошелёк с WRT/LZN. ANT и рынок Anteil — только у ролей{' '}
-          <span className="text-orange-300">Поставщик</span> / <span className="text-green-300">Валидатор</span> (§4.2, §5.2).
+          Гражданин, тип 1 §4.2: не-верифицированный кошелёк — WRT и LZN; без ANT и без рынка Anteil до ролей{' '}
+          <span className="text-orange-300">Поставщик</span> / <span className="text-green-300">Валидатор</span> (§5.2).
         </p>
       )}
 
@@ -317,12 +318,6 @@ export function WalletPanel({
         </section>
       )}
 
-      {isGuest && (
-        <p className="text-sm text-gray-500">
-          Гость: WRT/LZN и переход в Citizen. Без ANT и без рынка Anteil — до верифицированной роли Поставщик/Валидатор.
-        </p>
-      )}
-
       {/* Declare */}
       {isValidator && (
         <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
@@ -352,6 +347,14 @@ export function WalletPanel({
   )
 }
 
+const WALLET_ROLES = ['citizen', 'provider', 'validator'] as const
+type WalletRole = (typeof WALLET_ROLES)[number]
+
+function normalizeWalletRole(r: string): WalletRole {
+  if (r === 'guest') return 'citizen'
+  return WALLET_ROLES.includes(r as WalletRole) ? (r as WalletRole) : 'citizen'
+}
+
 function RoleChangeForm({
   currentRole,
   disabled,
@@ -369,7 +372,10 @@ function RoleChangeForm({
   isGenesisValidator: boolean
   onSubmit: (r: string) => void
 }) {
-  const [role, setRole] = useState('citizen')
+  const [role, setRole] = useState<WalletRole>(() => normalizeWalletRole(currentRole))
+  useEffect(() => {
+    setRole(normalizeWalletRole(currentRole))
+  }, [currentRole])
   const providerBlocked = role === 'provider' && !canBecomeProvider && role !== currentRole
   const validatorBlocked = role === 'validator' && !canBecomeValidator && role !== currentRole
   const submitBlocked = disabled || role === currentRole || providerBlocked || validatorBlocked
@@ -377,14 +383,13 @@ function RoleChangeForm({
     <div className="flex flex-wrap gap-2 items-end">
       <select
         value={role}
-        onChange={(e) => setRole(e.target.value)}
+        onChange={(e) => setRole(normalizeWalletRole(e.target.value))}
         className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm"
         disabled={disabled}
       >
-        <option value="guest">Guest</option>
-        <option value="citizen">Citizen</option>
-        <option value="provider">Provider</option>
-        <option value="validator">Validator</option>
+        <option value="citizen">Гражданин (тип 1, §4.2)</option>
+        <option value="provider">Поставщик</option>
+        <option value="validator">Валидатор</option>
       </select>
       <button
         type="button"

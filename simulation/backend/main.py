@@ -11,6 +11,8 @@ from core.state import StateManager, SIM_TREASURY_ADDR
 from core.models import Role
 from core.bot_engine import BotEngine
 from core.wallet_validate import validate_and_build_tx, validate_treasury_mint
+from core.canon_audit import log_wallet_rejection
+from core.market_bars import bars_to_echarts_payload, ticks_to_ohlc_bars
 
 app = FastAPI(title="Volnix Simulation API")
 
@@ -53,6 +55,45 @@ def read_root():
 def get_state():
     return state_manager.get_full_state()
 
+
+@app.get("/api/market/history")
+def api_market_history(limit: int = 10_000):
+    """История тиков цены для графика/виджета (хвост до limit, max 50_000).
+
+    Формат тика: time (строка), price (float), ts (unix_seconds, желательно).
+    Поле ts обязательно для корректной агрегации; для Apache ECharts см. GET /api/market/bars.
+    """
+    cap = max(1, min(int(limit), 50_000))
+    hist = state_manager.price_history
+    if len(hist) > cap:
+        hist = hist[-cap:]
+    return {
+        "last_price": state_manager.last_price,
+        "history": hist,
+    }
+
+
+@app.get("/api/market/bars")
+def api_market_bars(interval_sec: int = 0, limit_ticks: int = 50_000):
+    """OHLC в формате Apache ECharts candlestick: category[], values[][open,close,low,high], times[].
+
+    interval_sec: 0 — одна свеча на сделку; 1, 60, 300, … — корзина в секундах.
+    """
+    cap = max(1, min(int(limit_ticks), 50_000))
+    hist = state_manager.price_history
+    if len(hist) > cap:
+        hist = hist[-cap:]
+    iv = int(interval_sec)
+    bars = ticks_to_ohlc_bars(hist, iv)
+    payload = bars_to_echarts_payload(bars, trade_mode=(iv <= 0))
+    return {
+        "interval_sec": iv,
+        "last_price": state_manager.last_price,
+        "bar_count": len(bars),
+        **payload,
+    }
+
+
 # --- God Mode API ---
 
 class BlockTimeRequest(BaseModel):
@@ -87,6 +128,7 @@ def mint_tokens(req: MintRequest):
         state_manager, req.address.strip(), req.amount, req.asset_type
     )
     if not ok or tx is None:
+        log_wallet_rejection(state_manager, "mint", msg, req.address.strip())
         return {"status": "error", "message": msg}
     state_manager.mempool.append(tx)
     return {
@@ -110,6 +152,7 @@ def set_role(req: RoleRequest):
         role=req.role,
     )
     if not ok or tx is None:
+        log_wallet_rejection(state_manager, "set_role", msg, req.address.strip())
         return {"status": "error", "message": msg}
     state_manager.mempool.append(tx)
     return {
@@ -142,6 +185,7 @@ def create_order(req: OrderRequest):
         max_wrt=req.max_wrt,
     )
     if not ok or tx is None:
+        log_wallet_rejection(state_manager, "create_order", msg, req.address.strip())
         return {"status": "error", "message": msg}
     state_manager.mempool.append(tx)
     return {"status": "queued", "message": msg, "tx_hash": tx.tx_hash}
@@ -226,6 +270,7 @@ def wallet_submit_tx(body: WalletSubmitBody):
         max_wrt=body.max_wrt,
     )
     if not ok or tx is None:
+        log_wallet_rejection(state_manager, body.op, msg, body.address.strip())
         return {"accepted": False, "message": msg}
     state_manager.mempool.append(tx)
     return {"accepted": True, "message": msg, "tx_hash": tx.tx_hash}
