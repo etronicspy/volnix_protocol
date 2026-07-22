@@ -1,0 +1,20 @@
+name: provider_market_dump
+description: |
+  §5.2: provider пытается продать ANT через лимитный SELL, валидатор покупает.
+  Проверяем, что match произошёл (баланс ANT валидатора > 0, WRT провайдера > 0).
+seed: 13
+steps:
+  - set_block_time: { seconds: 0.1 }
+  - create_account: { address: "p_dumper", role: "provider", zkp: true }
+  - create_account: { address: "v_buyer", role: "validator", zkp: true }
+  - mint: { receiver: "p_dumper", amount: 50, asset: "ant" }
+  - mint: { receiver: "v_buyer", amount: 100, asset: "wrt" }
+  - mint: { receiver: "v_buyer", amount: 100, asset: "lzn" }
+  # Чтобы пройти burn-cap — genesis validator делает declare на цель
+  - declare: { address: "volnix1gval0validator0genesis0", burn: 2222.33333, stake: 0 }
+  - order: { address: "p_dumper", side: "sell", price: 5, amount: 10 }
+  - order: { address: "v_buyer", side: "buy", price: 5, amount: 10 }
+  - wait_blocks: { n: 1 }
+asserts:
+  - balance: { address: "v_buyer", asset: "ant", op: ">", value: 0 }
+  - balance: { address: "p_dumper", asset: "wrt", op: ">", value: 0 }

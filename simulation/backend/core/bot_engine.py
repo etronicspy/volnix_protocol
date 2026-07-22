@@ -2,15 +2,18 @@ import asyncio
 import random
 import time
 import uuid
+from typing import Optional
+
+from core.canon_audit import log_bot_queue, log_wallet_rejection
+from core.models import OrderType, Role, Transaction, TransactionType
 from core.state import (
-    StateManager,
-    SIM_TREASURY_ADDR,
     BLOCKS_PER_EPOCH,
+    SIM_TREASURY_ADDR,
+    StateManager,
     eligible_for_provider_role,
     eligible_for_validator_role,
 )
-from core.models import Role, Transaction, TransactionType, OrderType
-from core.canon_audit import log_bot_queue
+from core.wallet_validate import validate_and_build_tx, validate_treasury_mint
 
 # Бот создаёт только адреса с префиксом bot_<hex>; не трогает genesis / казну / чужие кошельки.
 BOT_ADDRESS_PREFIX = "bot_"
@@ -69,13 +72,117 @@ class BotEngine:
         self.state = state_manager
         self.is_running = False
         self.tx_per_second = 1.0
+        # Настройки "наблюдаемости": генерировать канон-пробы (ожидаемые отклонения в блоке)
+        self.enable_probes = True
+        # Доля probе-tx среди всех действий бота (0..1)
+        self.probe_ratio = 0.15
+        # Тогглы конкретных проб
+        self.probe_transfer_ant = True
+        self.probe_mint_ant_citizen = True
+        self.probe_wrong_role_declare = True
+        self.probe_wrong_role_activate_lzn = True
+        self.probe_wrong_role_order = True
+        self.probe_cancel_not_owned = True
 
     def set_intensity(self, tx_per_second: float):
         self.tx_per_second = max(0.1, min(tx_per_second, 100.0))
 
-    def _queue_tx(self, tx: Transaction, action: str, detail: str) -> None:
+    def set_probe_settings(
+        self,
+        *,
+        enable=None,
+        ratio=None,
+        transfer_ant=None,
+        mint_ant_citizen=None,
+        wrong_role_declare=None,
+        wrong_role_activate_lzn=None,
+        wrong_role_order=None,
+        cancel_not_owned=None,
+    ) -> None:
+        if enable is not None:
+            self.enable_probes = bool(enable)
+        if ratio is not None:
+            try:
+                r = float(ratio)
+            except (TypeError, ValueError):
+                r = self.probe_ratio
+            self.probe_ratio = max(0.0, min(1.0, r))
+        if transfer_ant is not None:
+            self.probe_transfer_ant = bool(transfer_ant)
+        if mint_ant_citizen is not None:
+            self.probe_mint_ant_citizen = bool(mint_ant_citizen)
+        if wrong_role_declare is not None:
+            self.probe_wrong_role_declare = bool(wrong_role_declare)
+        if wrong_role_activate_lzn is not None:
+            self.probe_wrong_role_activate_lzn = bool(wrong_role_activate_lzn)
+        if wrong_role_order is not None:
+            self.probe_wrong_role_order = bool(wrong_role_order)
+        if cancel_not_owned is not None:
+            self.probe_cancel_not_owned = bool(cancel_not_owned)
+
+    def _mempool_push(self, tx: Transaction, sender: str = "") -> None:
+        """Подача tx: NetworkSim (если attached) или общий мемпул."""
+        net = getattr(self.state, "network", None)
+        if net is not None:
+            addr = sender or getattr(tx, "sender", "") or ""
+            try:
+                if addr:
+                    net.submit_from_addr(addr, tx)
+                else:
+                    net.submit_to("node_0", tx)
+                return
+            except Exception:
+                pass
         self.state.mempool.append(tx)
+
+    def _queue_tx(self, tx: Transaction, action: str, detail: str) -> None:
+        """Прямая постановка готовой Transaction в мемпул (legacy: для рукотворных tx бота).
+
+        Все новые сценарии должны идти через _submit_op / _submit_mint, которые проходят через
+        validate_and_build_tx (единые правила admission с кошельком и Sim Operator).
+        """
+        self._mempool_push(tx, getattr(tx, "sender", "") or "")
         log_bot_queue(self.state, action, detail, tx.tx_hash)
+
+    def _submit_op(
+        self,
+        *,
+        op: str,
+        address: str,
+        action: str,
+        detail: str,
+        **kwargs,
+    ) -> Optional[Transaction]:
+        """Сценарии бота → validate_and_build_tx (как кошелёк / Sim Operator).
+
+        Логирует rejection в канон-аудит, если правила admission отвергают tx до мемпула.
+        """
+        ok, msg, tx = validate_and_build_tx(self.state, op, address, **kwargs)
+        if not ok or tx is None:
+            log_wallet_rejection(self.state, op, f"bot: {msg}", address)
+            return None
+        self._mempool_push(tx, address)
+        log_bot_queue(self.state, action, detail, tx.tx_hash)
+        return tx
+
+    def _submit_mint(
+        self,
+        *,
+        receiver: str,
+        amount: float,
+        asset: str,
+        action: str,
+        detail: str,
+    ) -> Optional[Transaction]:
+        """Бот-минт из казны → validate_treasury_mint (как Sim Operator)."""
+        ok, msg, tx = validate_treasury_mint(self.state, receiver, amount, asset)
+        if not ok or tx is None:
+            log_wallet_rejection(self.state, "mint", f"bot: {msg}", receiver)
+            return None
+        # Sim Operator → treasury node (node_0)
+        self._mempool_push(tx, getattr(tx, "sender", "") or "")
+        log_bot_queue(self.state, action, detail, tx.tx_hash)
+        return tx
 
     async def start(self):
         self.is_running = True
@@ -100,35 +207,50 @@ class BotEngine:
         # 1. Разгон только кошельков bot_*; казна — лишь источник первого минта WRT
         if bot_count < 10 or (bot_count < 100 and random.random() < 0.05):
             new_addr = f"{BOT_ADDRESS_PREFIX}{uuid.uuid4().hex[:8]}"
-            tx = Transaction(
-                tx_hash=uuid.uuid4().hex,
-                tx_type=TransactionType.MINT,
-                sender=SIM_TREASURY_ADDR,
+            self.state.create_account(new_addr)
+            amount = round(random.uniform(50, 200), 2)
+            self._submit_mint(
                 receiver=new_addr,
-                amount=round(random.uniform(50, 200), 2),
-                asset_type="wrt",
-                timestamp=time.time()
+                amount=amount,
+                asset="wrt",
+                action="mint_wrt_new_bot",
+                detail=f"WRT казна → новый адрес {new_addr} (разгон книги)",
             )
-            treasury = self.state.accounts.get(SIM_TREASURY_ADDR)
-            if treasury and treasury.wrt_balance >= tx.amount:
-                self._queue_tx(tx, "mint_wrt_new_bot", f"WRT казна → новый адрес {new_addr} (разгон книги)")
             return
 
-        # 2. Сценарии нагрузки + редкие проверки канона (ожидаемые отклонения в блоке)
-        action = random.choices(
-            [
-                "transfer",
-                "trade",
-                "cancel_order",
-                "mint",
-                "set_role",
-                "declare",
-                "zkp_verify",
-                "canon_probe_mint_ant_citizen",
-                "canon_probe_transfer_ant",
-            ],
-            weights=[0.24, 0.19, 0.09, 0.12, 0.07, 0.09, 0.06, 0.08, 0.06],
-        )[0]
+        # 2. Сценарии нагрузки + настраиваемые проверки канона (ожидаемые отклонения в блоке)
+        probes: list[str] = []
+        if self.enable_probes:
+            if self.probe_mint_ant_citizen:
+                probes.append("canon_probe_mint_ant_citizen")
+            if self.probe_transfer_ant:
+                probes.append("canon_probe_transfer_ant")
+            if self.probe_wrong_role_declare:
+                probes.append("canon_probe_wrong_role_declare")
+            if self.probe_wrong_role_activate_lzn:
+                probes.append("canon_probe_wrong_role_activate_lzn")
+            if self.probe_wrong_role_order:
+                probes.append("canon_probe_wrong_role_order")
+            if self.probe_cancel_not_owned:
+                probes.append("canon_probe_cancel_not_owned")
+
+        base_actions = [
+            "transfer",
+            "trade",
+            "cancel_order",
+            "mint",
+            "set_role",
+            "declare",
+            "zkp_verify",
+        ]
+
+        if probes and random.random() < self.probe_ratio:
+            action = random.choice(probes)
+        else:
+            action = random.choices(
+                base_actions,
+                weights=[0.24, 0.19, 0.09, 0.12, 0.07, 0.09, 0.06],
+            )[0]
 
         if action == "declare":
             validators = [
@@ -151,19 +273,13 @@ class BotEngine:
                     if b + s > cap + 1e-9 or b + s > ant + 1e-9:
                         s = max(0.0, min(cap - b, ant - b))
                     if b + s <= ant + 1e-9 and b + s <= cap + 1e-9 and b + s >= 0.01:
-                        tx = Transaction(
-                            tx_hash=uuid.uuid4().hex,
-                            tx_type=TransactionType.DECLARE_PARTICIPATION,
-                            sender=val.address,
-                            amount=b,
-                            stake_amount=s,
-                            asset_type="ant",
-                            timestamp=time.time(),
-                        )
-                        self._queue_tx(
-                            tx,
-                            "declare",
-                            f"§5.4 b={b} s={s} (валидатор {val.address[:14]}…)",
+                        self._submit_op(
+                            op="declare",
+                            address=val.address,
+                            action="declare",
+                            detail=f"§5.4 b={b} s={s} (валидатор {val.address[:14]}…)",
+                            burn_b=b,
+                            stake_s=s,
                         )
             return
 
@@ -171,14 +287,12 @@ class BotEngine:
             candidates = [a for a in accounts if not a.zkp_verified]
             if candidates:
                 t = random.choice(candidates)
-                tx = Transaction(
-                    tx_hash=uuid.uuid4().hex,
-                    tx_type=TransactionType.ZKP_VERIFY,
-                    sender=t.address,
-                    receiver=t.address,
-                    timestamp=time.time(),
+                self._submit_op(
+                    op="verify_zkp",
+                    address=t.address,
+                    action="zkp_verify",
+                    detail=f"§3.1 симуляция → {t.address[:16]}…",
                 )
-                self._queue_tx(tx, "zkp_verify", f"§3.1 симуляция → {t.address[:16]}…")
             return
 
         elif action == "set_role":
@@ -201,15 +315,13 @@ class BotEngine:
                 break
             if new_role is None:
                 return
-            tx = Transaction(
-                tx_hash=uuid.uuid4().hex,
-                tx_type=TransactionType.SET_ROLE,
-                sender=target.address,
-                receiver=target.address,
+            self._submit_op(
+                op="set_role",
+                address=target.address,
+                action="set_role",
+                detail=f"§4.2 → {new_role.value} для {target.address[:14]}…",
                 role=new_role,
-                timestamp=time.time(),
             )
-            self._queue_tx(tx, "set_role", f"§4.2 → {new_role.value} для {target.address[:14]}…")
             return
 
         elif action == "mint":
@@ -219,28 +331,17 @@ class BotEngine:
             possible_assets = ["wrt", "lzn"]
             if target.role in (Role.PROVIDER, Role.VALIDATOR):
                 possible_assets.append("ant")
-            
+
             asset = random.choice(possible_assets)
             amount = round(random.uniform(10, 100), 2)
-            
-            tx = Transaction(
-                tx_hash=uuid.uuid4().hex,
-                tx_type=TransactionType.MINT,
-                sender=SIM_TREASURY_ADDR,
+
+            self._submit_mint(
                 receiver=target.address,
                 amount=amount,
-                asset_type=asset,
-                timestamp=time.time()
+                asset=asset,
+                action="mint",
+                detail=f"§4.1 {asset.upper()} {amount} → {target.role.value} {target.address[:14]}…",
             )
-            
-            treasury = self.state.accounts.get(SIM_TREASURY_ADDR)
-            if treasury:
-                if asset == "wrt" and treasury.wrt_balance >= amount:
-                    self._queue_tx(tx, "mint", f"§4.1 WRT {amount} → {target.address[:14]}…")
-                elif asset == "lzn" and treasury.lzn_balance >= amount:
-                    self._queue_tx(tx, "mint", f"§4.1 LZN {amount} → {target.address[:14]}…")
-                elif asset == "ant" and treasury.ant_balance >= amount:
-                    self._queue_tx(tx, "mint", f"§4.1 ANT {amount} → {target.role.value} {target.address[:12]}…")
             return
 
         elif action == "transfer":
@@ -269,16 +370,16 @@ class BotEngine:
             amount = round(random.uniform(0.1, min(sender.wrt_balance * frac_hi, cap)), 2)
             if amount < 0.1:
                 amount = min(sender.wrt_balance, 0.11)
-                
-            tx = Transaction(
-                tx_hash=uuid.uuid4().hex,
-                tx_type=TransactionType.TRANSFER,
-                sender=sender.address,
-                receiver=receiver.address,
+
+            self._submit_op(
+                op="transfer",
+                address=sender.address,
+                action="transfer",
+                detail=f"§4.1 WRT {amount}: {sender.address[:10]}… → {receiver.address[:10]}…",
+                to_address=receiver.address,
                 amount=amount,
-                timestamp=time.time()
+                asset="wrt",
             )
-            self._queue_tx(tx, "transfer", f"§4.1 WRT {amount}: {sender.address[:10]}… → {receiver.address[:10]}…")
             return
 
         elif action == "cancel_order":
@@ -288,14 +389,13 @@ class BotEngine:
             if not bot_orders:
                 return
             order_to_cancel = random.choice(bot_orders)
-            tx = Transaction(
-                tx_hash=uuid.uuid4().hex,
-                tx_type=TransactionType.CANCEL_ORDER,
-                sender=order_to_cancel.owner,
+            self._submit_op(
+                op="cancel_order",
+                address=order_to_cancel.owner,
+                action="cancel_order",
+                detail=f"§5.2 отмена ордера {order_to_cancel.id[:10]}…",
                 order_id=order_to_cancel.id,
-                timestamp=time.time()
             )
-            self._queue_tx(tx, "cancel_order", f"§5.2 отмена ордера {order_to_cancel.id[:10]}…")
             return
 
         elif action == "trade":
@@ -385,20 +485,17 @@ class BotEngine:
                     if shares_amount > liquid_ant:
                         shares_amount = round(liquid_ant * 0.98, 2)
                     if shares_amount >= 0.02:
-                        tx = Transaction(
-                            tx_hash=uuid.uuid4().hex,
-                            tx_type=TransactionType.CREATE_ORDER,
-                            sender=trader.address,
-                            order_type=OrderType.SELL,
-                            price=0.0,
+                        self._submit_op(
+                            op="create_order",
+                            address=trader.address,
+                            action="create_order",
+                            detail=(
+                                f"§5.2 MARKET SELL {shares_amount} ANT "
+                                f"(urgency={urgency:.2f} tension={tension:.2f} escrow_SELL={escrow_sell_ant:.2f})"
+                            ),
+                            side="sell",
                             amount=shares_amount,
                             market=True,
-                            timestamp=time.time(),
-                        )
-                        self._queue_tx(
-                            tx,
-                            "create_order",
-                            f"§5.2 MARKET SELL {shares_amount} ANT (urgency={urgency:.2f} tension={tension:.2f} escrow_SELL={escrow_sell_ant:.2f})",
                         )
                     return
 
@@ -438,34 +535,31 @@ class BotEngine:
                     return
 
             if order_type == OrderType.BUY and trader.wrt_balance >= (price * shares_amount):
-                tx = Transaction(
-                    tx_hash=uuid.uuid4().hex,
-                    tx_type=TransactionType.CREATE_ORDER,
-                    sender=trader.address,
-                    order_type=order_type,
+                self._submit_op(
+                    op="create_order",
+                    address=trader.address,
+                    action="create_order",
+                    detail=(
+                        f"§5.2 BUY {shares_amount} ANT @ {price} WRT "
+                        f"(цель ~{VALIDATOR_TARGET_WEEKLY_WRT_RETURN:.0%}/нед, "
+                        f"bid≈{bid_mult:.2f}× last≈{anchor:.3f}/(1+r), Δблок WRT={dw:+.4f} ANT={da:+.4f})"
+                    ),
+                    side="buy",
                     price=price,
                     amount=shares_amount,
-                    timestamp=time.time()
-                )
-                self._queue_tx(
-                    tx,
-                    "create_order",
-                    f"§5.2 BUY {shares_amount} ANT @ {price} WRT (цель ~{VALIDATOR_TARGET_WEEKLY_WRT_RETURN:.0%}/нед, bid≈{bid_mult:.2f}× last≈{anchor:.3f}/(1+r), Δблок WRT={dw:+.4f} ANT={da:+.4f})",
                 )
             elif order_type == OrderType.SELL and trader.role == Role.PROVIDER and trader.ant_balance >= shares_amount:
-                tx = Transaction(
-                    tx_hash=uuid.uuid4().hex,
-                    tx_type=TransactionType.CREATE_ORDER,
-                    sender=trader.address,
-                    order_type=order_type,
+                self._submit_op(
+                    op="create_order",
+                    address=trader.address,
+                    action="create_order",
+                    detail=(
+                        f"§5.2 SELL {shares_amount} ANT @ {price} WRT "
+                        f"(tension={tension:.2f}, Δблок WRT={dw:+.4f} ANT={da:+.4f})"
+                    ),
+                    side="sell",
                     price=price,
                     amount=shares_amount,
-                    timestamp=time.time()
-                )
-                self._queue_tx(
-                    tx,
-                    "create_order",
-                    f"§5.2 SELL {shares_amount} ANT @ {price} WRT (tension={tension:.2f}, Δблок WRT={dw:+.4f} ANT={da:+.4f})",
                 )
             return
 
@@ -517,5 +611,98 @@ class BotEngine:
                 tx,
                 "canon_probe",
                 "Тест канона: прямой перевод ANT — в блоке отклонение §4.1 (только внутренний рынок)",
+            )
+            return
+
+        elif action == "canon_probe_wrong_role_declare":
+            # Подать declare не-валидатором — должно отклониться при финализации §5.4
+            pool = [a for a in accounts if a.role != Role.VALIDATOR and a.zkp_verified]
+            if not pool:
+                pool = [a for a in accounts if a.role != Role.VALIDATOR]
+            if not pool:
+                return
+            t = random.choice(pool)
+            tx = Transaction(
+                tx_hash=uuid.uuid4().hex,
+                tx_type=TransactionType.DECLARE_PARTICIPATION,
+                sender=t.address,
+                amount=1.0,
+                stake_amount=0.0,
+                asset_type="ant",
+                timestamp=time.time(),
+            )
+            self._queue_tx(
+                tx,
+                "canon_probe",
+                "Тест канона: declare от не-валидатора — в блоке отклонение §5.4/§4.2",
+            )
+            return
+
+        elif action == "canon_probe_wrong_role_activate_lzn":
+            # Подать activate_lzn от не-валидатора — должно отклониться в DeliverTx
+            pool = [a for a in accounts if a.role != Role.VALIDATOR and a.lzn_balance > 0.01]
+            if not pool:
+                pool = [a for a in accounts if a.role != Role.VALIDATOR]
+            if not pool:
+                return
+            t = random.choice(pool)
+            tx = Transaction(
+                tx_hash=uuid.uuid4().hex,
+                tx_type=TransactionType.ACTIVATE_LZN,
+                sender=t.address,
+                amount=1.0,
+                asset_type="lzn",
+                timestamp=time.time(),
+            )
+            self._queue_tx(
+                tx,
+                "canon_probe",
+                "Тест канона: activate_lzn от не-валидатора — в блоке отклонение §4.2",
+            )
+            return
+
+        elif action == "canon_probe_wrong_role_order":
+            # Поставить ордер от Гражданина — должно отклониться в DeliverTx (рынок §5.2)
+            citizens = [a for a in accounts if a.role == Role.CITIZEN]
+            if not citizens:
+                return
+            c = random.choice(citizens)
+            tx = Transaction(
+                tx_hash=uuid.uuid4().hex,
+                tx_type=TransactionType.CREATE_ORDER,
+                sender=c.address,
+                order_type=random.choice([OrderType.BUY, OrderType.SELL]),
+                price=10.0,
+                amount=1.0,
+                timestamp=time.time(),
+            )
+            self._queue_tx(
+                tx,
+                "canon_probe",
+                "Тест канона: create_order от Гражданина — в блоке отклонение §4.2/§5.2",
+            )
+            return
+
+        elif action == "canon_probe_cancel_not_owned":
+            # Попробовать отменить ордер чужим адресом — должно отклониться в DeliverTx
+            any_orders = list(self.state.orders.values())
+            if not any_orders:
+                return
+            o = random.choice(any_orders)
+            impostors = [a for a in accounts if a.address != o.owner]
+            if not impostors:
+                return
+            imp = random.choice(impostors)
+            tx = Transaction(
+                tx_hash=uuid.uuid4().hex,
+                tx_type=TransactionType.CANCEL_ORDER,
+                sender=imp.address,
+                order_id=o.id,
+                timestamp=time.time(),
+            )
+            self._queue_tx(
+                tx,
+                "canon_probe",
+                "Тест канона: cancel_order не владельцем — в блоке отклонение §5.2",
             )
             return

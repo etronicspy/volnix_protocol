@@ -1,0 +1,13 @@
+name: validator_coalition_burn
+description: |
+  §5.4: единственный валидатор (genesis) исполняет declare ровно на цель λ·L_total.
+  Блок должен пройти burn_band, высота вырасти.
+seed: 7
+steps:
+  - set_block_time: { seconds: 0.1 }
+  # На genesis L_total = 6667; cap = λ·L_total ≈ 2222.33.
+  - declare: { address: "volnix1gval0validator0genesis0", burn: 2222.33333, stake: 0 }
+  - wait_blocks: { n: 1 }
+asserts:
+  - block_height: { op: ">=", value: 1 }
+  - canon_log: { status: "ok", canon: "§5.4", min_count: 1 }

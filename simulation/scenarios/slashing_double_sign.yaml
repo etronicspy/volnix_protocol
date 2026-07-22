@@ -1,0 +1,15 @@
+name: slashing_double_sign
+description: |
+  §5.4 + Этап 3: включаем double_sign-режим, добавляем второго валидатора,
+  ожидаем evidence + блок reject + canon_log запись category=slashing.
+seed: 99
+steps:
+  - set_block_time: { seconds: 0.1 }
+  - create_account: { address: "v_double", role: "validator", zkp: true }
+  - mint: { receiver: "v_double", amount: 50, asset: "lzn" }
+  # активируем как frozen чтобы было что slash-ить
+  - declare: { address: "volnix1gval0validator0genesis0", burn: 2222.33333, stake: 0 }
+  - consensus: { p_double_sign: 1.0, seed: 99 }
+  - wait_blocks: { n: 1 }
+asserts:
+  - canon_log: { status: "reject", canon: "§6.1", min_count: 1 }

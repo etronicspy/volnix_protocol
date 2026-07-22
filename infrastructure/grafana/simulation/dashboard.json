@@ -1,0 +1,103 @@
+{
+  "title": "Volnix Simulation R&D",
+  "uid": "volnix-sim-rd",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "timezone": "browser",
+  "tags": ["volnix", "simulation", "r&d"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Block time (seconds)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(volnix_sim_block_time_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(volnix_sim_block_time_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "B"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "id": 2,
+      "title": "TPS / mempool",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "volnix_sim_tps", "legendFormat": "tps", "refId": "A"},
+        {"expr": "volnix_sim_mempool_size", "legendFormat": "mempool", "refId": "B"}
+      ],
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "id": 3,
+      "title": "Accepted block ratio",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "volnix_sim_accepted_block_ratio", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 3}},
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 6}
+    },
+    {
+      "id": 4,
+      "title": "Burn / emission ratio",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "volnix_sim_burn_ratio", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"decimals": 3}},
+      "gridPos": {"x": 6, "y": 8, "w": 6, "h": 6}
+    },
+    {
+      "id": 5,
+      "title": "Gini per asset",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "volnix_sim_gini{asset=\"wrt\"}", "legendFormat": "WRT", "refId": "A"},
+        {"expr": "volnix_sim_gini{asset=\"ant\"}", "legendFormat": "ANT", "refId": "B"},
+        {"expr": "volnix_sim_gini{asset=\"lzn\"}", "legendFormat": "LZN", "refId": "C"}
+      ],
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+    },
+    {
+      "id": 6,
+      "title": "Supply per asset",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "volnix_sim_supply{asset=\"wrt\"}", "legendFormat": "WRT", "refId": "A"},
+        {"expr": "volnix_sim_supply{asset=\"ant\"}", "legendFormat": "ANT", "refId": "B"},
+        {"expr": "volnix_sim_supply{asset=\"lzn\"}", "legendFormat": "LZN", "refId": "C"}
+      ],
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}
+    },
+    {
+      "id": 7,
+      "title": "Canon log events",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(volnix_sim_canon_log_total[1m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+    }
+  ],
+  "templating": {"list": []},
+  "annotations": {"list": []}
+}

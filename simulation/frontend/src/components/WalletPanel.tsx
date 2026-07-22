@@ -119,7 +119,8 @@ export function WalletPanel({
   const isValidator = role === 'validator'
   const isProvider = role === 'provider'
   /** §4.2: ордера на рынке ANT — только Валидатор (BUY) и Поставщик (SELL). */
-  const canPlaceMarketOrders = isValidator || isProvider
+  const _canPlaceMarketOrders = isValidator || isProvider
+  void _canPlaceMarketOrders
 
   const Lcap = LZN_MAX_FROZEN_PER_ADDRESS
   const frozen = account.lzn_frozen_mining ?? 0
@@ -128,7 +129,7 @@ export function WalletPanel({
   const isGenesisValidator = genesisValidator != null && address === genesisValidator
   const isGenesisProvider = genesisProvider != null && address === genesisProvider
   const canBecomeProvider =
-    isGenesisProvider || (zkpOk && totalLzn > 0)
+    isGenesisProvider || zkpOk
   const canBecomeValidator =
     isGenesisValidator || (zkpOk && totalLzn > 0)
 
@@ -204,7 +205,7 @@ export function WalletPanel({
         <p className="text-xs text-gray-500 mb-3">
           Канон §4.2 (v4.20): три типа кошелька — <strong className="text-gray-400">Гражданин</strong> (тип 1),{' '}
           <strong className="text-gray-400">Поставщик</strong>, <strong className="text-gray-400">Валидатор</strong>.{' '}
-          Поставщик/Валидатор (не genesis): ZKP и ≥1 LZN. Гражданин: WRT/LZN, баланс ANT недоступен (§4.2). Переход в
+          Поставщик (не genesis): ZKP. Валидатор (не genesis): ZKP и ≥1 LZN. Гражданин: WRT/LZN, баланс ANT недоступен (§4.2). Переход в
           Гражданина сжигает ANT и снимает ордера. Отдельно: <strong className="text-gray-500">граждане DAO</strong> (§4.1)
           — держатели WRT с правом голоса; не путать с типом кошелька «Гражданин» и с «Поставщиком» (§4.1–4.2).
         </p>
@@ -217,30 +218,35 @@ export function WalletPanel({
           isGenesisValidator={isGenesisValidator}
           onSubmit={(newRole) => run({ op: 'set_role', address, role: newRole })}
         />
+        <p className="text-[11px] text-gray-500 mt-2">
+          Эта tx всегда попадает в мемпул; условия канона проверяются узлом при сборке блока. Если роль не применится — это
+          будет видно в «Канон-аудит» на вкладке «Симуляция».
+        </p>
       </section>
 
       {/* Переводы */}
       <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
         <h3 className="text-sm font-semibold text-gray-300 mb-2">Перевод WRT / LZN</h3>
-        <p className="text-xs text-gray-500 mb-3">ANT напрямую не переводится (§4.1) — только внутренний рынок.</p>
+        <p className="text-xs text-gray-500 mb-3">
+          Tx всегда попадает в мемпул; узел проверяет канон в блоке. ANT напрямую не переводится (§4.1) — только внутренний рынок.
+        </p>
         <TransferForm address={address} disabled={pending} onSubmit={(f) => run({ op: 'transfer', ...f })} />
       </section>
 
       {/* Активация LZN */}
-      {isValidator && (
-        <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-300 mb-2">Активация LZN под майнинг</h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Перевод из ликвидного баланса в активированный. Потолок на адрес: {Lcap} LZN (⌊{LZN_TOTAL_SUPPLY_REF}/3⌋ по §4.2).
-          </p>
-          <ActivateForm
-            maxLiquid={account.lzn_balance}
-            maxMore={Math.max(0, Lcap - frozen)}
-            disabled={pending}
-            onSubmit={(amount) => run({ op: 'activate_lzn', address, amount })}
-          />
-        </section>
-      )}
+      <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
+        <h3 className="text-sm font-semibold text-gray-300 mb-2">Активация LZN под майнинг</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Это предложение в блок. Узел применит только для роли <strong className="text-gray-400">Валидатор</strong>, при наличии
+          ликвидного LZN и в пределах потолка {Lcap} LZN (⌊{LZN_TOTAL_SUPPLY_REF}/3⌋ по §4.2). Иначе — отклонение в «Канон-аудит».
+        </p>
+        <ActivateForm
+          maxLiquid={account.lzn_balance}
+          maxMore={Math.max(0, Lcap - frozen)}
+          disabled={pending}
+          onSubmit={(amount) => run({ op: 'activate_lzn', address, amount })}
+        />
+      </section>
 
       {isCitizenWallet && (
         <p className="text-sm text-gray-500 bg-gray-900/30 p-3 rounded border border-gray-700/50">
@@ -250,99 +256,90 @@ export function WalletPanel({
       )}
 
       {/* Рынок */}
-      {canPlaceMarketOrders && (
-        <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-300 mb-2">Внутренний рынок ANT</h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Покупка ANT за WRT — только Валидатор. Продажа ANT — только Поставщик (§5.2).
-          </p>
-          <MarketForm
-            side={isValidator ? 'buy' : 'sell'}
-            wrtBalance={account.wrt_balance}
-            disabled={pending}
-            onSubmit={(payload) => {
-              if (payload.mode === 'limit') {
-                run({
-                  op: 'create_order',
-                  address,
-                  side: payload.side,
-                  price: payload.price,
-                  amount: payload.amount,
-                })
-              } else {
-                const body: Record<string, unknown> = {
-                  op: 'create_order',
-                  address,
-                  side: payload.side,
-                  market: true,
-                  amount: payload.amount,
-                }
-                if (payload.side === 'buy' && payload.max_wrt != null && !Number.isNaN(payload.max_wrt)) {
-                  body.max_wrt = payload.max_wrt
-                }
-                run(body)
+      <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
+        <h3 className="text-sm font-semibold text-gray-300 mb-2">Внутренний рынок ANT</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Это предложение в блок. Узел проверит канон §5.2: BUY — только Валидатор (эскроу WRT), SELL — только Поставщик (эскроу ANT),
+          иначе — отклонение в «Канон-аудит».
+        </p>
+        <MarketForm
+          side={isProvider ? 'sell' : 'buy'}
+          wrtBalance={account.wrt_balance}
+          disabled={pending}
+          onSubmit={(payload) => {
+            if (payload.mode === 'limit') {
+              run({
+                op: 'create_order',
+                address,
+                side: payload.side,
+                price: payload.price,
+                amount: payload.amount,
+              })
+            } else {
+              const body: Record<string, unknown> = {
+                op: 'create_order',
+                address,
+                side: payload.side,
+                market: true,
+                amount: payload.amount,
               }
-            }}
-          />
-          <div className="mt-4">
-            <h4 className="text-xs text-gray-500 uppercase mb-2">Ваши открытые ордера</h4>
-            {orders.length === 0 ? (
-              <p className="text-gray-600 text-sm">Нет открытых ордеров</p>
-            ) : (
-              <ul className="space-y-2">
-                {orders.map((o) => (
-                  <li
-                    key={o.id}
-                    className="flex flex-wrap items-center justify-between gap-2 bg-gray-800/80 px-3 py-2 rounded text-sm"
+              if (payload.side === 'buy' && payload.max_wrt != null && !Number.isNaN(payload.max_wrt)) {
+                body.max_wrt = payload.max_wrt
+              }
+              run(body)
+            }
+          }}
+        />
+        <div className="mt-4">
+          <h4 className="text-xs text-gray-500 uppercase mb-2">Ваши открытые ордера</h4>
+          {orders.length === 0 ? (
+            <p className="text-gray-600 text-sm">Нет открытых ордеров</p>
+          ) : (
+            <ul className="space-y-2">
+              {orders.map((o) => (
+                <li
+                  key={o.id}
+                  className="flex flex-wrap items-center justify-between gap-2 bg-gray-800/80 px-3 py-2 rounded text-sm"
+                >
+                  <span className="font-mono text-xs text-gray-400">{o.id.slice(0, 10)}…</span>
+                  <span className={o.order_type === 'buy' ? 'text-green-400' : 'text-red-400'}>
+                    {o.order_type.toUpperCase()}
+                  </span>
+                  <span>
+                    {o.amount.toFixed(2)} ANT @ {o.price.toFixed(2)} WRT
+                  </span>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => run({ op: 'cancel_order', address, order_id: o.id })}
+                    className="text-xs bg-gray-700 hover:bg-red-900/50 px-2 py-1 rounded"
                   >
-                    <span className="font-mono text-xs text-gray-400">{o.id.slice(0, 10)}…</span>
-                    <span className={o.order_type === 'buy' ? 'text-green-400' : 'text-red-400'}>
-                      {o.order_type.toUpperCase()}
-                    </span>
-                    <span>
-                      {o.amount.toFixed(2)} ANT @ {o.price.toFixed(2)} WRT
-                    </span>
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() => run({ op: 'cancel_order', address, order_id: o.id })}
-                      className="text-xs bg-gray-700 hover:bg-red-900/50 px-2 py-1 rounded"
-                    >
-                      Отмена (tx)
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
-      )}
+                    Отмена (tx)
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
 
       {/* Declare */}
-      {isValidator && (
-        <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-300 mb-2">Сжигание и ставка ANT — участие в блоке (§5.4)</h3>
-          <p className="text-xs text-gray-500 mb-3">
-            <strong className="text-gray-400">b</strong> — сжигаемый ANT (burn),{' '}
-            <strong className="text-gray-400">s</strong> — ставка ANT (stake); оба списываются с баланса. Ограничение:{' '}
-            <span className="text-amber-200/80">b + s ≤ L_i</span> (активированный LZN) и{' '}
-            <span className="text-amber-200/80">b + s ≤ баланс ANT</span>. Вес в консенсусе (симуляция):{' '}
-            <span className="text-cyan-400/80">w_i = s / L_i</span>; при переполнении лимита λ·ΣL_i отсекаются объявления с
-            меньшим w_i, действует потолок K валидаторов (§5.4). Базовая WRT и условные комиссии блока начисляются только
-            если суммарное <span className="text-red-300/90">Σ b_i</span> по исполненным declare попадает в цель{' '}
-            <span className="text-emerald-400/90">λ·ΣL_i</span> (λ = 1/3, допуск в узле) — иначе в ленте блока будет{' '}
-            <code className="text-gray-500">block_reward_skipped</code>.
-          </p>
-          <DeclareForm
-            address={address}
-            activatedLzn={frozen}
-            antBalance={account.ant_balance}
-            maxBPlusS={Math.min(frozen, account.ant_balance)}
-            disabled={pending}
-            onSubmit={(burn_b, stake_s) => run({ op: 'declare', address, burn_b, stake_s })}
-          />
-        </section>
-      )}
+      <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
+        <h3 className="text-sm font-semibold text-gray-300 mb-2">Сжигание и ставка ANT — участие в блоке (§5.4)</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Это предложение в блок. Узел применит только для роли <strong className="text-gray-400">Валидатор</strong> и при выполнении
+          ограничений: <span className="text-amber-200/80">b + s ≤ L_i</span> (актив. LZN) и{' '}
+          <span className="text-amber-200/80">b + s ≤ баланс ANT</span>. Иначе — отклонение в «Канон-аудит».
+        </p>
+        <DeclareForm
+          address={address}
+          activatedLzn={frozen}
+          antBalance={account.ant_balance}
+          maxBPlusS={Math.min(frozen, account.ant_balance)}
+          disabled={pending}
+          onSubmit={(burn_b, stake_s) => run({ op: 'declare', address, burn_b, stake_s })}
+        />
+      </section>
     </div>
   )
 }
@@ -378,7 +375,7 @@ function RoleChangeForm({
   }, [currentRole])
   const providerBlocked = role === 'provider' && !canBecomeProvider && role !== currentRole
   const validatorBlocked = role === 'validator' && !canBecomeValidator && role !== currentRole
-  const submitBlocked = disabled || role === currentRole || providerBlocked || validatorBlocked
+  const submitBlocked = disabled || role === currentRole
   return (
     <div className="flex flex-wrap gap-2 items-end">
       <select
@@ -394,17 +391,7 @@ function RoleChangeForm({
       <button
         type="button"
         disabled={submitBlocked}
-        title={
-          providerBlocked
-            ? isGenesisProvider
-              ? ''
-              : 'Нужны ZKP (кнопка выше) и LZN на кошельке'
-            : validatorBlocked
-              ? isGenesisValidator
-                ? ''
-                : 'Нужны ZKP и LZN на кошельке'
-              : ''
-        }
+        title=""
         onClick={() => onSubmit(role)}
         className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 px-4 py-2 rounded text-sm"
       >
@@ -412,11 +399,11 @@ function RoleChangeForm({
       </button>
       {providerBlocked && !isGenesisProvider && (
         <span className="text-xs text-amber-600/90 max-w-xs">
-          Поставщик: сначала ZKP и LZN (genesis-поставщик §6.3 — исключение).
+          Поставщик: в блоке потребуется ZKP (genesis-поставщик §6.3 — исключение).
         </span>
       )}
       {validatorBlocked && !isGenesisValidator && (
-        <span className="text-xs text-amber-600/90 max-w-xs">Валидатор: сначала ZKP и LZN.</span>
+        <span className="text-xs text-amber-600/90 max-w-xs">Валидатор: в блоке потребуется ZKP и LZN.</span>
       )}
     </div>
   )

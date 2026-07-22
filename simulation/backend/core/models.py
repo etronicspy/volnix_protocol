@@ -1,6 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, List, Dict
 from enum import Enum
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel
+
 
 class Role(str, Enum):
     """§4.2 (канон v4.20): три типа кошелька — Гражданин, Поставщик, Валидатор.
@@ -39,6 +41,7 @@ class TransactionType(str, Enum):
     GENESIS_MARKET_SEED = "genesis_market_seed"
     ACTIVATE_LZN = "activate_lzn"
     ZKP_VERIFY = "zkp_verify"
+    SLASH_EVIDENCE = "slash_evidence"
 
 class OrderType(str, Enum):
     BUY = "buy"
@@ -65,7 +68,8 @@ class Transaction(BaseModel):
     order_id: Optional[str] = None
     role: Optional[Role] = None
     details: Optional[str] = None
-    # §5.4: b_i = amount (сжигание), s_i = stake_amount (ставка), оба сжигаются
+    # §5.4 (ruleset v2): b_i = amount — сжигается; s_i = stake_amount — ставка на высоту,
+    # определяет вес w_i = s_i/L_i, проверяется по балансу (ANT ≥ b+s), но НЕ сжигается.
     stake_amount: Optional[float] = None
     timestamp: float
     # Рыночная заявка: немедленное исполнение по книге (без постановки лимитного ордера)

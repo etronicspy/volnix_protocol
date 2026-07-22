@@ -9,11 +9,11 @@ from typing import Optional, Tuple
 
 from core.models import OrderType, Role, Transaction, TransactionType
 from core.state import (
-    StateManager,
-    LZN_MAX_FROZEN_PER_ADDRESS,
-    SIM_TREASURY_ADDR,
     GENESIS_PROVIDER_ADDR,
     GENESIS_VALIDATOR_ADDR,
+    LZN_MAX_FROZEN_PER_ADDRESS,
+    SIM_TREASURY_ADDR,
+    StateManager,
     eligible_for_provider_role,
     eligible_for_validator_role,
 )
@@ -87,9 +87,9 @@ def validate_and_build_tx(
         return False, "Cannot submit transactions from simulation treasury address", None
 
     ts = time.time()
+    # Важно: кошелёк — это "подача предложения в блок" (mempool admission).
+    # Узел проверяет канон и валидность при сборке блока (engine DeliverTx/EndBlock) и пишет отклонения в канон-аудит.
     acc = _acc(sm, address)
-    if not acc:
-        return False, "Unknown address: create an account first (simulation operator panel) or receive a transfer", None
 
     op = op.strip().lower()
 
@@ -99,24 +99,9 @@ def validate_and_build_tx(
         new_role = role
         if new_role == acc.role:
             return False, "Already has this role", None
-        if new_role == Role.VALIDATOR:
-            if not eligible_for_validator_role(address, acc):
-                if address != GENESIS_VALIDATOR_ADDR and not acc.zkp_verified:
-                    return (
-                        False,
-                        "Валидатор: сначала ZKP в панели кошелька (tx verify_zkp), затем нужен LZN",
-                        None,
-                    )
-                return False, "Валидатор: нужен хотя бы 1 LZN (ликвидный или активированный)", None
-        if new_role == Role.PROVIDER:
-            if not eligible_for_provider_role(address, acc):
-                if address != GENESIS_PROVIDER_ADDR and not acc.zkp_verified:
-                    return (
-                        False,
-                        "Поставщик: сначала ZKP в панели кошелька (tx verify_zkp), затем нужен LZN",
-                        None,
-                    )
-                return False, "Поставщик: нужен хотя бы 1 LZN (ликвидный или активированный)", None
+        # Важно: set_role всегда принимаем в мемпул как "предложение в блок".
+        # Канонические проверки (ZKP/LZN/genesis-исключения) выполняются в DeliverTx симулятора (engine),
+        # и там же записываются отклонения в канон-аудит.
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.SET_ROLE,
@@ -125,11 +110,9 @@ def validate_and_build_tx(
             role=new_role,
             timestamp=ts,
         )
-        return True, "accepted", tx
+        return True, "accepted (will be validated in next block)", tx
 
     if op == "verify_zkp":
-        if acc.zkp_verified:
-            return False, "ZKP уже подтверждён для этого адреса", None
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.ZKP_VERIFY,
@@ -137,7 +120,7 @@ def validate_and_build_tx(
             receiver=address,
             timestamp=ts,
         )
-        return True, "accepted", tx
+        return True, "accepted (will be validated in next block)", tx
 
     if op == "transfer":
         if not to_address or not to_address.strip():
@@ -147,12 +130,6 @@ def validate_and_build_tx(
         if amount is None or amount <= 0:
             return False, "amount must be positive", None
         a = (asset or "wrt").lower()
-        if a not in ("wrt", "lzn"):
-            return False, "Only wrt and lzn transfers are allowed (ANT only via internal market)", None
-        if a == "lzn" and acc.lzn_balance + 1e-12 < amount:
-            return False, "Insufficient liquid LZN", None
-        if a == "wrt" and acc.wrt_balance + 1e-12 < amount:
-            return False, "Insufficient WRT", None
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.TRANSFER,
@@ -162,21 +139,11 @@ def validate_and_build_tx(
             asset_type=a,
             timestamp=ts,
         )
-        return True, "accepted", tx
+        return True, "accepted (will be validated in next block)", tx
 
     if op == "activate_lzn":
-        if acc.role != Role.VALIDATOR:
-            return False, "Only Validators can activate LZN for mining", None
         if amount is None or amount <= 0:
             return False, "amount must be positive", None
-        if acc.lzn_balance + 1e-12 < amount:
-            return False, "Insufficient liquid LZN", None
-        if acc.lzn_frozen_mining + float(amount) > float(LZN_MAX_FROZEN_PER_ADDRESS) + 1e-9:
-            return (
-                False,
-                f"Activated LZN per address cap exceeded (max {LZN_MAX_FROZEN_PER_ADDRESS:.0f} per §4.2)",
-                None,
-            )
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.ACTIVATE_LZN,
@@ -185,11 +152,9 @@ def validate_and_build_tx(
             asset_type="lzn",
             timestamp=ts,
         )
-        return True, "accepted", tx
+        return True, "accepted (will be validated in next block)", tx
 
     if op == "create_order":
-        if acc.role == Role.CITIZEN:
-            return False, "Гражданин (тип 1 §4.2) не торгует ANT на внутреннем рынке — только Поставщик/Валидатор", None
         if side not in ("buy", "sell"):
             return False, "side must be buy or sell", None
         ot = OrderType.BUY if side == "buy" else OrderType.SELL
@@ -197,17 +162,14 @@ def validate_and_build_tx(
         if market:
             if amount is None or amount <= 0:
                 return False, "amount must be positive", None
-            if ot == OrderType.BUY:
-                if acc.role != Role.VALIDATOR:
-                    return False, "Only Validators may buy ANT (§5.2)", None
-                asks = [o for o in sm.orders.values() if o.order_type == OrderType.SELL]
-                if not asks:
-                    return False, "Рыночная покупка: в книге нет заявок на продажу", None
-                cap = float(max_wrt) if max_wrt is not None else acc.wrt_balance
+            cap = None
+            if max_wrt is not None:
+                try:
+                    cap = float(max_wrt)
+                except (TypeError, ValueError):
+                    return False, "max_wrt must be a number", None
                 if cap <= 0:
-                    return False, "Укажите max_wrt > 0 или пополните WRT", None
-                if acc.wrt_balance + 1e-12 < cap:
-                    return False, "Insufficient WRT", None
+                    return False, "max_wrt must be positive", None
                 tx = Transaction(
                     tx_hash=uuid.uuid4().hex,
                     tx_type=TransactionType.CREATE_ORDER,
@@ -216,42 +178,13 @@ def validate_and_build_tx(
                     price=0.0,
                     amount=float(amount),
                     market=True,
-                    max_wrt=cap,
+                max_wrt=cap,
                     timestamp=ts,
                 )
-                return True, "accepted", tx
-            if acc.role != Role.PROVIDER:
-                return False, "Only Providers may sell ANT (§5.2)", None
-            if acc.ant_balance + 1e-12 < amount:
-                return False, "Insufficient ANT", None
-            bids = [o for o in sm.orders.values() if o.order_type == OrderType.BUY]
-            if not bids:
-                return False, "Рыночная продажа: в книге нет заявок на покупку", None
-            tx = Transaction(
-                tx_hash=uuid.uuid4().hex,
-                tx_type=TransactionType.CREATE_ORDER,
-                sender=address,
-                order_type=ot,
-                price=0.0,
-                amount=float(amount),
-                market=True,
-                timestamp=ts,
-            )
-            return True, "accepted", tx
+            return True, "accepted (will be validated in next block)", tx
 
         if price is None or price <= 0 or amount is None or amount <= 0:
             return False, "price and amount must be positive", None
-        if ot == OrderType.SELL:
-            if acc.role != Role.PROVIDER:
-                return False, "Only Providers may place SELL orders (§5.2)", None
-            if acc.ant_balance + 1e-12 < amount:
-                return False, "Insufficient ANT (not in escrow)", None
-        else:
-            if acc.role != Role.VALIDATOR:
-                return False, "Only Validators may place BUY orders — спрос на ANT (§5.2)", None
-            cost = float(price) * float(amount)
-            if acc.wrt_balance + 1e-12 < cost:
-                return False, "Insufficient WRT for buy order escrow", None
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.CREATE_ORDER,
@@ -261,14 +194,11 @@ def validate_and_build_tx(
             amount=float(amount),
             timestamp=ts,
         )
-        return True, "accepted", tx
+        return True, "accepted (will be validated in next block)", tx
 
     if op == "cancel_order":
         if not order_id:
             return False, "order_id is required", None
-        order = sm.orders.get(order_id)
-        if not order or order.owner != address:
-            return False, "Order not found or not owned by this address", None
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.CANCEL_ORDER,
@@ -276,24 +206,15 @@ def validate_and_build_tx(
             order_id=order_id,
             timestamp=ts,
         )
-        return True, "accepted", tx
+        return True, "accepted (will be validated in next block)", tx
 
     if op == "declare":
-        if acc.role != Role.VALIDATOR:
-            return False, "Only Validators can declare participation (§5.4)", None
         b = float(burn_b or 0)
         s = float(stake_s or 0)
         if b < 0 or s < 0:
             return False, "burn_b and stake_s must be non-negative", None
-        L_i = float(acc.lzn_frozen_mining)
-        if L_i <= 0:
-            return False, "No activated LZN (activate LZN first)", None
-        if b + s > L_i + 1e-9:
-            return False, f"b + s must not exceed activated LZN ({L_i})", None
         if b + s <= 0:
             return False, "b + s must be positive", None
-        if acc.ant_balance + 1e-12 < b + s:
-            return False, "Insufficient ANT for burn + stake", None
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.DECLARE_PARTICIPATION,
@@ -303,6 +224,6 @@ def validate_and_build_tx(
             asset_type="ant",
             timestamp=ts,
         )
-        return True, "accepted", tx
+        return True, "accepted (will be validated in next block)", tx
 
     return False, f"Unknown op: {op}", None

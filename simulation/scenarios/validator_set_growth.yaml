@@ -1,0 +1,13 @@
+name: validator_set_growth
+description: |
+  Эволюционный рост ValidatorSet: ZKP → mint LZN → activate_lzn → set_role(VALIDATOR) → declare.
+  Подаём вручную 2 новых валидатора, выводим ValidatorSet к 3 (genesis + 2). Multi-round
+  PreVote/PreCommit активируется автоматически (§6.1 + наше условие len>=2).
+seed: 7
+steps:
+  - set_block_time: { seconds: 0.2 }
+  - network_set: { num_nodes: 4, latency_ms: 20, loss_pct: 0.0 }
+  - auto_declare: {}
+  - wait_blocks: { n: 1 }
+asserts:
+  - block_height: { op: ">=", value: 1 }

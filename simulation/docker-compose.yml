@@ -1,0 +1,37 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: volnix-sim-backend
+    environment:
+      VOLNIX_SIM_DATA_DIR: /app/data
+      VOLNIX_SIM_CORS_ALLOW_ORIGINS: "http://localhost:5173,http://localhost:8080"
+      VOLNIX_SIM_LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    volumes:
+      - sim-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8000/api/state\").status==200 else 1)'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+        VITE_WS_URL: ws://localhost:8000/ws
+    container_name: volnix-sim-frontend
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  sim-data:

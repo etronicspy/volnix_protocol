@@ -2,7 +2,34 @@ import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WalletPanel } from './components/WalletPanel'
 import { TradingViewMarketWidget } from './components/TradingViewMarketWidget'
+import { KpiPanel } from './components/KpiPanel'
+import { NodesPanel } from './components/NodesPanel'
+import { ScenariosPanel } from './components/ScenariosPanel'
+import { TxExplorerPanel } from './components/TxExplorerPanel'
 import { API_BASE, WS_URL } from './config'
+
+/** Скорость симуляции: сим. секунд за 1 реальную (1 блок = 60 сим. с). */
+const SIM_SPEED_MIN = 0.2 // блок раз в 300 с
+const SIM_SPEED_MAX = 604_800 // 1 с реального времени = 1 неделя симуляции
+
+const SPEED_PRESETS: { label: string; speed: number }[] = [
+  { label: '1:1 — реальное время (блок / 60 с)', speed: 1 },
+  { label: '×12 — блок / 5 с', speed: 12 },
+  { label: '×60 — 1 с = 1 мин', speed: 60 },
+  { label: '×600 — блок / 0.1 с', speed: 600 },
+  { label: '×3600 — 1 с = 1 час', speed: 3_600 },
+  { label: '×86400 — 1 с = 1 сутки', speed: 86_400 },
+  { label: '×604800 — 1 с = 1 неделя', speed: 604_800 },
+]
+
+/** «×604800 (1 с ≈ 1 нед)» для произвольного значения скорости. */
+function formatSpeed(speed: number): string {
+  if (speed >= 604_800) return `×${Math.round(speed)} (1 с ≈ 1 нед)`
+  if (speed >= 86_400) return `×${Math.round(speed)} (1 с ≈ ${(speed / 86_400).toFixed(1)} сут)`
+  if (speed >= 3_600) return `×${Math.round(speed)} (1 с ≈ ${(speed / 3_600).toFixed(1)} ч)`
+  if (speed >= 60) return `×${Math.round(speed)} (1 с ≈ ${(speed / 60).toFixed(1)} мин)`
+  return `×${speed.toFixed(2)}`
+}
 
 interface Account {
   address: string;
@@ -53,6 +80,8 @@ interface Block {
   hash: string;
   tx_count: number;
   timestamp: number;
+  /** Адрес валидатора цепи симуляции (тот же, что в genesis) */
+  proposer?: string;
   transactions: Record<string, unknown>[];
 }
 
@@ -86,6 +115,10 @@ interface NetworkState {
   epoch_ant_sold_last?: number;
   epoch_emission_coefficient?: number;
   genesis_validator?: string;
+  /** ValidatorSet для §6.1 (после genesis / последнего EndBlock §5.4) */
+  consensus_validators?: { address: string; power: number }[];
+  /** Ожидаемый пропозер следующего блока (current_height + 1) */
+  next_proposer?: string;
   genesis_provider?: string;
   sim_treasury?: string;
   canon_log?: CanonLogEntry[];
@@ -93,6 +126,10 @@ interface NetworkState {
   canonical_block_interval_sec?: number;
   /** Интервал блока в этой симуляции, сек */
   sim_block_interval_sec?: number;
+  /** Скорость симуляции: сим. секунд за 1 реальную (1 = реальное время, 604800 = 1с:1нед) */
+  sim_speed?: number;
+  /** Фактическая скорость (EMA; на высоких скоростях ограничена CPU) */
+  effective_speed?: number;
 }
 
 /** Тело GET /api/state и поле `state` в сообщениях WebSocket. */
@@ -109,11 +146,14 @@ interface SimulatorApiState {
   epoch_ant_sold_last?: number
   epoch_emission_coefficient?: number
   genesis_validator?: string
+  consensus_validators?: { address: string; power: number }[]
+  next_proposer?: string
   genesis_provider?: string
   sim_treasury?: string
   canon_log?: CanonLogEntry[]
   canonical_block_interval_sec?: number
   sim_block_interval_sec?: number
+  sim_speed?: number
 }
 
 function mergeFromSimulatorApi(
@@ -144,10 +184,13 @@ function mergeFromSimulatorApi(
     epoch_ant_sold_last: snapshot.epoch_ant_sold_last,
     epoch_emission_coefficient: snapshot.epoch_emission_coefficient,
     genesis_validator: snapshot.genesis_validator,
+    consensus_validators: snapshot.consensus_validators ?? prev.consensus_validators,
+    next_proposer: snapshot.next_proposer ?? prev.next_proposer,
     genesis_provider: snapshot.genesis_provider,
     sim_treasury: snapshot.sim_treasury,
     canonical_block_interval_sec: snapshot.canonical_block_interval_sec ?? prev.canonical_block_interval_sec,
     sim_block_interval_sec: snapshot.sim_block_interval_sec ?? prev.sim_block_interval_sec,
+    sim_speed: snapshot.sim_speed ?? prev.sim_speed,
     canon_log: snapshot.canon_log ?? prev.canon_log ?? [],
     recent_txs,
   }
@@ -169,8 +212,21 @@ function App() {
   })
   
   const [blockTimeInput, setBlockTimeInput] = useState<string>("60")
-  const [botStatus, setBotStatus] = useState({ is_running: false, intensity: 1.0 })
+  const [speedInput, setSpeedInput] = useState<string>("1")
+  const [botStatus, setBotStatus] = useState({
+    is_running: false,
+    intensity: 1.0,
+    enable_probes: true,
+    probe_ratio: 0.15,
+    probe_transfer_ant: true,
+    probe_mint_ant_citizen: true,
+    probe_wrong_role_declare: true,
+    probe_wrong_role_activate_lzn: true,
+    probe_wrong_role_order: true,
+    probe_cancel_not_owned: true,
+  })
   const [botIntensityInput, setBotIntensityInput] = useState<string>("1.0")
+  const [botProbeRatioInput, setBotProbeRatioInput] = useState<string>("0.15")
   const [selectedBlockHeight, setSelectedBlockHeight] = useState<number | null>(null)
 
   const selectedBlock = state.blocks.find(b => b.height === selectedBlockHeight)
@@ -191,6 +247,7 @@ function App() {
       .then(data => {
         setBotStatus(data)
         setBotIntensityInput(data.intensity.toString())
+        if (typeof data.probe_ratio === 'number') setBotProbeRatioInput(String(data.probe_ratio))
       })
 
     // Connect to WebSocket
@@ -204,29 +261,112 @@ function App() {
       const msg = JSON.parse(event.data) as {
         type: string
         data: {
-          state: SimulatorApiState
+          state?: SimulatorApiState
           block_time: number
-          block?: { height?: number; transactions?: Record<string, unknown>[] }
+          block?: {
+            height?: number
+            transactions?: Record<string, unknown>[]
+            hash?: string
+            tx_count?: number
+            timestamp?: number
+          }
+          // block_delta payload
+          delta?: {
+            accounts_changed?: Record<string, Account>
+            accounts_removed?: string[]
+            orders_changed?: Record<string, unknown>
+            orders_removed?: string[]
+          }
+          market?: Market
+          consensus_validators?: { address: string; power: number }[]
+          next_proposer?: string
+          current_epoch_burn?: number
+          epoch_ant_sold_volume?: number
+          epoch_emission_coefficient?: number
+          last_block_wallet_delta?: Record<string, Record<string, number>>
+          mempool_size?: number
+          tps_history_tail?: { time: string; tps: number }[]
+          sim_speed?: number
+          effective_speed?: number
+          /** Batch-режим высоких скоростей: сколько блоков произведено за тик */
+          blocks_in_batch?: number
         }
       }
-      if (msg.type === 'init' || msg.type === 'new_block') {
+
+      if (msg.type === 'init' && msg.data.state) {
+        const block = msg.data.block
+        const txs = block?.transactions ?? []
+        setState(prev => ({
+          ...mergeFromSimulatorApi(prev, msg.data.state!, msg.data.block_time, {
+            recent: 'keep',
+            blockTxs: txs,
+          }),
+          sim_speed: msg.data.sim_speed ?? msg.data.state!.sim_speed ?? prev.sim_speed,
+        }))
+        setBlockTimeInput(msg.data.block_time.toString())
+        if (msg.data.sim_speed !== undefined) setSpeedInput(String(msg.data.sim_speed))
+        return
+      }
+
+      // Legacy: full-state new_block (бэкенды до Этапа 2)
+      if (msg.type === 'new_block' && msg.data.state) {
         const block = msg.data.block
         const txs = block?.transactions ?? []
         const isResetSnapshot =
-          msg.type === 'new_block' &&
-          msg.data.state.height === 0 &&
-          block?.height === 0
-        const recent: 'append' | 'keep' | 'clear' = isResetSnapshot
-          ? 'clear'
-          : msg.type === 'init'
-            ? 'keep'
-            : 'append'
+          msg.data.state.height === 0 && block?.height === 0
+        const recent: 'append' | 'keep' | 'clear' = isResetSnapshot ? 'clear' : 'append'
         setState(prev =>
-          mergeFromSimulatorApi(prev, msg.data.state, msg.data.block_time, { recent, blockTxs: txs })
+          mergeFromSimulatorApi(prev, msg.data.state!, msg.data.block_time, {
+            recent,
+            blockTxs: txs,
+          })
         )
-        if (msg.type === 'init') {
-          setBlockTimeInput(msg.data.block_time.toString())
-        }
+        return
+      }
+
+      // Этап 2: дельта вместо полного state
+      if (msg.type === 'block_delta' && msg.data.block) {
+        const block = msg.data.block
+        const txs = (block.transactions as Transaction[] | undefined) ?? []
+        const delta = msg.data.delta ?? {}
+        setState(prev => {
+          // accounts patch
+          const accounts: Record<string, Account> = { ...prev.accounts }
+          for (const [addr, acc] of Object.entries(delta.accounts_changed ?? {})) {
+            accounts[addr] = acc as Account
+          }
+          for (const addr of delta.accounts_removed ?? []) {
+            delete accounts[addr]
+          }
+          // blocks tape (хвост 10)
+          const isReset = (block.height ?? -1) === 0
+          const blocks = isReset
+            ? [block as unknown as NetworkState['blocks'][number]]
+            : [...prev.blocks, block as unknown as NetworkState['blocks'][number]].slice(-10)
+          const recent_txs = isReset
+            ? []
+            : [...txs, ...prev.recent_txs].slice(0, 10)
+          return {
+            ...prev,
+            block_height: block.height ?? prev.block_height,
+            block_time: msg.data.block_time ?? prev.block_time,
+            accounts,
+            accounts_count: Object.keys(accounts).length,
+            market: msg.data.market ?? prev.market,
+            blocks,
+            recent_txs,
+            consensus_validators: msg.data.consensus_validators ?? prev.consensus_validators,
+            next_proposer: msg.data.next_proposer ?? prev.next_proposer,
+            epoch_ant_sold_volume: msg.data.epoch_ant_sold_volume ?? prev.epoch_ant_sold_volume,
+            epoch_emission_coefficient:
+              msg.data.epoch_emission_coefficient ?? prev.epoch_emission_coefficient,
+            mempool_size: msg.data.mempool_size ?? prev.mempool_size,
+            tps_history: msg.data.tps_history_tail ?? prev.tps_history,
+            sim_speed: msg.data.sim_speed ?? prev.sim_speed,
+            effective_speed: msg.data.effective_speed ?? prev.effective_speed,
+          }
+        })
+        return
       }
     }
 
@@ -242,15 +382,29 @@ function App() {
   const handleBotControl = async (action: 'start' | 'stop') => {
     const parsed = parseFloat(botIntensityInput)
     const intensity = Number.isFinite(parsed) ? parsed : 1.0
+    const parsedProbe = parseFloat(botProbeRatioInput)
+    const probe_ratio = Number.isFinite(parsedProbe) ? parsedProbe : botStatus.probe_ratio ?? 0.15
     await fetch(`${API_BASE}/api/bot/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, intensity }),
+      body: JSON.stringify({
+        action,
+        intensity,
+        enable_probes: botStatus.enable_probes,
+        probe_ratio,
+        probe_transfer_ant: botStatus.probe_transfer_ant,
+        probe_mint_ant_citizen: botStatus.probe_mint_ant_citizen,
+        probe_wrong_role_declare: botStatus.probe_wrong_role_declare,
+        probe_wrong_role_activate_lzn: botStatus.probe_wrong_role_activate_lzn,
+        probe_wrong_role_order: botStatus.probe_wrong_role_order,
+        probe_cancel_not_owned: botStatus.probe_cancel_not_owned,
+      }),
     })
     const statusRes = await fetch(`${API_BASE}/api/bot/status`)
-    const data = (await statusRes.json()) as { is_running: boolean; intensity: number }
-    setBotStatus({ is_running: data.is_running, intensity: data.intensity })
+    const data = (await statusRes.json()) as typeof botStatus
+    setBotStatus(data)
     setBotIntensityInput(String(data.intensity))
+    if (typeof data.probe_ratio === 'number') setBotProbeRatioInput(String(data.probe_ratio))
   }
 
   const handleCreateOrder = async (e: React.FormEvent) => {
@@ -315,26 +469,49 @@ function App() {
         alert(`Сброс не удался (HTTP ${res.status}).`)
         return
       }
-      const root = (await fetch(`${API_BASE}/`).then((r) => r.json())) as { block_time: number }
+      const root = (await fetch(`${API_BASE}/`).then((r) => r.json())) as { block_time: number; sim_speed?: number }
       const st = (await fetch(`${API_BASE}/api/state`).then((r) => r.json())) as SimulatorApiState
       setState((prev) => mergeFromSimulatorApi(prev, st, root.block_time, { recent: 'clear' }))
       setBlockTimeInput(String(root.block_time))
+      if (root.sim_speed !== undefined) setSpeedInput(String(root.sim_speed))
       setSelectedBlockHeight(null)
     } catch {
       alert('Сброс: ошибка сети или сервера.')
     }
   }
 
+  const handleSetSpeed = async (speed: number) => {
+    if (!isFinite(speed) || speed < SIM_SPEED_MIN || speed > SIM_SPEED_MAX) {
+      alert(`Скорость симуляции: от ${SIM_SPEED_MIN}× (1:1 и медленнее) до ${SIM_SPEED_MAX}× (1 с = 1 неделя).`)
+      return
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/sim-operator/speed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ speed }),
+      })
+      const data = (await res.json()) as { sim_speed: number; new_block_time: number }
+      setState(prev => ({ ...prev, sim_speed: data.sim_speed, block_time: data.new_block_time }))
+      setSpeedInput(String(data.sim_speed))
+      setBlockTimeInput(String(data.new_block_time))
+    } catch {
+      alert('Скорость: ошибка сети или сервера.')
+    }
+  }
+
   const handleUpdateBlockTime = async () => {
     const time = parseFloat(blockTimeInput)
     if (!isNaN(time) && time >= 0.1 && time <= 300) {
-      await fetch(`${API_BASE}/api/sim-operator/block-time`, {
+      const res = await fetch(`${API_BASE}/api/sim-operator/block-time`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ time_sec: time })
       })
+      const data = (await res.json()) as { new_block_time: number; sim_speed?: number }
       // Update local state to reflect the change immediately
-      setState(prev => ({ ...prev, block_time: time }))
+      setState(prev => ({ ...prev, block_time: time, sim_speed: data.sim_speed ?? prev.sim_speed }))
+      if (data.sim_speed !== undefined) setSpeedInput(String(data.sim_speed))
     } else {
       alert("Интервал симуляции: от 0.1 до 300 с. В эталонной цепи блок ≈ 60 с (1 мин).")
     }
@@ -357,11 +534,11 @@ function App() {
   const selectedAccount = selectedWallet ? state.accounts[selectedWallet] : undefined
 
   const MAIN_TABS = [
-    { id: 'overview' as const, label: 'Обзор' },
+    { id: 'overview' as const, label: 'Обзор и счета' },
     { id: 'chain' as const, label: 'Блокчейн' },
     { id: 'market' as const, label: 'Рынок' },
-    { id: 'accounts' as const, label: 'Счета' },
     { id: 'sim' as const, label: 'Симуляция' },
+    { id: 'rd' as const, label: 'R&D / KPI' },
   ]
   const [mainTab, setMainTab] = useState<(typeof MAIN_TABS)[number]['id']>('overview')
 
@@ -403,6 +580,20 @@ function App() {
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Block Height</h2>
             <p className="text-3xl font-mono text-white">{state.block_height}</p>
+            {state.consensus_validators && state.consensus_validators.length > 0 ? (
+              <div className="text-xs text-gray-500 mt-3 leading-snug space-y-1">
+                <p>
+                  ValidatorSet (§6.3 / §5.4):{' '}
+                  <span className="text-gray-400">{state.consensus_validators.length}</span> узл.
+                </p>
+                {state.next_proposer ? (
+                  <p>
+                    След. пропозер (§6.1):{' '}
+                    <span className="font-mono text-amber-200/90 break-all">{state.next_proposer}</span>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
@@ -416,13 +607,60 @@ function App() {
           </div>
 
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-            <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Интервал блока (симуляция)</h2>
+            <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Скорость симуляции</h2>
             <p className="text-xs text-gray-500 mb-2">
-              Порядок фаз блока — как в каноне (BeginBlock → DeliverTx → EndBlock). В основной цепи —{' '}
-              <span className="text-gray-400">{state.canonical_block_interval_sec ?? 60} с</span> на блок; здесь можно
-              задать другое значение для нагрузочных тестов (0.1–300 с), сохраняется в state.
+              1 блок = <span className="text-gray-400">{state.canonical_block_interval_sec ?? 60} с</span> сим. времени
+              (эталон канона). Скорость — от 1:1 до «1 с = 1 неделя» (×604800 ≈ 10080 блоков/с, пачками; фактический
+              темп ограничен CPU). Сохраняется в state.
             </p>
-            <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs text-amber-200/80 mb-2 leading-snug">
+              Ruleset v2 (п. 5.4): λ — только верхний предел (Σb_i ≤ λ·L_total, лишние declare отсеиваются по весу).
+              Блоки растут при любом объёме сжигания, <span className="font-medium">включая Σb_i = 0</span> — но без
+              declare валидатор не получает ни базовой WRT, ни доли комиссий за высоту.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <select
+                value={SPEED_PRESETS.some(p => String(p.speed) === speedInput) ? speedInput : ''}
+                onChange={(e) => {
+                  setSpeedInput(e.target.value)
+                  const v = parseFloat(e.target.value)
+                  if (!isNaN(v)) handleSetSpeed(v)
+                }}
+                className="bg-gray-700 text-white px-3 py-1 rounded border border-gray-600 focus:outline-none focus:border-blue-500 text-sm"
+              >
+                <option value="" disabled>— пресет скорости —</option>
+                {SPEED_PRESETS.map(p => (
+                  <option key={p.speed} value={p.speed}>{p.label}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="1"
+                min={SIM_SPEED_MIN}
+                max={SIM_SPEED_MAX}
+                value={speedInput}
+                onChange={(e) => setSpeedInput(e.target.value)}
+                title="Скорость ×: сим. секунд за 1 реальную"
+                className="bg-gray-700 text-white px-3 py-1 rounded w-28 border border-gray-600 focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={() => handleSetSpeed(parseFloat(speedInput))}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition-colors"
+              >
+                Set
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-2">
+              Активно: <span className="text-gray-300">{formatSpeed(state.sim_speed ?? 1)}</span>
+              {' · '}блок / {state.block_time >= 0.01 ? `${state.block_time.toFixed(2)} с` : `${(state.block_time * 1000).toFixed(1)} мс`}
+              {state.effective_speed !== undefined && (state.sim_speed ?? 1) > 600 ? (
+                <>
+                  {' · '}факт: <span className="text-gray-300">{formatSpeed(state.effective_speed)}</span>
+                </>
+              ) : null}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap border-t border-gray-700/60 pt-2">
+              <span className="text-xs text-gray-500">Интервал блока вручную (0.1–300 с):</span>
               <input 
                 type="number" 
                 step="0.1" 
@@ -439,9 +677,6 @@ function App() {
               >
                 Set
               </button>
-              {state.block_time > 0 ? (
-                <span className="text-xs text-gray-500">активно: {state.block_time}s</span>
-              ) : null}
             </div>
           </div>
 
@@ -449,6 +684,77 @@ function App() {
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Total Accounts</h2>
             <p className="text-3xl font-mono text-white">{state.accounts_count}</p>
           </div>
+        </div>
+
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 mb-8">
+          <h2 className="text-xl font-bold mb-4 text-gray-200">Счета</h2>
+          {Object.keys(state.accounts).length === 0 ? (
+            <p className="text-gray-500">Нет аккаунтов — создайте через вкладку «Симуляция» (панель оператора).</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-gray-700 text-gray-400">
+                    <th className="pb-3 font-medium">Address</th>
+                    <th className="pb-3 font-medium">WRT Balance</th>
+                    <th className="pb-3 font-medium">LZN (liq. / frozen)</th>
+                    <th className="pb-3 font-medium">ANT Balance</th>
+                    <th className="pb-3 font-medium">ZKP</th>
+                    <th className="pb-3 font-medium">Role</th>
+                    <th className="pb-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.values(state.accounts).map((acc) => (
+                    <tr key={acc.address} className="border-b border-gray-700/50">
+                      <td className="py-3 font-mono text-sm text-blue-300">{acc.address}</td>
+                      <td className="py-3 text-green-400">{acc.wrt_balance?.toFixed(2) || '0.00'}</td>
+                      <td className="py-3 text-purple-400 text-sm">
+                        {(acc.lzn_balance ?? 0).toFixed(2)}
+                        <span className="text-gray-500"> / </span>
+                        <span className="text-amber-400/90" title="LZN frozen for mining">{(acc.lzn_frozen_mining ?? 0).toFixed(0)}</span>
+                      </td>
+                      <td className="py-3 text-orange-400">{acc.ant_balance?.toFixed(2) || '0.00'}</td>
+                      <td className="py-3 text-center text-lg" title="ZKP (симуляция): verify_zkp из кошелька">
+                        {acc.zkp_verified ? (
+                          <span className="text-emerald-400">✓</span>
+                        ) : (
+                          <span className="text-gray-600">—</span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        <span className={`px-2 py-1 rounded text-xs uppercase tracking-wider ${
+                          acc.role === 'guest' || acc.role === 'citizen' ? 'bg-blue-900/50 text-blue-300' :
+                          acc.role === 'provider' ? 'bg-orange-900/50 text-orange-300' :
+                          'bg-green-900/50 text-green-300'
+                        }`}>
+                          {acc.role}
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedWallet(acc.address)}
+                            className={`px-2 py-1 rounded text-xs transition-colors ${
+                              selectedWallet === acc.address
+                                ? 'bg-emerald-800 text-white'
+                                : 'bg-gray-700 hover:bg-gray-600'
+                            }`}
+                          >
+                            Кошелёк
+                          </button>
+                          <button type="button" onClick={() => handleMint(acc.address, 'wrt')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+1000 WRT</button>
+                          <button type="button" onClick={() => handleMint(acc.address, 'lzn')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 LZN</button>
+                          <button type="button" onClick={() => handleMint(acc.address, 'ant')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 ANT</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="mb-8">
@@ -564,6 +870,12 @@ function App() {
                   <dt className="text-gray-500 text-xs uppercase">transactions.length</dt>
                   <dd className="font-mono text-gray-300">{selectedBlock.transactions.length}</dd>
                 </div>
+                {selectedBlock.proposer ? (
+                  <div className="sm:col-span-2">
+                    <dt className="text-gray-500 text-xs uppercase">proposer</dt>
+                    <dd className="font-mono text-xs text-amber-200/90 break-all">{selectedBlock.proposer}</dd>
+                  </div>
+                ) : null}
               </dl>
               <p className="text-xs text-gray-500 mb-2">Полное тело блока (все поля каждой записи в ленте):</p>
               <div className="max-h-[min(70vh,720px)] overflow-auto rounded border border-gray-700 bg-black/40 p-3">
@@ -667,6 +979,94 @@ function App() {
                   className="bg-gray-700 text-white px-3 py-1 rounded w-24 border border-gray-600 focus:outline-none focus:border-orange-500"
                   disabled={botStatus.is_running}
                 />
+              </div>
+              <div className="flex flex-col gap-2 bg-gray-900/40 border border-gray-700/50 rounded p-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <span className="text-gray-300">Canon probes (ожидаемые reject в блоке)</span>
+                  <label className="text-sm text-gray-300 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(botStatus.enable_probes)}
+                      onChange={(e) =>
+                        setBotStatus((p) => ({ ...p, enable_probes: e.target.checked }))
+                      }
+                      disabled={botStatus.is_running}
+                    />
+                    enable
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-gray-400 text-sm">probe_ratio (0..1):</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={botProbeRatioInput}
+                    onChange={(e) => setBotProbeRatioInput(e.target.value)}
+                    className="bg-gray-700 text-white px-3 py-1 rounded w-24 border border-gray-600 focus:outline-none focus:border-orange-500"
+                    disabled={botStatus.is_running}
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-300">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(botStatus.probe_transfer_ant)}
+                      onChange={(e) => setBotStatus((p) => ({ ...p, probe_transfer_ant: e.target.checked }))}
+                      disabled={botStatus.is_running}
+                    />
+                    transfer ANT (reject §4.1)
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(botStatus.probe_mint_ant_citizen)}
+                      onChange={(e) => setBotStatus((p) => ({ ...p, probe_mint_ant_citizen: e.target.checked }))}
+                      disabled={botStatus.is_running}
+                    />
+                    mint ANT → citizen (reject §4.2)
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(botStatus.probe_wrong_role_declare)}
+                      onChange={(e) => setBotStatus((p) => ({ ...p, probe_wrong_role_declare: e.target.checked }))}
+                      disabled={botStatus.is_running}
+                    />
+                    declare wrong role (reject §5.4)
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(botStatus.probe_wrong_role_activate_lzn)}
+                      onChange={(e) => setBotStatus((p) => ({ ...p, probe_wrong_role_activate_lzn: e.target.checked }))}
+                      disabled={botStatus.is_running}
+                    />
+                    activate_lzn wrong role (reject §4.2)
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(botStatus.probe_wrong_role_order)}
+                      onChange={(e) => setBotStatus((p) => ({ ...p, probe_wrong_role_order: e.target.checked }))}
+                      disabled={botStatus.is_running}
+                    />
+                    create_order citizen (reject §5.2)
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(botStatus.probe_cancel_not_owned)}
+                      onChange={(e) => setBotStatus((p) => ({ ...p, probe_cancel_not_owned: e.target.checked }))}
+                      disabled={botStatus.is_running}
+                    />
+                    cancel чужого ордера (reject §5.2)
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Probes специально создают tx, которые должны быть отклонены именно в блоке (DeliverTx/EndBlock). Смотри «Канон-аудит».
+                </p>
               </div>
               <div className="flex gap-2 mt-2">
                 {!botStatus.is_running ? (
@@ -919,76 +1319,16 @@ function App() {
         </div>
         )}
 
-        {mainTab === 'accounts' && (
-        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 mb-8">
-          <h2 className="text-xl font-bold mb-4">Accounts</h2>
-          {Object.keys(state.accounts).length === 0 ? (
-            <p className="text-gray-500">Нет аккаунтов — создайте через вкладку «Симуляция» (панель оператора).</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b border-gray-700 text-gray-400">
-                    <th className="pb-3 font-medium">Address</th>
-                    <th className="pb-3 font-medium">WRT Balance</th>
-                    <th className="pb-3 font-medium">LZN (liq. / frozen)</th>
-                    <th className="pb-3 font-medium">ANT Balance</th>
-                    <th className="pb-3 font-medium">ZKP</th>
-                    <th className="pb-3 font-medium">Role</th>
-                    <th className="pb-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.values(state.accounts).map((acc) => (
-                    <tr key={acc.address} className="border-b border-gray-700/50">
-                      <td className="py-3 font-mono text-sm text-blue-300">{acc.address}</td>
-                      <td className="py-3 text-green-400">{acc.wrt_balance?.toFixed(2) || '0.00'}</td>
-                      <td className="py-3 text-purple-400 text-sm">
-                        {(acc.lzn_balance ?? 0).toFixed(2)}
-                        <span className="text-gray-500"> / </span>
-                        <span className="text-amber-400/90" title="LZN frozen for mining">{(acc.lzn_frozen_mining ?? 0).toFixed(0)}</span>
-                      </td>
-                      <td className="py-3 text-orange-400">{acc.ant_balance?.toFixed(2) || '0.00'}</td>
-                      <td className="py-3 text-center text-lg" title="ZKP (симуляция): verify_zkp из кошелька">
-                        {acc.zkp_verified ? (
-                          <span className="text-emerald-400">✓</span>
-                        ) : (
-                          <span className="text-gray-600">—</span>
-                        )}
-                      </td>
-                      <td className="py-3">
-                        <span className={`px-2 py-1 rounded text-xs uppercase tracking-wider ${
-                          acc.role === 'guest' || acc.role === 'citizen' ? 'bg-blue-900/50 text-blue-300' :
-                          acc.role === 'provider' ? 'bg-orange-900/50 text-orange-300' :
-                          'bg-green-900/50 text-green-300'
-                        }`}>
-                          {acc.role}
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedWallet(acc.address)}
-                            className={`px-2 py-1 rounded text-xs transition-colors ${
-                              selectedWallet === acc.address
-                                ? 'bg-emerald-800 text-white'
-                                : 'bg-gray-700 hover:bg-gray-600'
-                            }`}
-                          >
-                            Кошелёк
-                          </button>
-                          <button onClick={() => handleMint(acc.address, 'wrt')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+1000 WRT</button>
-                          <button onClick={() => handleMint(acc.address, 'lzn')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 LZN</button>
-                          <button onClick={() => handleMint(acc.address, 'ant')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 ANT</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        {mainTab === 'rd' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <KpiPanel />
+          <ScenariosPanel />
+          <div className="lg:col-span-2">
+            <NodesPanel />
+          </div>
+          <div className="lg:col-span-2">
+            <TxExplorerPanel />
+          </div>
         </div>
         )}
 

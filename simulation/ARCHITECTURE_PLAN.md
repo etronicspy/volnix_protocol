@@ -27,7 +27,7 @@
 - **Основные модули интерфейса**:
 
   **1. Панель оператора симуляции**
-  - **Управление временем**: Ползунок скорости создания блоков в диапазоне **от 0.1 сек до 300 сек** (с возможностью паузы и ручной генерации).
+  - **Управление временем**: скорость симуляции **от 1:1 до «1 с = 1 неделя»** (×604800, batch-режим движка ≈ 10080 блоков/с, фактический темп ограничен CPU); совместимый ручной интервал блока 0.1–300 с.
   - **Global Wallet & Role Manager**: Единая таблица всех существующих кошельков (включая ботов). Возможность в 1 клик:
     - Создать новый кошелек.
     - Назначить/изменить статус (Гражданин, Поставщик, Валидатор).
@@ -53,27 +53,87 @@
 - [x] Определение архитектуры централизованного симулятора.
 - [x] Фиксация требований к панели оператора, эксплорерам, аналитике и генератору трафика.
 
-### Этап 2: Разработка Backend Core (Simulation Engine)
-- [ ] Инициализация проекта (Python + FastAPI).
-- [ ] Создание State Manager (in-memory хранилище) и Mempool.
-- [ ] Реализация `Mock Consensus Loop` с поддержкой динамического таймера (0.1s - 300s).
-- [ ] Разработка **Sim Operator API** (управление балансами, ролями, кошельками).
-- [ ] Разработка **Traffic Generator** (создание пуса из 20-50 бот-кошельков и логики их случайных взаимодействий).
-- [ ] Настройка WebSocket сервера для трансляции обновлений (блоки, стейт, рынок).
+### Этап 2: Разработка Backend Core (Simulation Engine) — Завершено
+- [x] Инициализация проекта (Python + FastAPI).
+- [x] Создание State Manager (in-memory хранилище) и Mempool.
+- [x] Реализация `Mock Consensus Loop` с поддержкой динамического таймера (0.1s - 300s).
+- [x] Разработка **Sim Operator API** (mint, set_role, order, reset, block-time).
+- [x] Разработка **Traffic Generator** (BotEngine: пул `bot_*` кошельков + canon probes).
+- [x] Настройка WebSocket сервера для трансляции обновлений (`init` / `new_block`).
 
-### Этап 3: Моделирование Модулей Протокола (Backend)
-- [ ] **Модуль Ident & Lizenz**: Логика выдачи ролей (Гражданин, Поставщик, Валидатор).
-- [ ] **Модуль Anteil**: Экономический движок (создание ордеров, матчинг, расчет цены, история торгов).
-- [ ] Сбор статистики для эксплорера (TPS, история блоков).
+### Этап 3: Моделирование Модулей Протокола (Backend) — Завершено
+- [x] **Модуль Ident & Lizenz**: роли §4.2, ZKP-флаг §3.1, активация LZN с потолком ⌊L/3⌋.
+- [x] **Модуль Anteil**: матчинг ордеров (limit + market), эскроу, цена, тиковая история.
+- [x] **§5.4 declare**: пакетный отбор с λ-cap и K-cap, rollback при выходе из коридора.
+- [x] **§5.5 эпоха ANT**: wipe → emission → coeff ∈ [0.75, 1.5].
+- [x] **§6.3 genesis**: два кошелька без ZKP + sim_treasury, начальный ValidatorSet.
+- [x] Канон-аудит (`core/canon_audit.py` + `core/canon_log.py`).
+- [x] Сбор статистики для эксплорера (TPS, история блоков).
 
-### Этап 4: Разработка Frontend Dashboard
-- [ ] Инициализация React-приложения.
-- [ ] Разработка **панели оператора симуляции**: управление временем (0.1-300с), управление ботами.
-- [ ] Разработка **Global Wallet Manager**: таблица всех кошельков с кнопками управления балансами и ролями.
-- [ ] Разработка **Blockchain Explorer**: страницы блоков, транзакций и сетевой статистики.
-- [ ] Разработка **Market Analytics**: интеграция графиков (TradingView Lightweight Charts или аналоги), стакан ордеров.
+### Этап 4: Разработка Frontend Dashboard — Завершено
+- [x] Инициализация React-приложения (React 19 + Vite 8 + Tailwind 4).
+- [x] **Панель оператора симуляции**: управление block_time (0.1–300с), управление ботами + probes.
+- [x] **Wallet Manager**: таблица всех кошельков, mint, кнопка «Кошелёк» → WalletPanel.
+- [x] **Blockchain Explorer**: лента блоков, TPS, raw-JSON выбранного блока.
+- [x] **Market Analytics**: TradingView-стиль (ECharts), стакан, ручной ордер.
 
-### Этап 5: Интеграция и Сквозное Тестирование
-- [ ] Связывание всех Frontend-модулей с Backend API и WebSocket.
-- [ ] Запуск генератора трафика и проверка стабильности работы UI при высокой нагрузке (блок каждые 0.1 сек).
-- [ ] Написание документации по запуску симулятора.
+### Этап 5: Интеграция и Сквозное Тестирование — Частично завершено
+- [x] Связывание Frontend ↔ Backend по REST и WebSocket.
+- [x] Бот → mempool через единый admission (`validate_and_build_tx`); probes остаются на прямой mempool для тестирования reject-путей engine.
+- [x] env-конфиг (`core/settings.py`), CORS из ENV.
+- [x] Базовый `simulation/README.md`.
+- [ ] (см. roadmap-2) Полноценные тесты, CI, Docker compose.
+
+---
+
+## 4. Roadmap V2 (R&D-направление) — выполнено
+
+Дальнейшее развитие зафиксировано в плане
+`.cursor/plans/simulation_roadmap_r&d_*.plan.md` (6 этапов, все реализованы):
+
+| Этап | Задачи | Статус |
+|---|---|---|
+| 0 — Quick wins | Bot → единый admission, pydantic-settings, README, обновление этого файла | ✅ |
+| 1 — Foundation | pytest + vitest, ruff/mypy/eslint, CI workflow, Docker compose | ✅ |
+| 2 — Persistence | append-only `blocks.jsonl`, persist `canon_log.jsonl`, tx-индекс, WS-дельты | ✅ |
+| 3 — Канон-глубина | `core/consensus.py` (PreVote/PreCommit/+2/3), evidence + slashing, расширенные bot probes | ✅ |
+| 4 — Сценарии и аналитика | `core/scenarios.py` + YAML, KPI (Gini, velocity, burn ratio), CSV/JSONL экспорт, Prometheus `/metrics` + Grafana | ✅ |
+| 5 — Модуляризация фронта | zustand store + чистые редьюсеры, `useSimWebSocket`, `useKpi`/`useScenarios`, KPI/Scenarios/TxExplorer панели, `wallet/api.ts` | ✅ |
+| 6 — Документация | `SCENARIOS.md`, автогенерируемые `API.md` и `CANON_COVERAGE.md`, финальный `simulation/README.md` | ✅ |
+
+## 5. Multi-node sim revive (canon §6.3) — реализовано (гибрид, один процесс)
+
+План: `.cursor/plans/multi-node_sim_revive_*.plan.md`. Эталон распределённого
+запуска остаётся целью на будущее (см. ниже); этот этап реализует логическую
+многоузловость в одном процессе FastAPI, чего достаточно для R&D-стенда и
+сценариев §6.1/§6.3.
+
+| Этап | Задачи | Статус |
+|---|---|---|
+| A — Оживление | `core/auto_declare.py` (canon §5.4 declare за каждого валидатора), `is_consensus_enabled` включается при `len(ValidatorSet) >= 2`, FastAPI lifespan авто-стартует bot + AutoDeclareDaemon, env-флаги `bot_autostart` / `auto_declare` | ✅ |
+| B — NetworkSim | `core/network.py` с per-node mempool, gossip latency/loss, `flush_to_global` по кворуму ≥ 2/3; `StateManager.network` attach в lifespan; bot / wallet / scenarios подают tx через `NetworkSim.submit_from_addr`; engine читает мемпул через flush | ✅ |
+| C — UI + сценарии | REST `/api/network/{nodes,topology,config}`, `NodesPanel.tsx`, новый scenario-step `network_set` + `auto_declare`, сценарии `network_partition.yaml` + `validator_set_growth.yaml`, тесты `test_auto_declare/test_network/test_engine_multi_validator/test_lifespan_autostart` | ✅ |
+
+> «Распределённый запуск» (несколько отдельных backend-процессов, реальный
+> CometBFT-подобный p2p) пока остаётся за рамками R&D-стенда; гибридная
+> реализация выше покрывает все требуемые сценарии §6.3 в одном процессе.
+
+## 6. Симулятор v2 — поправки к канону (реализовано)
+
+Движок переведён на **ruleset v2** — модифицированный набор правил, решающий
+критичные проблемы канона v4.20 из `docs/CANON_PROBLEMS.md`
+(спецификация поправок: `simulation/docs/V2_RULESET.md`):
+
+| Поправка | Суть | Статус |
+|---|---|---|
+| λ — только верхний предел | `Σb_i ≤ λ·L_total`; минимальный порог удалён, блок валиден при любом Σb_i (включая 0) — liveness не зависит от рынка ANT; при `b_i = 0` нет ни базовой WRT, ни комиссий | ✅ |
+| Genesis без «курицы-яйца» | стартовый ANT валидатора = `EpochBlocks × λ × L_genesis` (бюджет сжигания на эпоху) | ✅ |
+| `s_i` — возвращаемая ставка | сжигается только `b_i`; `s_i` проверяется по балансу (`ANT ≥ b+s`), задаёт вес `w_i = s_i/L_i`, но не списывается | ✅ |
+| Детерминированный EndBlocker | tie-breaker при равных `w_i` — лексикографически по адресу; единый порядок: валидация → λ-отсев → top-K | ✅ |
+| Фиксированный wipe эпохи | (1) отмена SELL-ордеров Поставщиков с возвратом эскроу → (2) сжигание всего ANT Поставщиков → (3) эмиссия; BUY-ордера переживают границу | ✅ |
+| Стабильный коэффициент эмиссии | `sold_prev ≈ 0` → coeff не меняется; EMA-сглаживание (α = 0.5); клиппинг [0.75, 1.5] | ✅ |
+| Rollback отклонённых блоков | блок, отклонённый кворумом или инвариантами, полностью откатывает состояние | ✅ |
+
+Тесты: 193 passed (`simulation/backend/tests`), покрытие новых правил —
+`test_engine_declare_batch`, `test_engine_epoch`, `test_engine_produce_block`,
+`test_auto_declare`.

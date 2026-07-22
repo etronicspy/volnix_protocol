@@ -21,13 +21,25 @@ SKIP_AUDIT = frozenset(
 )
 
 
-def audit_block_ledger(sm: "StateManager", txs: List[dict], block_height: int) -> None:
+def audit_block_ledger(sm: StateManager, txs: List[dict], block_height: int) -> None:
     log = sm.canon_log
     for item in txs:
         tx_type = (item.get("tx_type") or "").lower()
         if not tx_type or tx_type in SKIP_AUDIT:
             continue
         h = item.get("tx_hash") or ""
+        if tx_type == "deliver_tx_reject":
+            log.push(
+                source="engine",
+                status="reject",
+                category="delivertx",
+                canon=str(item.get("canon") or "—"),
+                title=str(item.get("title") or "DeliverTx rejected"),
+                detail=str(item.get("details") or ""),
+                tx_hash=h,
+                block_height=block_height,
+            )
+            continue
         if tx_type == "transfer":
             asset = (item.get("asset_type") or "wrt").lower()
             snd = (item.get("sender") or "")[:16]
@@ -162,7 +174,21 @@ def audit_block_ledger(sm: "StateManager", txs: List[dict], block_height: int) -
                 category="consensus",
                 canon="§5.4",
                 title="Declare участия: b_i (сжигание) + s_i (ставка)",
-                detail=f"b={item.get('amount')} s={item.get('stake_amount')} (оба сжигаются при успешном блоке)",
+                detail=(
+                    f"b={item.get('amount')} s={item.get('stake_amount')} "
+                    "(v2: сжигается только b_i; s_i — возвращаемая ставка на высоту)"
+                ),
+                tx_hash=h,
+                block_height=block_height,
+            )
+        elif tx_type == "declare_dropped":
+            log.push(
+                source="engine",
+                status="reject",
+                category="consensus",
+                canon="§5.4",
+                title="Declare отброшен из мемпула (структурно невалиден)",
+                detail=str(item.get("details") or ""),
                 tx_hash=h,
                 block_height=block_height,
             )
@@ -199,7 +225,7 @@ def audit_block_ledger(sm: "StateManager", txs: List[dict], block_height: int) -
                 tx_hash=h,
                 block_height=block_height,
             )
-        elif tx_type in ("epoch_ant_wipe", "epoch_ant_credit", "epoch_emission"):
+        elif tx_type in ("epoch_ant_wipe", "epoch_ant_credit", "epoch_emission", "epoch_order_cancel"):
             log.push(
                 source="engine",
                 status="ok",
@@ -216,7 +242,7 @@ def audit_block_ledger(sm: "StateManager", txs: List[dict], block_height: int) -
                 status="warn",
                 category="reward",
                 canon="§5.1–5.4",
-                title="Базовая награда WRT пропущена — Σb_i вне цели λ·L_total",
+                title="Базовая награда WRT пропущена — нет валидаторов с b_i>0 на высоте",
                 detail=item.get("details") or "",
                 tx_hash="",
                 block_height=block_height,
@@ -245,7 +271,7 @@ def audit_block_ledger(sm: "StateManager", txs: List[dict], block_height: int) -
             )
 
 
-def log_wallet_rejection(sm: "StateManager", op: str, message: str, address: str = "") -> None:
+def log_wallet_rejection(sm: StateManager, op: str, message: str, address: str = "") -> None:
     sm.canon_log.push(
         source="wallet",
         status="reject",
@@ -257,7 +283,7 @@ def log_wallet_rejection(sm: "StateManager", op: str, message: str, address: str
     )
 
 
-def log_bot_queue(sm: "StateManager", action: str, detail: str, tx_hash: str = "") -> None:
+def log_bot_queue(sm: StateManager, action: str, detail: str, tx_hash: str = "") -> None:
     sm.canon_log.push(
         source="bot",
         status="info",
@@ -271,7 +297,7 @@ def log_bot_queue(sm: "StateManager", action: str, detail: str, tx_hash: str = "
 
 
 def log_engine_skip(
-    sm: "StateManager",
+    sm: StateManager,
     *,
     block_height: int,
     tx_hash: str,

@@ -1,4 +1,4 @@
-/** Эталон эмиссии LZN в симуляции (§4.2); потолок активированных на адрес = ⌊ref/3⌋ (= 3333 при ref 10 000). */
+/** Эталон эмиссии LZN в симуляции (§4.2); потолок активированных на адрес = ⌊ref/3⌋ (= 3333 при ref 10000). */
 export const LZN_TOTAL_SUPPLY_REF = 10_000
 export const LZN_MAX_FROZEN_PER_ADDRESS = Math.floor(LZN_TOTAL_SUPPLY_REF / 3)
 

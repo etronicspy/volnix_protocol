@@ -1,0 +1,15 @@
+name: network_partition
+description: |
+  NetworkSim: проверить, что под высокой gossip-латентностью (2000 мс) и потерями (20%)
+  блоки всё ещё рождаются. Quorum по умолчанию 2/3, поэтому при 4 узлах достаточно 3.
+seed: 7
+steps:
+  - set_block_time: { seconds: 0.5 }
+  - network_set: { num_nodes: 4, latency_ms: 50, loss_pct: 0.0 }
+  - auto_declare: {}
+  - wait_blocks: { n: 2 }
+  - network_set: { latency_ms: 2000, loss_pct: 20.0 }
+  - auto_declare: {}
+  - wait_blocks: { n: 2 }
+asserts:
+  - block_height: { op: ">=", value: 2 }

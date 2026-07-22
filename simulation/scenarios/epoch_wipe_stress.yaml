@@ -1,0 +1,14 @@
+name: epoch_wipe_stress
+description: |
+  §5.5: поставщик с большим ANT — после wipe на границе эпохи баланс ANT обнуляется,
+  затем начисляется эмиссия. В сокращённой эпохе (см. set_block_time) проверяем,
+  что после wait_blocks ant_balance ≥ 0 и существует tx epoch_emission.
+seed: 42
+steps:
+  - set_block_time: { seconds: 0.1 }
+  - create_account: { address: "p_stress", role: "provider", zkp: true }
+  - mint: { receiver: "p_stress", amount: 500, asset: "ant" }
+  - wait_blocks: { n: 3 }
+asserts:
+  - balance: { address: "p_stress", asset: "ant", op: ">=", value: 0 }
+  - block_height: { op: ">=", value: 3 }

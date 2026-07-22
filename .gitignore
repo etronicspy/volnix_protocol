@@ -29,6 +29,8 @@ genesis.json
 coverage.txt
 coverage.html
 coverage/
+.coverage
+htmlcov/
 
 # Dependency directories
 vendor/
