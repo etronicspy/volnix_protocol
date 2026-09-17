@@ -31,6 +31,7 @@ class TransactionType(str, Enum):
     EPOCH_EMISSION = "epoch_emission"
     EPOCH_ANT_WIPE = "epoch_ant_wipe"
     EPOCH_ANT_CREDIT = "epoch_ant_credit"
+    EPOCH_LZN_CREDIT = "epoch_lzn_credit"
     BLOCK_REWARD = "block_reward"
     GENESIS_MESSAGE = "genesis_message"
     GENESIS_VALIDATOR_LZN = "genesis_validator_lzn"
@@ -51,10 +52,12 @@ class Order(BaseModel):
     id: str
     owner: str
     order_type: OrderType
-    price: float  # VLNX per Share
-    amount: float # Number of shares
+    price: float  # WRT per unit of asset
+    amount: float  # Units of asset (ANT or LZN)
     filled: float = 0.0
     timestamp: float
+    # §5.2 5.0-sim: две книги — ANT («электричество») и LZN («оборудование»).
+    asset: str = "ant"
 
 class Transaction(BaseModel):
     tx_hash: str

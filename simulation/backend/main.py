@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
-from core import analytics, auto_declare, exporters
+from core import analytics, auto_declare, auto_market, exporters
 from core.bot_engine import BotEngine
 from core.canon_audit import log_wallet_rejection
 from core.engine import SimulationEngine
@@ -37,23 +37,10 @@ bot_engine = BotEngine(state_manager)
 def _mempool_append_persist(tx) -> None:
     """Подать tx в мемпул: NetworkSim (если включён) или legacy.
 
-    Канон-нейтрально: ни одна проверка admission не меняется, только маршрут
-    доставки до engine.produce_block.
+    Канон-нейтрально: admission через StateManager.submit_tx
+    (declare/burn — replace-by-sender).
     """
-    net = getattr(state_manager, "network", None)
-    addr = getattr(tx, "sender", "") or ""
-    pushed = False
-    if net is not None:
-        try:
-            if addr:
-                net.submit_from_addr(addr, tx)
-            else:
-                net.submit_to("node_0", tx)
-            pushed = True
-        except Exception:
-            pushed = False
-    if not pushed:
-        state_manager.mempool.append(tx)
+    state_manager.submit_tx(tx)
     state_manager.try_save_state()
 
 
@@ -86,7 +73,7 @@ async def _lifespan(app: FastAPI):
 
     engine_task = asyncio.create_task(engine.start())
     bot_task: Optional[asyncio.Task] = None
-    auto_declare_task: Optional[asyncio.Task] = None
+    auto_market_task: Optional[asyncio.Task] = None
     if _sim_settings.bot_autostart:
         try:
             bot_engine.set_intensity(float(_sim_settings.bot_default_intensity))
@@ -94,20 +81,25 @@ async def _lifespan(app: FastAPI):
             pass
         bot_engine.is_running = True
         bot_task = asyncio.create_task(bot_engine.start())
-    if _sim_settings.auto_declare:
-        # Batch-режим высоких скоростей: демон с тиком ≥0.5 с не успевает за
-        # тысячами блоков/с, поэтому движок зовёт step_once перед каждым блоком.
-        engine.pre_block_hook = lambda: auto_declare.step_once(state_manager, engine)
-        auto_declare_task = asyncio.create_task(
-            auto_declare.run(state_manager, engine)
-        )
+
+    # Трафик/рынок/declare привязаны к блокам (sim_speed), не к wall-clock.
+    # Порядок: §5.2 рынок → боты (переводы/ордера) → §5.4 declare (жечь после докупки).
+    def _pre_block() -> None:
+        auto_market.step_once(state_manager, engine)
+        bot_engine.step_once()
+        if _sim_settings.auto_declare:
+            auto_declare.step_once(state_manager, engine)
+
+    engine.pre_block_hook = _pre_block
+    # Declare только из pre_block (привязка к высоте). Фоновый auto_declare.run
+    # дублировал подачу на низких скоростях и раздувал мемпул при откатах блока.
     try:
         yield
     finally:
         state_manager.try_save_state()
         bot_engine.stop()
         engine.stop()
-        for task in (auto_declare_task, bot_task, engine_task):
+        for task in (auto_market_task, bot_task, engine_task):
             if task is None:
                 continue
             task.cancel()
@@ -290,6 +282,7 @@ class OrderRequest(BaseModel):
     amount: float
     market: bool = False
     max_wrt: Optional[float] = None
+    asset: str = "ant"  # "ant" | "lzn"
 
 @app.post("/api/sim-operator/order")
 def create_order(req: OrderRequest):
@@ -303,6 +296,7 @@ def create_order(req: OrderRequest):
         amount=req.amount,
         market=bool(req.market),
         max_wrt=req.max_wrt,
+        asset=(req.asset or "ant").lower(),
     )
     if not ok or tx is None:
         log_wallet_rejection(state_manager, "create_order", msg, req.address.strip())

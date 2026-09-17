@@ -52,10 +52,10 @@ def test_role_counts_basic(state_manager, mk_account):
     mk_account("p1", role=Role.PROVIDER)
     mk_account("v1", role=Role.VALIDATOR)
     counts = analytics.role_counts(state_manager)
-    # Genesis ProviderAddr + VAlidator уже считаются. Просто проверим что наши добавились
+    # Genesis: только seed-валидатор (+ казна); когорта ещё не введена.
     assert counts["citizen"] >= 1
-    assert counts["provider"] >= 2  # genesis_provider + p1
-    assert counts["validator"] >= 2  # genesis_validator + v1
+    assert counts["provider"] >= 1  # p1
+    assert counts["validator"] >= 2  # seed + v1
     assert counts["treasury"] == 1
 
 

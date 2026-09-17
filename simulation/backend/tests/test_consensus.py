@@ -19,6 +19,7 @@ from core.consensus import (
 from core.engine import BURN_CAP_LAMBDA
 from core.models import Role, Transaction, TransactionType
 from core.state import GENESIS_VALIDATOR_ADDR
+from tests.conftest import seed_declare_tx
 
 
 def test_normalize_validator_set_dedups_and_drops_nonpositive():
@@ -143,16 +144,10 @@ def test_slashing_amount_bounded():
 
 
 def _gv_declare(engine):
-    L = engine._network_lzn_total_validators()
-    return Transaction(
-        tx_hash=uuid.uuid4().hex,
-        tx_type=TransactionType.DECLARE_PARTICIPATION,
-        sender=GENESIS_VALIDATOR_ADDR,
-        amount=BURN_CAP_LAMBDA * L,
-        stake_amount=0.0,
-        asset_type="ant",
-        timestamp=time.time(),
-    )
+    from tests.conftest import enqueue_corridor_declares, seed_declare_tx
+
+    enqueue_corridor_declares(engine)
+    return seed_declare_tx(engine)
 
 
 def test_engine_default_fault_model_is_off(engine):
@@ -187,26 +182,17 @@ async def test_engine_commits_block_with_healthy_consensus(engine):
 @pytest.mark.asyncio
 async def test_engine_slashing_records_tx_and_canon(engine, mk_account):
     """p_double_sign=1 + active multi-validator → блок отклонён + evidence + slashing-tx."""
+    from tests.conftest import enqueue_corridor_declares, strip_bootstrap_economy
+
+    strip_bootstrap_economy(engine.state, keep_seed_lzn=1.0)
     # Реальный второй валидатор: с ZKP и frozen LZN (engine проверит роль/наличие)
-    ghost = mk_account("ghost_validator", role=Role.VALIDATOR, frozen=100.0, lzn=10.0, zkp=True, ant=10.0)
+    ghost = mk_account("ghost_validator", role=Role.VALIDATOR, frozen=100.0, lzn=10.0, zkp=True, ant=50.0)
     engine.state.consensus_validator_set = [
-        {"address": GENESIS_VALIDATOR_ADDR, "power": 6667.0},
+        {"address": GENESIS_VALIDATOR_ADDR, "power": 1.0},
         {"address": ghost.address, "power": 1000.0},
     ]
     engine.set_consensus_fault_model(p_double_sign=1.0, seed=7)
-    # declare должен дать Σb в коридор по обновлённому L_total
-    L_total = engine._network_lzn_total_validators()
-    engine.state.mempool.append(
-        Transaction(
-            tx_hash=uuid.uuid4().hex,
-            tx_type=TransactionType.DECLARE_PARTICIPATION,
-            sender=GENESIS_VALIDATOR_ADDR,
-            amount=BURN_CAP_LAMBDA * L_total,
-            stake_amount=0.0,
-            asset_type="ant",
-            timestamp=time.time(),
-        )
-    )
+    enqueue_corridor_declares(engine)
     initial_frozen_ghost = ghost.lzn_frozen_mining
     try:
         await engine.produce_block()

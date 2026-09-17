@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 
+import pytest
+
 from core.models import Role
 from core.state import (
     GENESIS_VALIDATOR_ADDR,
@@ -16,6 +18,7 @@ from core.state import (
 def test_save_and_load_roundtrip(state_manager, tmp_path):
     fp = str(tmp_path / "saved.json")
     state_manager.last_price = 12.5
+    state_manager.genesis_unix = 1_700_000_000.0
     state_manager.price_history.append({"time": "00:00:01", "price": 12.5, "ts": 1.0})
     state_manager.save_state(fp)
     assert os.path.exists(fp)
@@ -23,9 +26,30 @@ def test_save_and_load_roundtrip(state_manager, tmp_path):
     other = StateManager(data_dir=str(tmp_path))
     other.load_state(fp)
     assert other.last_price == 12.5
+    assert other.genesis_unix == 1_700_000_000.0
     assert GENESIS_VALIDATOR_ADDR in other.accounts
     assert other.accounts[GENESIS_VALIDATOR_ADDR].role == Role.VALIDATOR
     assert any(row.get("price") == 12.5 for row in other.price_history)
+
+
+def test_sim_timestamp_tracks_height(state_manager):
+    from core.state import CANONICAL_BLOCK_INTERVAL_SEC
+
+    state_manager.genesis_unix = 1000.0
+    state_manager.current_height = 0
+    assert state_manager.sim_timestamp() == 1000.0
+    assert state_manager.sim_timestamp(for_height=3) == 1000.0 + 3 * CANONICAL_BLOCK_INTERVAL_SEC
+    state_manager.current_height = 2
+    before = len(state_manager.price_history)
+    state_manager.record_trade_price(0.02)
+    assert len(state_manager.price_history) == before + 1
+    row = state_manager.price_history[-1]
+    assert row["ts"] == pytest.approx(1000.0 + 3 * CANONICAL_BLOCK_INTERVAL_SEC + 0.001)
+    state_manager.note_block_committed(3)
+    state_manager.record_trade_price(0.021)
+    assert state_manager.price_history[-1]["ts"] == pytest.approx(
+        1000.0 + 3 * CANONICAL_BLOCK_INTERVAL_SEC + 0.001
+    )
 
 
 def test_load_state_corrupted_falls_back_to_genesis(tmp_path):

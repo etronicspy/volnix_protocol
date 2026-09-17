@@ -8,7 +8,7 @@ import pytest
 
 from core.engine import BURN_CAP_LAMBDA
 from core.models import Role, Transaction, TransactionType
-from core.state import GENESIS_PROVIDER_ADDR, GENESIS_VALIDATOR_ADDR, SIM_TREASURY_ADDR
+from core.state import GENESIS_VALIDATOR_ADDR, SIM_TREASURY_ADDR
 
 
 def _mk_transfer(sender, receiver, amount, asset="wrt"):
@@ -50,7 +50,7 @@ def _mk_declare(sender, b, s):
 @pytest.mark.asyncio
 async def test_produce_block_advances_height_on_accepted_burn(engine, mk_account):
     """Σb_i ≈ λ·L_total → блок принимается, высота +1."""
-    # genesis-валидатор уже есть с L=6667, casting declare с b ≈ λ·L
+    # seed-валидатор: L=1, declare с b ≈ λ·L_i
     gv = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
     L = gv.lzn_frozen_mining
     b = BURN_CAP_LAMBDA * L
@@ -63,35 +63,66 @@ async def test_produce_block_advances_height_on_accepted_burn(engine, mk_account
 
 
 @pytest.mark.asyncio
-async def test_produce_block_accepts_small_burn_below_cap(engine):
-    """v2: любой Σb_i ≤ λ·L_total валиден — маленький burn принимается, блок растёт."""
+async def test_produce_block_accepts_burn_in_corridor(engine):
+    """§5.4: λ·L ≤ Σb_i ≤ (1−λ)·L — burn внутри коридора принимается."""
+    from core.state import burn_ceiling, burn_floor
+
     gv0 = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
+    L = float(gv0.lzn_frozen_mining)
     initial_ant = gv0.ant_balance
     h0 = engine.state.current_height
-
-    tx = _mk_declare(gv0.address, b=1.0, s=0.0)
+    # Середина коридора при L=1, λ=1/3: [1/3, 2/3]
+    b = (burn_floor(L) + burn_ceiling(L)) / 2.0
+    tx = _mk_declare(gv0.address, b=b, s=0.0)
     engine.state.mempool.append(tx)
 
     await engine.produce_block()
 
     assert engine.state.current_height == h0 + 1
     gv_after = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
-    # Сожжён ровно b_i = 1.0 (v2: s_i не сжигается, здесь s=0)
-    assert gv_after.ant_balance == pytest.approx(initial_ant - 1.0)
-    # Базовая награда начислена (b_i > 0)
+    assert gv_after.ant_balance == pytest.approx(initial_ant - b)
     last_block = engine.state.blocks[-1]
     assert any(t.get("tx_type") == "block_reward" for t in last_block["transactions"])
+    comp = last_block.get("competition")
+    assert isinstance(comp, dict)
+    assert comp["kind"] == "povb"
+    assert comp["selected_count"] >= 1
+    assert comp["B_selected"] == pytest.approx(b)
+    assert any(e["status"] == "selected" for e in comp["entries"])
 
 
 @pytest.mark.asyncio
-async def test_produce_block_without_declare_commits_without_reward(engine):
-    """v2: без declare (Σb_i = 0) блок валиден, но базовая WRT не эмитируется."""
+async def test_produce_block_rejects_burn_below_floor(engine):
+    """Σb_i < λ·L_total → блок отклоняется (низ коридора)."""
+    gv0 = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
     h0 = engine.state.current_height
-    # пустой мемпул
+    # При L=1 низ = λ ≈ 0.333; b=0.1 ниже пола
+    tx = _mk_declare(gv0.address, b=0.1, s=0.0)
+    engine.state.mempool.append(tx)
+
+    with pytest.raises(RuntimeError, match="min-burn"):
+        await engine.produce_block()
+    assert engine.state.current_height == h0
+
+
+@pytest.mark.asyncio
+async def test_produce_block_without_declare_is_rejected(engine):
+    """§5.4: без сжигания (Σb_i = 0) блок не производится."""
+    h0 = engine.state.current_height
+    # пустой мемпул → ни одного declare
+    with pytest.raises(RuntimeError, match="min-burn"):
+        await engine.produce_block()
+    assert engine.state.current_height == h0
+
+
+@pytest.mark.asyncio
+async def test_produce_block_commits_without_reward_when_min_burn_off(engine):
+    """С выключенным порогом (legacy v2) блок валиден, но базовая WRT не эмитируется."""
+    engine.security_config.min_burn_enabled = False
+    h0 = engine.state.current_height
     await engine.produce_block()
     assert engine.state.current_height == h0 + 1
-    last_block = engine.state.blocks[-1]
-    txs = last_block["transactions"]
+    txs = engine.state.blocks[-1]["transactions"]
     assert not any(t.get("tx_type") == "block_reward" for t in txs)
     assert any(t.get("tx_type") == "block_reward_skipped" for t in txs)
 
@@ -100,8 +131,11 @@ async def test_produce_block_without_declare_commits_without_reward(engine):
 async def test_produce_block_stake_not_burned(engine):
     """v2: при declare с s_i > 0 списывается только b_i; ставка остаётся на балансе."""
     gv0 = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
+    # L=600 → низ коридора λ·L=200; b должен быть ≥ пола
+    b, s = 200.0, 400.0
+    gv0.lzn_frozen_mining = float(b + s)
+    gv0.ant_balance = float(b + s)
     initial_ant = gv0.ant_balance
-    b, s = 100.0, 500.0
     engine.state.mempool.append(_mk_declare(gv0.address, b=b, s=s))
 
     await engine.produce_block()
@@ -111,12 +145,22 @@ async def test_produce_block_stake_not_burned(engine):
 
 
 def _declare_for_gv(engine):
-    """Соберём declare от genesis-валидатора с b ≈ λ·L_total по текущему состоянию."""
-    gv = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
-    L_total = engine._network_lzn_total_validators()
-    target = BURN_CAP_LAMBDA * L_total
-    return _mk_declare(gv.address, b=target, s=0.0)
+    """Набор низа коридора: declare b_i=λ·L_i для всех валидаторов с L_i>0."""
+    from tests.conftest import enqueue_corridor_declares
 
+    # Возвращаем последний tx для совместимости вызовов append(_declare_for_gv(...))
+    # — сами txs уже в мемпуле.
+    n_before = len(engine.state.mempool)
+    enqueue_corridor_declares(engine)
+    if len(engine.state.mempool) > n_before:
+        return engine.state.mempool[-1]
+    return seed_declare_tx_fallback(engine)
+
+
+def seed_declare_tx_fallback(engine):
+    from tests.conftest import seed_declare_tx
+
+    return seed_declare_tx(engine)
 
 @pytest.mark.asyncio
 async def test_produce_block_transfer_wrt_via_admission(engine, mk_account):
@@ -137,7 +181,8 @@ async def test_produce_block_transfer_wrt_via_admission(engine, mk_account):
 @pytest.mark.asyncio
 async def test_produce_block_reject_transfer_ant_logged(engine, mk_account):
     """Transfer ANT по §4.1 запрещён — в блоке должна быть запись deliver_tx_reject."""
-    v = mk_account("v_ant", role=Role.VALIDATOR, frozen=10.0, ant=50.0, zkp=True)
+    # frozen=0: не раздуваем L_total / коридор; роль Валидатор нужна для держания ANT.
+    v = mk_account("v_ant", role=Role.VALIDATOR, frozen=0.0, ant=50.0, zkp=True)
     p = mk_account("p_ant", role=Role.PROVIDER, ant=0.0, zkp=True)
     engine.state.mempool.append(_declare_for_gv(engine))
     engine.state.mempool.append(_mk_transfer(v.address, p.address, 5.0, asset="ant"))
@@ -200,6 +245,10 @@ async def test_set_speed_maps_to_block_time(engine):
 @pytest.mark.asyncio
 async def test_batch_tick_produces_multiple_blocks(engine):
     """Batch-режим высоких скоростей: за один тик производится пачка блоков."""
+    # Запас ANT на всю пачку (seed иначе исчерпает 1 ANT за несколько высот).
+    gv = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
+    gv.ant_balance = 1_000_000.0
+    engine.pre_block_hook = lambda: engine.state.mempool.append(_declare_for_gv(engine))
     engine.set_speed(604_800.0)
     engine.is_running = True
     h0 = engine.state.current_height
@@ -212,10 +261,18 @@ async def test_batch_tick_produces_multiple_blocks(engine):
 async def test_batch_tick_calls_pre_block_hook(engine):
     """В batch-режиме движок зовёт pre_block_hook перед каждым блоком (auto-declare)."""
     calls = []
-    engine.pre_block_hook = lambda: calls.append(1)
+    gv = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
+    gv.ant_balance = 1_000_000.0
+
+    def hook():
+        calls.append(1)
+        engine.state.mempool.append(_declare_for_gv(engine))
+
+    engine.pre_block_hook = hook
     engine.set_speed(604_800.0)
     engine.is_running = True
     h0 = engine.state.current_height
     await engine._produce_batch_tick()
     engine.is_running = False
+    assert engine.state.current_height > h0
     assert len(calls) == engine.state.current_height - h0

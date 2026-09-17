@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { LZN_MAX_FROZEN_PER_ADDRESS, LZN_TOTAL_SUPPLY_REF } from '../config'
+import { formatPrice } from '../lib/format'
 
 export interface WalletAccount {
   address: string
@@ -50,8 +51,6 @@ export function WalletPanel({
   account,
   blockHeight,
   simTreasury,
-  genesisValidator,
-  genesisProvider,
 }: WalletPanelProps) {
   const [orders, setOrders] = useState<OpenOrder[]>([])
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
@@ -115,23 +114,9 @@ export function WalletPanel({
   }
 
   const role = account.role
-  const isCitizenWallet = role === 'citizen' || role === 'guest'
-  const isValidator = role === 'validator'
-  const isProvider = role === 'provider'
-  /** §4.2: ордера на рынке ANT — только Валидатор (BUY) и Поставщик (SELL). */
-  const _canPlaceMarketOrders = isValidator || isProvider
-  void _canPlaceMarketOrders
-
   const Lcap = LZN_MAX_FROZEN_PER_ADDRESS
   const frozen = account.lzn_frozen_mining ?? 0
   const zkpOk = Boolean(account.zkp_verified)
-  const totalLzn = account.lzn_balance + frozen
-  const isGenesisValidator = genesisValidator != null && address === genesisValidator
-  const isGenesisProvider = genesisProvider != null && address === genesisProvider
-  const canBecomeProvider =
-    isGenesisProvider || zkpOk
-  const canBecomeValidator =
-    isGenesisValidator || (zkpOk && totalLzn > 0)
 
   return (
     <div className="bg-gray-800 p-6 rounded-lg border border-emerald-700/40 space-y-6">
@@ -158,12 +143,7 @@ export function WalletPanel({
           </div>
           <div>
             <div className="text-gray-500 text-xs uppercase">ANT</div>
-            <div className="font-mono text-orange-300">
-              {isCitizenWallet ? '—' : account.ant_balance.toFixed(4)}
-            </div>
-            {isCitizenWallet && (
-              <div className="text-[10px] text-gray-600 mt-0.5">не хранится</div>
-            )}
+            <div className="font-mono text-orange-300">{account.ant_balance.toFixed(4)}</div>
           </div>
           <div>
             <div className="text-gray-500 text-xs uppercase">ZKP</div>
@@ -186,16 +166,18 @@ export function WalletPanel({
       <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
         <h3 className="text-sm font-semibold text-gray-300 mb-2">ZKP (симуляция)</h3>
         <p className="text-xs text-gray-500 mb-3">
-          §3.1: без подтверждения ZKP нельзя стать Поставщиком или Валидатором (кроме фиксированных genesis-адресов §6.3).
+          §3.1: без подтверждения ZKP нельзя стать Поставщиком или Валидатором
+          (кроме seed-адреса genesis §6.3).
           Здесь — одна tx <code className="text-gray-400">verify_zkp</code> в мемпул.
         </p>
         <button
           type="button"
-          disabled={pending || zkpOk}
+          disabled={pending}
+          data-tip="Симуляция ZKP (§3.1). Без флага узел не применит роль поставщика или валидатора."
           onClick={() => run({ op: 'verify_zkp', address })}
           className="bg-slate-700 hover:bg-slate-600 disabled:opacity-40 px-4 py-2 rounded text-sm"
         >
-          {zkpOk ? 'ZKP уже подтверждён' : 'Подтвердить ZKP (tx)'}
+          {zkpOk ? 'Повторить verify_zkp' : 'Подтвердить ZKP (tx)'}
         </button>
       </section>
 
@@ -212,10 +194,6 @@ export function WalletPanel({
         <RoleChangeForm
           currentRole={role}
           disabled={pending}
-          canBecomeProvider={canBecomeProvider}
-          canBecomeValidator={canBecomeValidator}
-          isGenesisProvider={isGenesisProvider}
-          isGenesisValidator={isGenesisValidator}
           onSubmit={(newRole) => run({ op: 'set_role', address, role: newRole })}
         />
         <p className="text-[11px] text-gray-500 mt-2">
@@ -248,22 +226,15 @@ export function WalletPanel({
         />
       </section>
 
-      {isCitizenWallet && (
-        <p className="text-sm text-gray-500 bg-gray-900/30 p-3 rounded border border-gray-700/50">
-          Гражданин, тип 1 §4.2: не-верифицированный кошелёк — WRT и LZN; без ANT и без рынка Anteil до ролей{' '}
-          <span className="text-orange-300">Поставщик</span> / <span className="text-green-300">Валидатор</span> (§5.2).
-        </p>
-      )}
-
       {/* Рынок */}
       <section className="bg-gray-900/50 p-4 rounded border border-gray-700">
         <h3 className="text-sm font-semibold text-gray-300 mb-2">Внутренний рынок ANT</h3>
         <p className="text-xs text-gray-500 mb-3">
           Это предложение в блок. Узел проверит канон §5.2: BUY — только Валидатор (эскроу WRT), SELL — только Поставщик (эскроу ANT),
-          иначе — отклонение в «Канон-аудит».
+          иначе — отклонение в «Канон-аудит». Цена — WRT за ANT с точностью до 6 знаков; эталонные демоны котируют её
+          от безубыточности майнера (награда за блок / λ·L_total), то есть это доли WRT, а не единицы.
         </p>
         <MarketForm
-          side={isProvider ? 'sell' : 'buy'}
           wrtBalance={account.wrt_balance}
           disabled={pending}
           onSubmit={(payload) => {
@@ -306,7 +277,7 @@ export function WalletPanel({
                     {o.order_type.toUpperCase()}
                   </span>
                   <span>
-                    {o.amount.toFixed(2)} ANT @ {o.price.toFixed(2)} WRT
+                    {o.amount.toFixed(2)} ANT @ {formatPrice(o.price)} WRT
                   </span>
                   <button
                     type="button"
@@ -330,6 +301,15 @@ export function WalletPanel({
           Это предложение в блок. Узел применит только для роли <strong className="text-gray-400">Валидатор</strong> и при выполнении
           ограничений: <span className="text-amber-200/80">b + s ≤ L_i</span> (актив. LZN) и{' '}
           <span className="text-amber-200/80">b + s ≤ баланс ANT</span>. Иначе — отклонение в «Канон-аудит».
+        </p>
+        <p className="text-xs text-gray-500 mb-3">
+          Ruleset v2: списывается <strong className="text-red-400/90">только b</strong>. Ставка{' '}
+          <strong className="text-cyan-400/90">s</strong> проверяется по балансу и задаёт вес{' '}
+          <span className="text-amber-200/80">w_i = s / L_i</span> для ValidatorSet, но с баланса не уходит — в отличие
+          от канона v4.20, где сжигались оба числа. Сверх верхнего предела коридора{' '}
+          <span className="text-amber-200/80">(1−λ)·L_total</span> по сети declare с наименьшими w_i
+          отсеиваются и ждут следующей высоты. Низ коридора:{' '}
+          <span className="text-amber-200/80">Σb_i ≥ λ·L_total</span> (λ ≤ 5/12).
         </p>
         <DeclareForm
           address={address}
@@ -355,27 +335,16 @@ function normalizeWalletRole(r: string): WalletRole {
 function RoleChangeForm({
   currentRole,
   disabled,
-  canBecomeProvider,
-  canBecomeValidator,
-  isGenesisProvider,
-  isGenesisValidator,
   onSubmit,
 }: {
   currentRole: string
   disabled: boolean
-  canBecomeProvider: boolean
-  canBecomeValidator: boolean
-  isGenesisProvider: boolean
-  isGenesisValidator: boolean
   onSubmit: (r: string) => void
 }) {
   const [role, setRole] = useState<WalletRole>(() => normalizeWalletRole(currentRole))
   useEffect(() => {
     setRole(normalizeWalletRole(currentRole))
   }, [currentRole])
-  const providerBlocked = role === 'provider' && !canBecomeProvider && role !== currentRole
-  const validatorBlocked = role === 'validator' && !canBecomeValidator && role !== currentRole
-  const submitBlocked = disabled || role === currentRole
   return (
     <div className="flex flex-wrap gap-2 items-end">
       <select
@@ -390,21 +359,13 @@ function RoleChangeForm({
       </select>
       <button
         type="button"
-        disabled={submitBlocked}
-        title=""
+        disabled={disabled}
         onClick={() => onSubmit(role)}
+        data-tip="Tx set_role в мемпул. Условия ZKP/LZN проверяет узел в блоке."
         className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 px-4 py-2 rounded text-sm"
       >
         Отправить в мемпул
       </button>
-      {providerBlocked && !isGenesisProvider && (
-        <span className="text-xs text-amber-600/90 max-w-xs">
-          Поставщик: в блоке потребуется ZKP (genesis-поставщик §6.3 — исключение).
-        </span>
-      )}
-      {validatorBlocked && !isGenesisValidator && (
-        <span className="text-xs text-amber-600/90 max-w-xs">Валидатор: в блоке потребуется ZKP и LZN.</span>
-      )}
     </div>
   )
 }
@@ -453,13 +414,15 @@ function TransferForm({
         className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm"
         disabled={disabled}
       >
-        <option value="wrt">WRT</option>
-        <option value="lzn">LZN</option>
+        <option value="wrt" title="Wert — основной расчётный токен">WRT</option>
+        <option value="lzn" title="Lizenz — лицензия / майнинг">LZN</option>
+        <option value="ant" title="Anteil — прямой перевод узел отклонит (§4.1)">ANT</option>
       </select>
       <button
         type="submit"
         disabled={disabled}
         className="bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded text-sm"
+        data-tip="Перевод в мемпул. ANT узел отклонит — только внутренний рынок."
       >
         transfer
       </button>
@@ -479,28 +442,28 @@ function ActivateForm({
   onSubmit: (amount: number) => void
 }) {
   const cap = Math.min(maxLiquid, maxMore)
-  const [amt, setAmt] = useState(cap > 0 ? String(Math.min(1, cap)) : '0')
+  const [amt, setAmt] = useState('1')
   return (
     <div className="flex flex-wrap gap-2 items-end">
       <input
         type="number"
         step="any"
         min="0"
-        max={cap}
         value={amt}
         onChange={(e) => setAmt(e.target.value)}
         className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm w-32"
-        disabled={disabled || cap <= 0}
+        disabled={disabled}
       />
-      <span className="text-xs text-gray-500">макс. {cap.toFixed(4)}</span>
+      <span className="text-xs text-gray-500">ориентир узла {cap.toFixed(4)}</span>
       <button
         type="button"
-        disabled={disabled || cap <= 0}
+        disabled={disabled}
         onClick={() => {
           const v = parseFloat(amt)
           if (!isNaN(v) && v > 0) onSubmit(v)
         }}
         className="bg-amber-800 hover:bg-amber-700 px-4 py-2 rounded text-sm"
+        data-tip="Заморозить LZN в L_i. Узел применит только валидатору и в пределах потолка."
       >
         activate_lzn
       </button>
@@ -513,16 +476,15 @@ type MarketFormPayload =
   | { mode: 'market'; side: 'buy' | 'sell'; amount: number; max_wrt?: number }
 
 function MarketForm({
-  side,
   wrtBalance,
   disabled,
   onSubmit,
 }: {
-  side: 'buy' | 'sell'
   wrtBalance: number
   disabled: boolean
   onSubmit: (payload: MarketFormPayload) => void
 }) {
+  const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [mode, setMode] = useState<'limit' | 'market'>('limit')
   const [price, setPrice] = useState('10')
   const [amount, setAmount] = useState('1')
@@ -546,14 +508,22 @@ function MarketForm({
       }}
     >
       <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-sm text-gray-400 py-2 px-2 bg-gray-800 rounded border border-gray-600">
-          {side === 'buy' ? 'Купить ANT (Валидатор)' : 'Продать ANT (Поставщик)'}
-        </span>
+        <select
+          value={side}
+          onChange={(e) => setSide(e.target.value as 'buy' | 'sell')}
+          className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm"
+          disabled={disabled}
+          data-tip="BUY — эскроу WRT, узел примет только валидатора. SELL — эскроу ANT, только поставщик."
+        >
+          <option value="buy">Buy ANT</option>
+          <option value="sell">Sell ANT</option>
+        </select>
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value as 'limit' | 'market')}
           className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm"
           disabled={disabled}
+          data-tip="Limit остаётся в книге. Market исполняется сразу по лучшим ценам."
         >
           <option value="limit">Лимитная заявка</option>
           <option value="market">По рынку (сразу по книге)</option>
@@ -594,14 +564,15 @@ function MarketForm({
           className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm w-24"
           disabled={disabled}
         />
-        <button type="submit" disabled={disabled} className="bg-indigo-700 hover:bg-indigo-600 px-4 py-2 rounded text-sm">
+        <button type="submit" disabled={disabled} data-tip="Ордер в мемпул. Роль и эскроу проверяет узел." className="bg-indigo-700 hover:bg-indigo-600 px-4 py-2 rounded text-sm">
           create_order
         </button>
       </div>
       {mode === 'market' && (
         <p className="text-xs text-gray-500">
-          Рыночная сделка исполняется в блоке по лучшим ценам в книге; лимитных ордеров в книге не остаётся. Продажа: не
-          купленный остаток ANT возвращается на баланс.
+          Рыночная заявка исполняется в блоке по лучшим ценам книги и не оставляет в ней лимитного ордера (IOC).
+          Покупка списывает WRT по факту каждой сделки, в пределах «Макс. WRT» и баланса; продажа возвращает
+          непроданный остаток ANT на баланс.
         </p>
       )}
     </form>
@@ -668,29 +639,25 @@ function DeclareForm({
   const sum = !isNaN(bv) && !isNaN(sv) ? bv + sv : NaN
   const cap = maxBPlusS
   const overCap = !isNaN(sum) && sum > cap + 1e-9
-  const invalid = isNaN(bv) || isNaN(sv) || bv < 0 || sv < 0 || overCap || sum <= 0
   const noReward = !isNaN(bv) && !isNaN(sv) && bv <= 0 && sum > 0
 
   const applyPreset = (nb: number, ns: number) => {
-    const t = nb + ns
-    const scale = t > cap + 1e-12 ? cap / t : 1
-    setB(String(Math.max(0, nb * scale)))
-    setS(String(Math.max(0, ns * scale)))
+    setB(String(Math.max(0, nb)))
+    setS(String(Math.max(0, ns)))
   }
 
   const applyTotalAndSplit = () => {
     const raw = parseFloat(totalTarget)
     if (isNaN(raw) || raw <= 0) return
-    const t = Math.min(raw, cap)
     const p = Math.min(100, Math.max(0, burnPct))
-    const nb = (t * p) / 100
-    const ns = t - nb
+    const nb = (raw * p) / 100
+    const ns = raw - nb
     setB(String(nb))
     setS(String(ns))
   }
 
   const handleDeclare = () => {
-    if (invalid || cap <= 0) return
+    if (isNaN(bv) || isNaN(sv) || bv < 0 || sv < 0) return
     saveDeclarePrefs(address, b, s)
     onSubmit(bv, sv)
   }
@@ -748,7 +715,9 @@ function DeclareForm({
           {overCap && ` — превышает лимит ${cap.toFixed(4)}`}
         </div>
         {noReward && (
-          <div className="text-amber-600/90">При b = 0 базовая WRT-награда за блок не начисляется (§5.1).</div>
+          <div className="text-amber-600/90">
+            При b = 0 за высоту не начисляется ни базовая WRT (§5.1), ни доля комиссий F·(b/B) (§5.4).
+          </div>
         )}
       </div>
 
@@ -757,34 +726,38 @@ function DeclareForm({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={disabled || cap <= 0}
-            onClick={() => applyPreset(cap, 0)}
+            disabled={disabled}
+            onClick={() => applyPreset(cap > 0 ? cap : 1, 0)}
             className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1.5 rounded"
           >
             Всё в сжигание (b)
           </button>
           <button
             type="button"
-            disabled={disabled || cap <= 0}
-            onClick={() => applyPreset(0, cap)}
+            disabled={disabled}
+            onClick={() => applyPreset(0, cap > 0 ? cap : 1)}
             className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1.5 rounded"
           >
             Всё в ставку (s)
           </button>
           <button
             type="button"
-            disabled={disabled || cap <= 0}
-            onClick={() => applyPreset(cap / 2, cap / 2)}
+            disabled={disabled}
+            onClick={() => {
+              const t = cap > 0 ? cap : 1
+              applyPreset(t / 2, t / 2)
+            }}
             className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1.5 rounded"
           >
             50% / 50%
           </button>
           <button
             type="button"
-            disabled={disabled || cap <= 0}
+            disabled={disabled}
             onClick={() => {
-              const minB = Math.min(0.01, cap * 0.05, cap)
-              applyPreset(minB, Math.max(0, cap - minB))
+              const t = cap > 0 ? cap : 1
+              const minB = Math.min(0.01, t * 0.05, t)
+              applyPreset(minB, Math.max(0, t - minB))
             }}
             className="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1.5 rounded"
           >
@@ -803,7 +776,7 @@ function DeclareForm({
               value={totalTarget}
               onChange={(e) => setTotalTarget(e.target.value)}
               className="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
-              disabled={disabled || cap <= 0}
+              disabled={disabled}
             />
           </label>
           <label className="text-xs text-gray-400 flex flex-col gap-1 flex-1 min-w-[180px]">
@@ -815,12 +788,12 @@ function DeclareForm({
               value={burnPct}
               onChange={(e) => setBurnPct(Number(e.target.value))}
               className="w-full accent-teal-500"
-              disabled={disabled || cap <= 0}
+              disabled={disabled}
             />
           </label>
           <button
             type="button"
-            disabled={disabled || cap <= 0}
+            disabled={disabled}
             onClick={applyTotalAndSplit}
             className="text-xs bg-teal-900/60 hover:bg-teal-800/60 px-3 py-2 rounded"
           >
@@ -831,8 +804,9 @@ function DeclareForm({
 
       <button
         type="button"
-        disabled={disabled || cap <= 0 || invalid}
+        disabled={disabled}
         onClick={handleDeclare}
+        data-tip="Declare §5.4: b сжигается, s — ставка. Нужны валидатор, L_i и ANT ≥ b+s."
         className="bg-teal-800 hover:bg-teal-700 disabled:opacity-40 px-4 py-2 rounded text-sm"
       >
         Отправить declare (мемпул)

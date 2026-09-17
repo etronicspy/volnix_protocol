@@ -7,8 +7,6 @@ from typing import Dict, List, Tuple
 from core.models import Role
 from core.state import (
     BLOCKS_PER_EPOCH,
-    GENESIS_PROVIDER_ADDR,
-    GENESIS_VALIDATOR_ADDR,
     SIM_TREASURY_ADDR,
     StateManager,
 )

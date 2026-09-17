@@ -47,6 +47,36 @@ export interface Transaction {
   stake_amount?: number
 }
 
+export type PovbCompetitionStatus = 'selected' | 'culled_lambda' | 'culled_k' | 'deferred'
+
+export interface PovbCompetitionEntry {
+  rank: number
+  address: string
+  tx_hash: string
+  b: number
+  s: number
+  L_i: number
+  w_i: number
+  status: PovbCompetitionStatus | string
+}
+
+export interface PovbCompetition {
+  kind?: string
+  lambda: number
+  K: number
+  L_total: number
+  floor: number
+  cap: number
+  B_candidates: number
+  B_selected: number
+  candidates_count: number
+  selected_count: number
+  culled_lambda_count: number
+  culled_k_count: number
+  deferred_count?: number
+  entries: PovbCompetitionEntry[]
+}
+
 export interface Block {
   height: number
   hash: string
@@ -54,6 +84,7 @@ export interface Block {
   timestamp: number
   proposer?: string
   transactions: Record<string, unknown>[]
+  competition?: PovbCompetition
 }
 
 export interface CanonLogEntry {

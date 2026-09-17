@@ -77,20 +77,20 @@ def ticks_to_ohlc_bars(rows: List[dict], interval_sec: int) -> List[Dict[str, fl
 def bars_to_echarts_payload(bars: List[Dict[str, float]], trade_mode: bool) -> Dict[str, Any]:
     """
     ECharts candlestick: каждая точка [open, close, lowest, highest].
-    Ось X — уникальные подписи (индекс + время), чтобы не схлопывать бары.
+    Ось X — уникальные индексы (равные слоты как на TradingView); время — в labels.
     """
     category: List[str] = []
     times: List[float] = []
+    labels: List[str] = []
     values: List[List[float]] = []
     for i, bar in enumerate(bars):
         t = float(bar["t"])
         times.append(t)
+        category.append(str(i))
         if trade_mode:
-            category.append(
-                f"{i + 1} · {time.strftime('%H:%M:%S', time.localtime(t))}"
-            )
+            labels.append(time.strftime("%H:%M:%S", time.localtime(t)))
         else:
-            category.append(time.strftime("%m-%d %H:%M", time.localtime(t)))
+            labels.append(time.strftime("%m-%d %H:%M:%S", time.localtime(t)))
         o, cl, lo, hi = bar["open"], bar["close"], bar["low"], bar["high"]
         values.append([o, cl, lo, hi])
-    return {"category": category, "times": times, "values": values}
+    return {"category": category, "times": times, "labels": labels, "values": values}

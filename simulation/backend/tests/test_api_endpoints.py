@@ -48,6 +48,9 @@ def test_block_by_height_genesis(client):
     assert j["found"] is True
     assert j["height"] == 0
     assert j["transactions"]
+    assert "competition" in j
+    assert j["competition"]["kind"] == "genesis"
+    assert j["competition"]["entries"] == []
 
 
 def test_block_by_height_missing(client):

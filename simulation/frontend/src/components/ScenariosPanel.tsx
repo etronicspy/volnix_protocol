@@ -33,6 +33,7 @@ export function ScenariosPanel() {
       <div className="flex flex-col gap-2 mb-3">
         <select
           aria-label="scenario"
+          data-tip="YAML-сценарий из simulation/backend: последовательность tx и asserts."
           className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-100"
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
@@ -44,7 +45,7 @@ export function ScenariosPanel() {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-2 text-xs text-gray-300">
+        <label className="flex items-center gap-2 text-xs text-gray-300" data-tip="Перед прогоном сбросить состояние к genesis, чтобы сценарий был детерминированным.">
           <input
             type="checkbox"
             checked={resetState}
@@ -54,6 +55,7 @@ export function ScenariosPanel() {
         </label>
         <button
           type="button"
+          data-tip="Прогнать сценарий на движке. Результат — asserts passed/failed."
           className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-1 rounded text-sm"
           onClick={() => void onRun()}
           disabled={loading || !(selected || scenarios.length)}

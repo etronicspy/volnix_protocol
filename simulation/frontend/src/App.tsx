@@ -6,7 +6,9 @@ import { KpiPanel } from './components/KpiPanel'
 import { NodesPanel } from './components/NodesPanel'
 import { ScenariosPanel } from './components/ScenariosPanel'
 import { TxExplorerPanel } from './components/TxExplorerPanel'
+import { CompetitionPanel } from './components/CompetitionPanel'
 import { API_BASE, WS_URL } from './config'
+import { formatPrice } from './lib/format'
 
 /** Скорость симуляции: сим. секунд за 1 реальную (1 блок = 60 сим. с). */
 const SIM_SPEED_MIN = 0.2 // блок раз в 300 с
@@ -83,6 +85,22 @@ interface Block {
   /** Адрес валидатора цепи симуляции (тот же, что в genesis) */
   proposer?: string;
   transactions: Record<string, unknown>[];
+  competition?: {
+    kind?: string;
+    lambda: number;
+    K: number;
+    L_total: number;
+    floor: number;
+    cap: number;
+    B_candidates: number;
+    B_selected: number;
+    candidates_count: number;
+    selected_count: number;
+    culled_lambda_count: number;
+    culled_k_count: number;
+    deferred_count?: number;
+    entries: Record<string, unknown>[];
+  };
 }
 
 interface CanonLogEntry {
@@ -442,13 +460,17 @@ function App() {
       }
       body.price = p
     }
-    const res = await fetch(`${API_BASE}/api/wallet/submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json()
-    alert(data.accepted ? `Принято в мемпул. tx ${(data.tx_hash || '').slice(0, 14)}…` : data.message || 'Отклонено')
+    try {
+      const res = await fetch(`${API_BASE}/api/wallet/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      alert(data.accepted ? `Принято в мемпул. tx ${(data.tx_hash || '').slice(0, 14)}…` : data.message || 'Отклонено')
+    } catch {
+      alert('Ордер: ошибка сети или сервера.')
+    }
   }
 
   const handleCreateAccounts = async () => {
@@ -518,27 +540,34 @@ function App() {
   }
 
   const handleMint = async (address: string, asset_type: string = "wrt") => {
-    const res = await fetch(`${API_BASE}/api/sim-operator/mint`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, amount: 1000, asset_type })
-    })
-    const data = await res.json()
-    if (data.status === "error") {
-      alert(data.message)
-    } else if (data.status === "queued") {
-      alert(`В мемпул: ${data.message}\ntx ${(data.tx_hash || "").slice(0, 16)}… — исполнение в следующем блоке`)
+    try {
+      const res = await fetch(`${API_BASE}/api/sim-operator/mint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, amount: 1000, asset_type })
+      })
+      const data = await res.json()
+      if (data.status === "error") {
+        alert(data.message)
+      } else if (data.status === "queued") {
+        alert(`В мемпул: ${data.message}\ntx ${(data.tx_hash || "").slice(0, 16)}… — исполнение в следующем блоке`)
+      } else {
+        alert(data.message || JSON.stringify(data))
+      }
+    } catch {
+      alert('Mint: ошибка сети или сервера.')
     }
   }
 
   const selectedAccount = selectedWallet ? state.accounts[selectedWallet] : undefined
 
   const MAIN_TABS = [
-    { id: 'overview' as const, label: 'Обзор и счета' },
-    { id: 'chain' as const, label: 'Блокчейн' },
-    { id: 'market' as const, label: 'Рынок' },
-    { id: 'sim' as const, label: 'Симуляция' },
-    { id: 'rd' as const, label: 'R&D / KPI' },
+    { id: 'overview' as const, label: 'Обзор и счета', tip: 'Высота, мемпул, скорость, таблица счетов и кошелёк.' },
+    { id: 'chain' as const, label: 'Блокчейн', tip: 'Лента блоков, пропозер и содержимое tx.' },
+    { id: 'competition' as const, label: 'Соревнование λ/K', tip: 'Ранжирование declare по w_i на каждый блок: λ-отсев, top-K, Σb.' },
+    { id: 'market' as const, label: 'Рынок', tip: 'Книга ANT/WRT, график и ручной ордер в тот же API кошелька.' },
+    { id: 'sim' as const, label: 'Симуляция', tip: 'Оператор: аккаунты, сброс, боты и канон-пробы (ожидаемые reject).' },
+    { id: 'rd' as const, label: 'R&D / KPI', tip: 'Сценарии, KPI, узлы сети и аналитика эпохи.' },
   ]
   const [mainTab, setMainTab] = useState<(typeof MAIN_TABS)[number]['id']>('overview')
 
@@ -552,7 +581,10 @@ function App() {
               §5.5: {state.blocks_per_epoch ?? 10080} blocks/epoch (эталон 1 блок/мин × 7 сут) · Mempool: {state.mempool_size ?? 0} tx · Sold epoch: {Number(state.epoch_ant_sold_volume ?? 0).toFixed(2)} ANT · Prev epoch sold: {Number(state.epoch_ant_sold_last ?? 0).toFixed(2)} · coeff: {Number(state.epoch_emission_coefficient ?? 1).toFixed(4)}
             </p>
           </div>
-          <div className={`px-4 py-2 rounded-full font-semibold ${state.status.includes('Live') ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+          <div
+            data-tip="Live — WebSocket /ws открыт и блоки приходят. Иначе REST/офлайн."
+            className={`px-4 py-2 rounded-full font-semibold ${state.status.includes('Live') ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}
+          >
             {state.status}
           </div>
         </div>
@@ -562,6 +594,7 @@ function App() {
             <button
               key={t.id}
               type="button"
+              data-tip={t.tip}
               onClick={() => setMainTab(t.id)}
               className={`px-4 py-2.5 rounded-t-lg text-sm font-medium transition-colors border border-b-0 ${
                 mainTab === t.id
@@ -577,7 +610,7 @@ function App() {
         {mainTab === 'overview' && (
           <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700" data-tip="Номер последнего блока. ValidatorSet и пропозер — правила §6.1 / §6.3.">
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Block Height</h2>
             <p className="text-3xl font-mono text-white">{state.block_height}</p>
             {state.consensus_validators && state.consensus_validators.length > 0 ? (
@@ -596,7 +629,7 @@ function App() {
             ) : null}
           </div>
 
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700" data-tip="Tx приняты API, но ещё не в блоке. После блока мемпул очищается от исполненных.">
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Mempool</h2>
             <p className="text-3xl font-mono text-amber-300">{state.mempool_size ?? 0}</p>
             <p className="text-xs text-gray-500 mt-1">ожидают следующий блок</p>
@@ -606,17 +639,19 @@ function App() {
             </p>
           </div>
 
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700" data-tip="Сколько симулированных секунд проходит за 1 реальную. 1 блок эталона = 60 с.">
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Скорость симуляции</h2>
             <p className="text-xs text-gray-500 mb-2">
               1 блок = <span className="text-gray-400">{state.canonical_block_interval_sec ?? 60} с</span> сим. времени
-              (эталон канона). Скорость — от 1:1 до «1 с = 1 неделя» (×604800 ≈ 10080 блоков/с, пачками; фактический
-              темп ограничен CPU). Сохраняется в state.
+              (эталон канона). Скорость — от ×{SIM_SPEED_MIN} (блок раз в 300 с) до ×{SIM_SPEED_MAX} «1 с = 1 неделя»
+              (≈10080 блоков/с, пачками; фактический темп ограничен CPU). Сохраняется в state.
             </p>
             <p className="text-xs text-amber-200/80 mb-2 leading-snug">
-              Ruleset v2 (п. 5.4): λ — только верхний предел (Σb_i ≤ λ·L_total, лишние declare отсеиваются по весу).
-              Блоки растут при любом объёме сжигания, <span className="font-medium">включая Σb_i = 0</span> — но без
-              declare валидатор не получает ни базовой WRT, ни доли комиссий за высоту.
+              §5.4: коридор сжигания{' '}
+              <span className="font-medium">λ·L_total ≤ Σb_i ≤ (1−λ)·L_total</span>
+              {' '}(эталон λ=1/3, max λ=5/12). Верх — λ-отсев по весу w_i; низ обязателен —
+              при недоборе блок отклоняется. Валидатор с b_i = 0 не получает ни базовой WRT
+              (§5.1), ни доли комиссий (§5.4).
             </p>
             <div className="flex items-center gap-2 flex-wrap mb-2">
               <select
@@ -680,7 +715,7 @@ function App() {
             </div>
           </div>
 
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700" data-tip="Число адресов в состоянии, включая genesis, казну и ботов.">
             <h2 className="text-gray-400 text-sm uppercase tracking-wider mb-2">Total Accounts</h2>
             <p className="text-3xl font-mono text-white">{state.accounts_count}</p>
           </div>
@@ -695,13 +730,13 @@ function App() {
               <table className="w-full text-left">
                 <thead>
                   <tr className="border-b border-gray-700 text-gray-400">
-                    <th className="pb-3 font-medium">Address</th>
-                    <th className="pb-3 font-medium">WRT Balance</th>
-                    <th className="pb-3 font-medium">LZN (liq. / frozen)</th>
-                    <th className="pb-3 font-medium">ANT Balance</th>
-                    <th className="pb-3 font-medium">ZKP</th>
-                    <th className="pb-3 font-medium">Role</th>
-                    <th className="pb-3 font-medium">Actions</th>
+                    <th className="pb-3 font-medium" title="Bech32 / sim-адрес счёта">Address</th>
+                    <th className="pb-3 font-medium" title="Wert — расчётный токен, переводы и эскроу BUY">WRT Balance</th>
+                    <th className="pb-3 font-medium" title="Lizenz: ликвиден / активирован под майнинг (L_i)">LZN (liq. / frozen)</th>
+                    <th className="pb-3 font-medium" title="Anteil. Держать ANT могут только Поставщик и Валидатор (§4.1–4.2); остаток на Гражданине узел сжигает в BeginBlock">ANT Balance</th>
+                    <th className="pb-3 font-medium" title="Флаг verify_zkp. Нужен для ролей поставщик и валидатор">ZKP</th>
+                    <th className="pb-3 font-medium" title="citizen / provider / validator (§4.2)">Role</th>
+                    <th className="pb-3 font-medium" title="Кошелёк или mint из казны (через мемпул)">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -735,6 +770,7 @@ function App() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
+                            data-tip="Открыть панель кошелька: перевод, роль, рынок, declare."
                             onClick={() => setSelectedWallet(acc.address)}
                             className={`px-2 py-1 rounded text-xs transition-colors ${
                               selectedWallet === acc.address
@@ -744,9 +780,9 @@ function App() {
                           >
                             Кошелёк
                           </button>
-                          <button type="button" onClick={() => handleMint(acc.address, 'wrt')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+1000 WRT</button>
-                          <button type="button" onClick={() => handleMint(acc.address, 'lzn')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 LZN</button>
-                          <button type="button" onClick={() => handleMint(acc.address, 'ant')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 ANT</button>
+                          <button type="button" data-tip="Mint 1000 WRT из казны → мемпул" onClick={() => handleMint(acc.address, 'wrt')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+1000 WRT</button>
+                          <button type="button" data-tip="Mint 100 LZN из казны → мемпул" onClick={() => handleMint(acc.address, 'lzn')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 LZN</button>
+                          <button type="button" data-tip="Mint ANT. Гражданину узел откажет (§4.1–4.2)." onClick={() => handleMint(acc.address, 'ant')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs transition-colors">+100 ANT</button>
                         </div>
                       </td>
                     </tr>
@@ -927,6 +963,10 @@ function App() {
           </>
         )}
 
+        {mainTab === 'competition' && (
+          <CompetitionPanel currentHeight={state.block_height} tapeBlocks={state.blocks} />
+        )}
+
         {mainTab === 'sim' && (
         <>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -944,12 +984,14 @@ function App() {
             </p>
             <div className="flex flex-wrap gap-4">
               <button 
+                data-tip="Создать 5 новых адресов через sim-operator (не genesis)."
                 onClick={handleCreateAccounts}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded transition-colors"
               >
                 + Generate 5 Accounts
               </button>
               <button 
+                data-tip="Полный сброс state.json. Текущее состояние копируется в state.json.bak."
                 onClick={handleResetState}
                 className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded transition-colors"
               >
@@ -960,6 +1002,10 @@ function App() {
 
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <h2 className="text-xl font-bold mb-4 text-orange-400">🤖 Bot Engine (Traffic Generator)</h2>
+            <p className="text-xs text-gray-500 -mt-2 mb-2 leading-snug">
+              Трафик (переводы, ордера, роли) подаётся перед каждым блоком пропорционально intensity и скорости симуляции —
+              не по wall-clock таймеру.
+            </p>
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-4">
                 <span className="text-gray-300">Status:</span>
@@ -968,7 +1014,7 @@ function App() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-300">Intensity (tx/s):</span>
+                <span className="text-gray-300" data-tip="Действий бота на сим. секунду (не wall-clock). При 1.0 ≈ 60 действий на блок; на высокой sim_speed трафик идёт из pre_block, синхронно с блоками.">Intensity (actions/sim-s):</span>
                 <input 
                   type="number" 
                   step="0.1" 
@@ -982,7 +1028,7 @@ function App() {
               </div>
               <div className="flex flex-col gap-2 bg-gray-900/40 border border-gray-700/50 rounded p-3">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <span className="text-gray-300">Canon probes (ожидаемые reject в блоке)</span>
+                  <span className="text-gray-300" data-tip="Боты шлют заведомо невалидные tx, чтобы проверить, что узел их отклоняет.">Canon probes (ожидаемые reject в блоке)</span>
                   <label className="text-sm text-gray-300 flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -1071,6 +1117,7 @@ function App() {
               <div className="flex gap-2 mt-2">
                 {!botStatus.is_running ? (
                   <button 
+                    data-tip="Запустить ботов. Они выбирают роли по ожидаемой прибыли и шлют tx в мемпул."
                     onClick={() => handleBotControl('start')}
                     className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded transition-colors w-full"
                   >
@@ -1078,6 +1125,7 @@ function App() {
                   </button>
                 ) : (
                   <button 
+                    data-tip="Остановить генератор. Цепочка продолжает производить блоки."
                     onClick={() => handleBotControl('stop')}
                     className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded transition-colors w-full"
                   >
@@ -1147,9 +1195,19 @@ function App() {
             <h2 className="text-xl font-bold text-blue-300">📈 Anteil Market</h2>
             <div className="bg-gray-900 px-4 py-2 rounded border border-gray-700">
               <span className="text-gray-400 text-sm">Last Price: </span>
-              <span className="text-xl font-mono text-green-400">{state.market?.last_price.toFixed(2)} WRT</span>
+              <span className="text-xl font-mono text-green-400">{formatPrice(state.market?.last_price)} WRT</span>
             </div>
           </div>
+
+          <p className="text-xs text-gray-500 mb-4 leading-snug">
+            Книгу двигают не только боты: эталонные клиенты <span className="text-gray-400">AutoMarketDaemon</span> (§5.2)
+            и <span className="text-gray-400">AutoDeclareDaemon</span> (§5.4) вызываются перед каждым блоком. Поставщик
+            выставляет SELL на часть запаса, Валидатор держит ANT на 64 блока сжигания вперёд и докупает, когда запас
+            падает ниже 75 % цели. Якорь цены — безубыточность майнера{' '}
+            <span className="text-amber-200/80">breakeven = награда за блок / (λ·L_total)</span>, ask держится на
+            5–35 % ниже неё; выше breakeven майнинг убыточен и цепь встаёт. Seed-адрес держит 1 ANT на блок 1;
+            стартовая ANT у пяти bootstrap-поставщиков (§6.3) — источник рынка для пяти валидаторов с 1000 LZN.
+          </p>
           
           {/* Виджет графика (стиль TradingView + Lightweight Charts, данные симуляции) */}
           <div className="min-w-0 w-full mb-8">
@@ -1174,7 +1232,6 @@ function App() {
                 >
                   <option value="" disabled>Select Account</option>
                   {Object.values(state.accounts)
-                    .filter((a) => (orderType === 'buy' ? a.role === 'validator' : a.role === 'provider'))
                     .map((acc) => (
                     <option key={acc.address} value={acc.address}>{acc.address.substring(0, 12)}... ({acc.wrt_balance?.toFixed(0)} WRT / {acc.ant_balance?.toFixed(0)} ANT)</option>
                   ))}
@@ -1210,11 +1267,13 @@ function App() {
 
               {!orderMarket && (
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-gray-400">Price (WRT per ANT)</label>
+                  <label className="text-xs text-gray-400" title="Движок котирует с 6 знаками; рыночный якорь ≈ 0.02 WRT за ANT">
+                    Price (WRT per ANT)
+                  </label>
                   <input
                     type="number"
-                    step="0.1"
-                    min="0.1"
+                    step="any"
+                    min="0.000001"
                     required={!orderMarket}
                     value={orderPrice}
                     onChange={(e) => setOrderPrice(e.target.value)}
@@ -1253,7 +1312,7 @@ function App() {
                 />
               </div>
 
-              <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm font-semibold transition-colors h-[38px]">
+              <button type="submit" data-tip="Тот же POST /api/wallet/submit, что и кошелёк. Узел проверит роль и эскроу." className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded text-sm font-semibold transition-colors h-[38px]">
                 Submit Order
               </button>
             </form>
@@ -1275,7 +1334,7 @@ function App() {
                   <tbody>
                     {state.market?.bids.map((order) => (
                       <tr key={order.id} className="border-t border-gray-700/30">
-                        <td className="py-1 text-green-400 font-mono">{order.price.toFixed(2)}</td>
+                        <td className="py-1 text-green-400 font-mono">{formatPrice(order.price)}</td>
                         <td className="py-1 font-mono">{order.amount.toFixed(2)}</td>
                         <td className="py-1 text-gray-400 font-mono">{(order.filled / order.amount * 100).toFixed(0)}%</td>
                       </tr>
@@ -1303,7 +1362,7 @@ function App() {
                   <tbody>
                     {state.market?.asks.map((order) => (
                       <tr key={order.id} className="border-t border-gray-700/30">
-                        <td className="py-1 text-red-400 font-mono">{order.price.toFixed(2)}</td>
+                        <td className="py-1 text-red-400 font-mono">{formatPrice(order.price)}</td>
                         <td className="py-1 font-mono">{order.amount.toFixed(2)}</td>
                         <td className="py-1 text-gray-400 font-mono">{(order.filled / order.amount * 100).toFixed(0)}%</td>
                       </tr>

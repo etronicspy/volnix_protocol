@@ -9,20 +9,17 @@ import pytest
 from core.engine import BURN_CAP_LAMBDA
 from core.models import Order, OrderType, Role, Transaction, TransactionType
 from core.state import GENESIS_VALIDATOR_ADDR
+from tests.conftest import seed_declare_tx
+
+
+@pytest.fixture(autouse=True)
+def _flows_use_positive_min_burn(engine):
+    """Потоки рынка/activate не про коридор §5.4 — не раздуваем L_total declare'ами."""
+    engine.security_config.min_burn_mode = "positive"
 
 
 def _declare_for_gv(engine):
-    gv = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
-    L_total = engine._network_lzn_total_validators()
-    return Transaction(
-        tx_hash=uuid.uuid4().hex,
-        tx_type=TransactionType.DECLARE_PARTICIPATION,
-        sender=gv.address,
-        amount=BURN_CAP_LAMBDA * L_total,
-        stake_amount=0.0,
-        asset_type="ant",
-        timestamp=time.time(),
-    )
+    return seed_declare_tx(engine)
 
 
 def _mk(tx_type, **kw):
@@ -89,26 +86,10 @@ async def test_zkp_verify_flag_flips(engine, mk_account):
 
 @pytest.mark.asyncio
 async def test_activate_lzn_validator_freezes_balance(engine, mk_account):
-    """activate_lzn у Валидатора → перевод из ликвидного LZN в frozen_mining.
-
-    activate_lzn увеличивает L_total в том же блоке; считаем declare-target по
-    пост-активации, чтобы Σb_i попало в коридор λ·L_total.
-    """
+    """activate_lzn у Валидатора → перевод из ликвидного LZN в frozen_mining."""
     v = mk_account("v_act", role=Role.VALIDATOR, frozen=0.0, lzn=100.0, zkp=True)
-    # Cимулируем post-activation L_total для расчёта declare
-    L_post = engine._network_lzn_total_validators() + 20.0
-    declare = Transaction(
-        tx_hash=uuid.uuid4().hex,
-        tx_type=TransactionType.DECLARE_PARTICIPATION,
-        sender=GENESIS_VALIDATOR_ADDR,
-        amount=BURN_CAP_LAMBDA * L_post,
-        stake_amount=0.0,
-        asset_type="ant",
-        timestamp=time.time(),
-    )
-    # activate_lzn должен пройти раньше declare-batch (mempool обрабатывается до declare)
     engine.state.mempool.append(_mk(TransactionType.ACTIVATE_LZN, sender=v.address, amount=20.0, asset_type="lzn"))
-    engine.state.mempool.append(declare)
+    engine.state.mempool.append(_declare_for_gv(engine))
 
     await engine.produce_block()
     v_after = engine.state.accounts[v.address]
@@ -285,3 +266,43 @@ async def test_market_buy_consumes_best_ask(engine, mk_account):
     assert v_after.ant_balance == 3.0
     assert v_after.wrt_balance == 100.0 - 12.0
     assert p_after.wrt_balance == 12.0
+
+
+@pytest.mark.asyncio
+async def test_lzn_limit_orders_match(engine, mk_account):
+    """§5.2 5.0-sim: отдельная книга LZN — BUY Validator / SELL Provider."""
+    v = mk_account("v_lzn_m", role=Role.VALIDATOR, frozen=10.0, wrt=100.0, zkp=True)
+    p = mk_account("p_lzn_m", role=Role.PROVIDER, lzn=20.0, zkp=True)
+
+    engine.state.mempool.append(_declare_for_gv(engine))
+    engine.state.mempool.append(
+        _mk(
+            TransactionType.CREATE_ORDER,
+            sender=p.address,
+            order_type=OrderType.SELL,
+            price=2.0,
+            amount=5.0,
+            asset_type="lzn",
+        )
+    )
+    engine.state.mempool.append(
+        _mk(
+            TransactionType.CREATE_ORDER,
+            sender=v.address,
+            order_type=OrderType.BUY,
+            price=2.5,
+            amount=5.0,
+            asset_type="lzn",
+        )
+    )
+    await engine.produce_block()
+
+    v_after = engine.state.accounts[v.address]
+    p_after = engine.state.accounts[p.address]
+    assert v_after.lzn_balance == pytest.approx(5.0)
+    assert p_after.lzn_balance == pytest.approx(15.0)
+    assert p_after.wrt_balance == pytest.approx(10.0)  # 5 × 2.0
+    assert v_after.wrt_balance == pytest.approx(90.0)  # эскроу 12.5, refund 2.5 → net −10
+    assert engine.state.epoch_lzn_sold_volume == pytest.approx(5.0)
+    book = engine.state.get_orderbook()
+    assert "lzn" in book and "ant" in book

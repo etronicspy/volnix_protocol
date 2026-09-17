@@ -1,16 +1,13 @@
-"""AutoDeclareDaemon — фоновая корутина, подающая канонические declare §5.4.
+"""AutoDeclareDaemon — эталонный клиент §5.4: declare перед каждой высотой.
 
-Ruleset v2: блоки формируются при любом Σb_i ≤ λ·L_total (минимального порога
-нет), но без declare валидатор не получает ни базовой WRT, ни доли комиссий
-(b_i = 0 → доход = 0). Демон реализует эталонную стратегию клиента:
-каждый валидатор объявляет b_i = λ·L_i — тогда Σb_i = λ·L_total, т.е. сеть
-работает ровно на верхнем пределе дохода без внепротокольной координации.
-В реальной цепи каждый валидатор сам подаёт `MsgDeclareParticipation`;
-здесь симулируем этот процесс одной корутиной, которая итерируется по
-`state.consensus_validator_set`.
+Коридор: λ·L_total ≤ Σb_i ≤ (1−λ)·L_total. Без declare валидатор не получает
+ни базовой WRT, ни доли комиссий (b_i = 0 → доход = 0). Демон реализует
+эталонную стратегию: каждый валидатор объявляет b_i = λ·L_i — тогда
+Σb_i = λ·L_total (нижняя граница коридора).
 
-Запускается из FastAPI lifespan; отключается флагом
-`VOLNIX_SIM_AUTO_DECLARE=false` для тестов / ручной подачи.
+В lifespan вызывается только из ``engine.pre_block_hook`` (один раз на попытку
+блока). Подача идёт через ``StateManager.submit_tx`` (replace-by-sender).
+Флаг ``VOLNIX_SIM_AUTO_DECLARE=false`` отключает подачу в pre_block.
 """
 from __future__ import annotations
 
@@ -40,15 +37,7 @@ def _submit_declare(
     if not ok or tx is None:
         log_wallet_rejection(sm, "declare", f"auto_declare: {msg}", address)
         return False
-    # Сначала пробуем через NetworkSim (если attached), иначе в общий мемпул.
-    net = getattr(sm, "network", None)
-    if net is not None:
-        try:
-            net.submit_from_addr(address, tx)
-            return True
-        except Exception:
-            pass
-    sm.mempool.append(tx)
+    sm.submit_tx(tx)
     return True
 
 
@@ -75,30 +64,35 @@ def step_once(sm: StateManager, engine: SimulationEngine) -> int:
     §5.4 v2 (эталонная стратегия): каждому валидатору `b_i = λ·L_i`
     (распределение пропорционально собственному L_i), тогда
     Σb_i = λ·Σ L_i = λ·L_total — ровно верхний предел, отсев не срабатывает.
+
+    Кандидаты — **все** валидаторы с активированным LZN, а не только текущий
+    `consensus_validator_set`: набор пересобирается из participation прошлого
+    блока, и обход по нему замыкал круг (кто не в наборе — тому не подаётся
+    declare, значит он никогда в набор и не попадёт). ANT — «электричество»
+    §5.4: его жжёт каждый валидатор с «оборудованием» (активированный LZN).
+    При нехватке ANT на полный `λ·L_i` объявляется остаток баланса — участие
+    в блоке важнее максимального b_i (при b_i = 0 дохода нет вовсе).
+
+    Клиентская дисциплина: если declare уже в мемпуле — не слать повторно
+    (mempool всё равно replace-by-sender; skip экономит работу).
     """
-    vs = list(getattr(sm, "consensus_validator_set", []) or [])
-    if not vs:
-        return 0
     pending = _pending_declare_addrs(sm)
     submitted = 0
-    for entry in vs:
-        addr = entry.get("address") if isinstance(entry, dict) else None
-        if not addr or addr in pending:
-            continue
-        acc = sm.accounts.get(addr)
-        if not acc or acc.role != Role.VALIDATOR:
+    for addr, acc in sorted(sm.accounts.items()):
+        if addr in pending or acc.role != Role.VALIDATOR:
             continue
         L_i = float(acc.lzn_frozen_mining)
         if L_i <= 0:
             continue
-        # b_i = λ·L_i; s_i=0 (демон не делает stake, чтобы не блокировать ANT)
-        b_i = round(BURN_CAP_LAMBDA * L_i, 6)
-        # Канон требует also ant >= b+s; используем существующий validate
-        if acc.ant_balance + 1e-9 < b_i:
-            # Не хватает ANT — пропускаем (бот / scenario должен пополнить).
+        # b_i = λ·L_i; s_i=0 (демон не делает stake, чтобы не блокировать ANT).
+        # Без round(..., 6) вниз — иначе 0.333333 < λ·1 и низ коридора не набирается.
+        b_i = min(BURN_CAP_LAMBDA * L_i, float(acc.ant_balance))
+        if b_i <= 1e-12:
+            # Нет ANT — «электричество» кончилось, валидатор простаивает (§5.1: доход 0).
             continue
         if _submit_declare(sm, addr, b_i, 0.0):
             submitted += 1
+            pending.add(addr)
     return submitted
 
 
@@ -108,17 +102,16 @@ async def run(
     *,
     stop_event: Optional[asyncio.Event] = None,
 ) -> None:
-    """Бесконечный цикл: каждые `block_time/2` (но не реже MIN_TICK_SEC) — step_once.
+    """Устарело для lifespan: declare идёт из ``engine.pre_block_hook``.
 
-    Прекращается по `stop_event.set()` или CancelledError.
+    Оставлено для ручных/тестовых сценариев (тик по wall-clock).
     """
     while True:
         if stop_event is not None and stop_event.is_set():
             return
         try:
             step_once(sm, engine)
-        except Exception as e:
-            # Никогда не падаем: лог и продолжаем.
+        except Exception as e:  # pragma: no cover
             print(f"AutoDeclareDaemon tick error: {e}")
         delay = max(MIN_TICK_SEC, float(engine.block_time) / 2.0)
         try:

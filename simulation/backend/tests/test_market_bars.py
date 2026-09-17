@@ -51,9 +51,22 @@ def test_payload_format():
         {"t": 120.0, "open": 2.0, "close": 1.5, "low": 1.5, "high": 2.0},
     ]
     payload = bars_to_echarts_payload(bars, trade_mode=False)
-    assert "category" in payload and len(payload["category"]) == 2
+    # Уникальные индексы — равные слоты; время только в labels.
+    assert payload["category"] == ["0", "1"]
+    assert "labels" in payload and len(payload["labels"]) == 2
     assert "times" in payload and payload["times"] == [60.0, 120.0]
     assert payload["values"] == [
         [1.0, 2.0, 0.5, 2.5],
         [2.0, 1.5, 1.5, 2.0],
     ]
+
+
+def test_payload_unique_categories_same_minute():
+    """Два 1s-бара в одну минуту не должны получить одинаковый category-ключ."""
+    bars = [
+        {"t": 1_700_000_000.0, "open": 1.0, "close": 1.0, "low": 1.0, "high": 1.0},
+        {"t": 1_700_000_001.0, "open": 2.0, "close": 2.0, "low": 2.0, "high": 2.0},
+    ]
+    payload = bars_to_echarts_payload(bars, trade_mode=False)
+    assert len(set(payload["category"])) == 2
+

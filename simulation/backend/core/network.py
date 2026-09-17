@@ -21,9 +21,16 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional
 
-from core.models import Transaction
+from core.models import Transaction, TransactionType
 
 GENESIS_NODE_ID = "node_0"
+
+
+def _is_declare_like(tx: Transaction) -> bool:
+    return tx.tx_type in (
+        TransactionType.DECLARE_PARTICIPATION,
+        TransactionType.BURN,
+    )
 
 
 def _stable_node_for_addr(addr: str, num_nodes: int) -> str:
@@ -88,16 +95,20 @@ class NetworkSim:
     def attach(self, state_manager) -> None:
         """Привязать NetworkSim к StateManager, разнести существующие адреса."""
         from core.state import (
-            GENESIS_PROVIDER_ADDR,
+            GENESIS_BOOTSTRAP_PROVIDERS,
+            GENESIS_BOOTSTRAP_VALIDATORS,
             GENESIS_VALIDATOR_ADDR,
             SIM_TREASURY_ADDR,
         )
 
         fixed = {
             GENESIS_VALIDATOR_ADDR: GENESIS_NODE_ID,
-            GENESIS_PROVIDER_ADDR: GENESIS_NODE_ID,
             SIM_TREASURY_ADDR: GENESIS_NODE_ID,
         }
+        for addr in GENESIS_BOOTSTRAP_VALIDATORS:
+            fixed[addr] = GENESIS_NODE_ID
+        for addr in GENESIS_BOOTSTRAP_PROVIDERS:
+            fixed[addr] = GENESIS_NODE_ID
         for addr in state_manager.accounts.keys():
             node_id = fixed.get(addr) or _stable_node_for_addr(addr, self.num_nodes)
             self.nodes[node_id].addresses.add(addr)
@@ -109,12 +120,18 @@ class NetworkSim:
 
     def register_address(self, addr: str) -> str:
         from core.state import (
-            GENESIS_PROVIDER_ADDR,
+            GENESIS_BOOTSTRAP_PROVIDERS,
+            GENESIS_BOOTSTRAP_VALIDATORS,
             GENESIS_VALIDATOR_ADDR,
             SIM_TREASURY_ADDR,
         )
 
-        if addr in (GENESIS_VALIDATOR_ADDR, GENESIS_PROVIDER_ADDR, SIM_TREASURY_ADDR):
+        if addr in (
+            GENESIS_VALIDATOR_ADDR,
+            SIM_TREASURY_ADDR,
+            *GENESIS_BOOTSTRAP_VALIDATORS,
+            *GENESIS_BOOTSTRAP_PROVIDERS,
+        ):
             node_id = GENESIS_NODE_ID
         else:
             node_id = _stable_node_for_addr(addr, self.num_nodes)
@@ -129,11 +146,37 @@ class NetworkSim:
 
     # ---------------- submission API ----------------
 
+    def _purge_sender_declare_locked(self, sender: str, *, keep_hash: str) -> None:
+        """Replace-by-sender для declare/burn во всех узлах (вызывать под _lock)."""
+        if not sender:
+            return
+        stale = [
+            h
+            for h, t in self._pool.items()
+            if h != keep_hash
+            and t.sender == sender
+            and _is_declare_like(t)
+            and h not in self._consumed
+        ]
+        for h in stale:
+            self._pool.pop(h, None)
+            self._coverage.pop(h, None)
+            for node in self.nodes.values():
+                if h in node.arrived_at:
+                    del node.arrived_at[h]
+                if node.mempool:
+                    node.mempool = deque(t for t in node.mempool if t.tx_hash != h)
+
     def submit_to(self, node_id: str, tx: Transaction) -> None:
-        """Прямая подача tx в local mempool заданного узла."""
+        """Прямая подача tx в local mempool заданного узла.
+
+        §5.4 стенд: declare/burn того же sender заменяет предыдущий pending.
+        """
         if node_id not in self.nodes:
             node_id = GENESIS_NODE_ID
         with self._lock:
+            if _is_declare_like(tx) and tx.sender:
+                self._purge_sender_declare_locked(tx.sender, keep_hash=tx.tx_hash)
             self._pool[tx.tx_hash] = tx
             node = self.nodes[node_id]
             now = time.time()

@@ -51,6 +51,16 @@ export function parseAmount(value: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0
 }
 
+/**
+ * Цена ANT/WRT: движок округляет котировки до 6 знаков (auto_market.PRICE_DECIMALS),
+ * а якорь цены — безубыточность майнера ≈ 0.02 WRT, поэтому 2 знака схлопывают книгу в «0.02».
+ */
+export const PRICE_DECIMALS = 6
+export function formatPrice(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
+  return Number(value).toFixed(PRICE_DECIMALS)
+}
+
 /** Форматирование крупных чисел для UI: использует Intl.NumberFormat. */
 export function formatAmount(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '0'

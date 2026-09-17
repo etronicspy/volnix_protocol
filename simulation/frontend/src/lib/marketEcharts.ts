@@ -1,6 +1,9 @@
 /**
  * Агрегация тиков → OHLC и payload для Apache ECharts candlestick
  * (согласовано с simulation/backend/core/market_bars.py).
+ *
+ * Ось X всегда category по индексу бара — равные слоты как на TradingView/Binance.
+ * Время только в подписи/tooltip; дубликаты «MM-DD HH:MM» больше не схлопывают бары.
  */
 
 export interface PriceTick {
@@ -24,14 +27,13 @@ function pad2(n: number): string {
   return n.toString().padStart(2, '0')
 }
 
-function formatLocalHMS(tSec: number): string {
+export function formatBarTime(tSec: number, tradeMode: boolean): string {
   const d = new Date(tSec * 1000)
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
-}
-
-function formatLocalMDHM(tSec: number): string {
-  const d = new Date(tSec * 1000)
-  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  if (tradeMode) {
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+  }
+  // Секунды в подписи: на 1s/1m соседние бары иначе выглядят как один и тот же «HH:MM».
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
 }
 
 export function normalizeTickTimes(ticks: PriceTick[]): { ts: number; price: number }[] {
@@ -106,22 +108,27 @@ export function ticksToOhlcBars(ticks: PriceTick[], intervalSec: number): OhlcBa
   })
 }
 
-/** Формат series candlestick ECharts: [open, close, lowest, highest]. */
+/**
+ * Payload для ECharts: category = уникальные индексы (равные слоты),
+ * времена — параллельный массив для подписей и tooltip.
+ */
 export function barsToEchartsPayload(
   bars: OhlcBar[],
   tradeMode: boolean,
-): { category: string[]; times: number[]; values: number[][] } {
+): { category: string[]; times: number[]; labels: string[]; values: number[][] } {
   const category: string[] = []
   const times: number[] = []
+  const labels: string[] = []
   const values: number[][] = []
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i]
     const t = bar.t
     times.push(t)
-    category.push(
-      tradeMode ? `${i + 1} · ${formatLocalHMS(t)}` : formatLocalMDHM(t),
-    )
+    // Уникальный ключ категории — индекс. Иначе одинаковые «MM-DD HH:MM»
+    // схлопывают соседние 1s-бары в ECharts.
+    category.push(String(i))
+    labels.push(formatBarTime(t, tradeMode))
     values.push([bar.open, bar.close, bar.low, bar.high])
   }
-  return { category, times, values }
+  return { category, times, labels, values }
 }

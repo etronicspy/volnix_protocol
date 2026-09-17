@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   canonStatusColor,
+  formatPrice,
   humanDuration,
   parseAmount,
   shortAddress,
@@ -17,6 +18,17 @@ describe('toFixedSafe', () => {
     expect(toFixedSafe(null)).toBe('0.00')
     expect(toFixedSafe(undefined)).toBe('0.00')
     expect(toFixedSafe(NaN)).toBe('0.00')
+  })
+})
+
+describe('formatPrice', () => {
+  it('keeps the 6 decimals the engine quotes with', () => {
+    expect(formatPrice(0.020249)).toBe('0.020249')
+    expect(formatPrice(10)).toBe('10.000000')
+  })
+  it('null/NaN → dash', () => {
+    expect(formatPrice(null)).toBe('—')
+    expect(formatPrice(NaN)).toBe('—')
   })
 })
 

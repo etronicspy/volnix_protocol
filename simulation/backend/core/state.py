@@ -20,23 +20,70 @@ SIM_SPEED_MIN = CANONICAL_BLOCK_INTERVAL_SEC / 300.0  # 0.2× — блок ра�
 SIM_SPEED_MAX = 604_800.0  # 1 с = 1 неделя
 MIN_SIM_BLOCK_INTERVAL_SEC = CANONICAL_BLOCK_INTERVAL_SEC / SIM_SPEED_MAX  # ≈ 9.92e-5 с
 MAX_SIM_BLOCK_INTERVAL_SEC = 300.0
-# §5.4 / §7.2 п.9 (ruleset v2): λ — только ВЕРХНИЙ предел сжигания за блок (Σb_i ≤ λ·L_total).
-# Минимальный порог Σb_i ≥ λ·L_total из канона v4.20 в v2 удалён: liveness цепи
-# не зависит от рынка ANT (см. docs/CANON_PROBLEMS.md §1 и simulation/docs/V2_RULESET.md).
+# §5.4 / §7.2 п.9: коридор сжигания за блок —
+#   λ·L_total ≤ Σ b_i ≤ (1−λ)·L_total
+# (исправление точки-коридора, где верх и низ были оба λ·L_total).
+# Ограничение DAO: λ ≤ BURN_CAP_LAMBDA_MAX (= 5/12) → ширина коридора ≥ 1/6.
 BURN_CAP_LAMBDA = 1.0 / 3.0
-# §4.2: не более ⌊эталон/3⌋ активированных LZN на адрес (целые токены; эталон 10_000 → 3333).
-# Genesis-валидатор: 6667 активированных (остаток ликвидности = 10_000 − 6667).
-LZN_TOTAL_SUPPLY_REF = 10_000
-LZN_GENESIS_ACTIVATED = 6_667
-LZN_MAX_FROZEN_PER_ADDRESS = LZN_TOTAL_SUPPLY_REF // 3
+BURN_CAP_LAMBDA_MAX = 5.0 / 12.0
 
-# §6.3: два фиксированных genesis-адреса, без ZKP, без роли «Супервизор»
+
+def burn_floor(L_total: float, lam: float = BURN_CAP_LAMBDA) -> float:
+    """Нижняя граница Σ b_i за блок: λ · L_total."""
+    return float(lam) * float(L_total)
+
+
+def burn_ceiling(L_total: float, lam: float = BURN_CAP_LAMBDA) -> float:
+    """Верхняя граница Σ b_i за блок: (1 − λ) · L_total."""
+    return (1.0 - float(lam)) * float(L_total)
+
+
+# §4.2: не более ⌊эталон/3⌋ активированных LZN на адрес (целые токены; эталон 10_000 → 3333).
+# §4.1 5.0-sim: LZN_TOTAL_SUPPLY_REF — потолок обращения (продукция Поставщиков), не разовая эмиссия seed.
+LZN_TOTAL_SUPPLY_REF = 10_000
+LZN_MAX_FROZEN_PER_ADDRESS = LZN_TOTAL_SUPPLY_REF // 3
+# §5.5 / §7.2 п.13: потолок производства LZN за эпоху (DAO; эталон стенда).
+LZN_MAX_EPOCH = 1_000.0
+
+# §6.3 (sim 5.0): единственный seed на высоте 0; когорта 5+5 — на высоте 2.
 GENESIS_VALIDATOR_ADDR = "volnix1gval0validator0genesis0"
-# Ruleset v2 (решение проблемы «курица-яйцо» §6.3, CANON_PROBLEMS §2): genesis-валидатор
-# получает стартовый ANT на одну полную эпоху сжигания по верхнему пределу λ:
-# ANT_val = EpochBlocks × λ × L_genesis. Дальше ANT покупается на внутреннем рынке.
-GENESIS_VALIDATOR_ANT_BALANCE = float(BLOCKS_PER_EPOCH) * BURN_CAP_LAMBDA * LZN_GENESIS_ACTIVATED
-GENESIS_PROVIDER_ADDR = "volnix1gprov0provider00genesis0"
+LZN_GENESIS_ACTIVATED = 1
+GENESIS_VALIDATOR_ANT_BALANCE = 1.0
+
+GENESIS_BOOTSTRAP_VALIDATOR_COUNT = 5
+GENESIS_BOOTSTRAP_PROVIDER_COUNT = 5
+GENESIS_BOOTSTRAP_VALIDATOR_LZN = 1_000
+GENESIS_BOOTSTRAP_VALIDATORS: tuple[str, ...] = tuple(
+    f"volnix1val{i:02d}bootstrap0zkp00" for i in range(GENESIS_BOOTSTRAP_VALIDATOR_COUNT)
+)
+GENESIS_BOOTSTRAP_PROVIDERS: tuple[str, ...] = tuple(
+    f"volnix1prov{i:02d}bootstrap0zkp00" for i in range(GENESIS_BOOTSTRAP_PROVIDER_COUNT)
+)
+# Совместимость UI/API: «первый» поставщик bootstrap-когорты (появляется на высоте 2).
+GENESIS_PROVIDER_ADDR = GENESIS_BOOTSTRAP_PROVIDERS[0]
+
+# Первая продукция LZN Поставщикам (= спрос bootstrap-валидаторов на мощность)
+# + остаток на открытую книгу после sim-fill.
+LZN_BOOTSTRAP_TOTAL = float(
+    GENESIS_BOOTSTRAP_VALIDATOR_COUNT * GENESIS_BOOTSTRAP_VALIDATOR_LZN
+)
+LZN_BOOTSTRAP_MARKET_EXTRA = 200.0  # непроданный остаток на книгу после fill
+LZN_BOOTSTRAP_PER_PROVIDER = (
+    LZN_BOOTSTRAP_TOTAL / float(GENESIS_BOOTSTRAP_PROVIDER_COUNT)
+    + LZN_BOOTSTRAP_MARKET_EXTRA
+)
+
+# Стартовая ANT на поставщиков = спрос первой эпохи (EpochBlocks × λ × L_total),
+# L_total после sim-fill LZN на bootstrap-валидаторов + seed.
+L_TOTAL_GENESIS = float(
+    GENESIS_BOOTSTRAP_VALIDATOR_COUNT * GENESIS_BOOTSTRAP_VALIDATOR_LZN + LZN_GENESIS_ACTIVATED
+)
+ANT_GENESIS_TOTAL = float(BLOCKS_PER_EPOCH) * BURN_CAP_LAMBDA * L_TOTAL_GENESIS
+ANT_GENESIS_PER_PROVIDER = ANT_GENESIS_TOTAL / float(GENESIS_BOOTSTRAP_PROVIDER_COUNT)
+
+# Симуляционный алгоритм: когорта 5+5 вводится в BeginBlock высоты 2 (не в genesis).
+SIM_BOOTSTRAP_INJECT_HEIGHT = 2
+
 # Вне цепочки: резерв симулятора для минта оператором (не в genesis-блоке)
 SIM_TREASURY_ADDR = "sim_treasury_reserve"
 # Исторический ключ казны в старых state.json — миграция в load_state
@@ -50,6 +97,26 @@ MEMPOOL_PERSIST_MAX = 1_000
 
 def account_total_lzn(acc: Account) -> float:
     return acc.lzn_balance + acc.lzn_frozen_mining
+
+
+def circulating_lzn(accounts: Dict[str, Account]) -> float:
+    """§4.1: LZN в обращении — всё, кроме нераспределённого резерва симуляции."""
+    return sum(
+        account_total_lzn(a)
+        for addr, a in accounts.items()
+        if addr != SIM_TREASURY_ADDR
+    )
+
+
+def lzn_mint_headroom(accounts: Dict[str, Account]) -> float:
+    """Сколько LZN ещё можно произвести, не превысив потолок обращения §4.1 5.0-sim."""
+    return max(0.0, float(LZN_TOTAL_SUPPLY_REF) - circulating_lzn(accounts))
+
+
+def order_asset(order: Order) -> str:
+    """Книга ордера: ant (по умолчанию для старых state) или lzn."""
+    a = (getattr(order, "asset", None) or "ant").lower()
+    return a if a in ("ant", "lzn") else "ant"
 
 
 def eligible_for_validator_role(address: str, acc: Account) -> bool:
@@ -74,9 +141,8 @@ def _deserialize_mempool(raw: object) -> List[Transaction]:
 
 
 def eligible_for_provider_role(address: str, acc: Account) -> bool:
-    """Поставщик: требует ZKP; LZN не требуется (genesis-поставщик — исключение §6.3)."""
-    if address == GENESIS_PROVIDER_ADDR:
-        return True
+    """Поставщик: требует ZKP; LZN не требуется (§3.1 / §4.2)."""
+    _ = address
     return bool(acc.zkp_verified)
 
 
@@ -122,6 +188,25 @@ def select_proposer_for_height(height: int, validator_set: List[dict], fallback_
     return items[-1]["address"]
 
 
+def validator_set_from_activated_lzn(accounts: Dict[str, Account]) -> List[dict]:
+    """§6.1 fallback: набор из всех валидаторов с активированным LZN, power ∝ L_i.
+
+    Нужен, когда на высоте не было ни одного declare: иначе `consensus_validator_set`
+    остаётся замороженным с прошлого обновления и цепь бесконечно штампует блоки
+    одним и тем же пропозером (вырождение консенсуса).
+    """
+    out: List[dict] = []
+    for addr in sorted(accounts):
+        acc = accounts[addr]
+        if acc.role != Role.VALIDATOR:
+            continue
+        L_i = float(acc.lzn_frozen_mining)
+        if L_i <= 0:
+            continue
+        out.append({"address": addr, "power": L_i})
+    return out
+
+
 def consensus_validator_set_from_participation(participation: Dict[str, dict]) -> List[dict]:
     """После успешного блока: ValidatorSet для следующих высот из исполненных declare (§5.4 EndBlocker)."""
     out: List[dict] = []
@@ -152,14 +237,25 @@ class StateManager:
         self.epoch_ant_sold_volume = 0.0  # §5.5: объём ANT, проданного поставщиками за текущую эпоху
         self.epoch_ant_sold_last = 0.0  # продажи за предыдущую эпоху (для ratio коэффициента)
         self.epoch_emission_coefficient = 1.0  # §5.5: genesis = 1, границы 0.75–1.5
+        self.epoch_lzn_sold_volume = 0.0  # §5.5 5.0-sim: объём LZN, проданного за эпоху
+        self.epoch_lzn_sold_last = 0.0
+        self.epoch_lzn_emission_coefficient = 1.0
+        self.last_lzn_price = 0.0
+        self.lzn_price_history: List[dict] = []
         self.canon_log = CanonLogBuffer(maxlen=settings.canon_log_capacity)
         # После каждого блока: изменение балансов за блок (для бота — цена vs фактические WRT/ANT)
         self.last_block_wallet_delta: Dict[str, Dict[str, float]] = {}
         self.sim_block_interval_sec: float = CANONICAL_BLOCK_INTERVAL_SEC
         # Скорость симуляции (сим. секунд за реальную): 1.0 = реальное время.
         self.sim_speed: float = 1.0
+        # Якорь «unix» для графиков: genesis_unix + height×60. Фиксируется при genesis/load.
+        self.genesis_unix: float = time.time()
+        # Сколько сделок уже записано на текущей высоте (субсекундный сдвиг ts).
+        self._trades_on_height: int = 0
         # ValidatorSet для выбора пропозера (§6.1, §6.3): после genesis — из EndBlocker/declare §5.4
         self.consensus_validator_set: List[dict] = []
+        # Симуляция: когорта 5 валидаторов + 5 поставщиков уже введена (обычно на высоте 2).
+        self.sim_bootstrap_injected: bool = False
 
         # Append-only ledger (Этап 2): blocks.jsonl + canon_log.jsonl + tx-индекс.
         self._blocks_in_memory_max = max(50, int(settings.blocks_in_memory))
@@ -228,40 +324,37 @@ class StateManager:
         import uuid
 
         ts = time.time()
-        l_total_genesis = LZN_GENESIS_ACTIVATED
-        ant_genesis = float(BLOCKS_PER_EPOCH) * l_total_genesis  # §5.5: ANT_genesis = EpochBlocks × L_total_genesis
+        self.genesis_unix = ts
+        self._trades_on_height = 0
+        self.sim_bootstrap_injected = False
 
+        # Единственный протокольный seed-адрес (+ служебная казна симуляции).
         gv = self.create_account(GENESIS_VALIDATOR_ADDR)
         gv.role = Role.VALIDATOR
         gv.wrt_balance = 0.0
-        gv.lzn_balance = float(LZN_TOTAL_SUPPLY_REF - LZN_GENESIS_ACTIVATED)
+        gv.lzn_balance = 0.0
         gv.lzn_frozen_mining = float(LZN_GENESIS_ACTIVATED)
         gv.ant_balance = float(GENESIS_VALIDATOR_ANT_BALANCE)
-        gv.zkp_verified = True  # §6.3: genesis без ончейн ZKP, в UI — «как верифицирован»
+        gv.zkp_verified = True  # seed без отдельной ZKP-записи; UI — «верифицирован»
 
-        gp = self.create_account(GENESIS_PROVIDER_ADDR)
-        gp.role = Role.PROVIDER
-        gp.wrt_balance = 0.0
-        gp.lzn_balance = 0.0
-        gp.ant_balance = ant_genesis
-        gp.zkp_verified = True
-
-        # Резерв симуляции (не отражать как genesis-актив в §6.3)
         tr = self.create_account(SIM_TREASURY_ADDR)
         tr.role = Role.CITIZEN
         tr.wrt_balance = 1_000_000.0
         tr.lzn_balance = 1_000_000.0
         tr.ant_balance = 1_000_000.0
 
-        txs = [
+        txs: list = [
             Transaction(
                 tx_hash=uuid.uuid4().hex,
                 tx_type=TransactionType.GENESIS_MESSAGE,
                 details=(
-                    "Volnix Protocol §6.3 — genesis: два кошелька (Поставщик + Валидатор), без ZKP, без Супервизора. "
-                    f"§6.3(5): ValidatorSet в genesis — genesis-Валидатор как единственный участник; пропозер блока 1 — "
-                    f"по правилам §6.1 из этого набора. EpochBlocks={BLOCKS_PER_EPOCH}; ANT_genesis=EpochBlocks×L_total={ant_genesis:.0f}; "
-                    f"симуляция: genesis-Валидатор — {GENESIS_VALIDATOR_ANT_BALANCE:.0f} ANT."
+                    "Volnix Protocol §6.3 (sim) — genesis: один seed-кошелёк "
+                    f"({GENESIS_VALIDATOR_ADDR}) с {LZN_GENESIS_ACTIVATED} LZN + "
+                    f"{GENESIS_VALIDATOR_ANT_BALANCE:.0f} ANT. "
+                    f"Когорта {GENESIS_BOOTSTRAP_VALIDATOR_COUNT}+{GENESIS_BOOTSTRAP_PROVIDER_COUNT} "
+                    f"вводится симуляцией на высоте {SIM_BOOTSTRAP_INJECT_HEIGHT} "
+                    f"(не genesis). ValidatorSet seed = {GENESIS_VALIDATOR_ADDR}; "
+                    f"EpochBlocks={BLOCKS_PER_EPOCH}."
                 ),
                 timestamp=ts,
             ).model_dump(mode="json"),
@@ -269,9 +362,12 @@ class StateManager:
                 tx_hash=uuid.uuid4().hex,
                 tx_type=TransactionType.GENESIS_VALIDATOR_LZN,
                 receiver=GENESIS_VALIDATOR_ADDR,
-                amount=float(LZN_TOTAL_SUPPLY_REF),
+                amount=float(LZN_GENESIS_ACTIVATED),
                 asset_type="lzn",
-                details="§6.3(3): 10 000 LZN на genesis-Валидатора (полная одноразовая эмиссия лицензий).",
+                details=(
+                    f"Seed: {LZN_GENESIS_ACTIVATED} LZN на {GENESIS_VALIDATOR_ADDR} "
+                    "(минимальный задел для создания блоков до bootstrap-когорты)."
+                ),
                 timestamp=ts,
             ).model_dump(mode="json"),
             Transaction(
@@ -280,10 +376,7 @@ class StateManager:
                 receiver=GENESIS_VALIDATOR_ADDR,
                 amount=float(LZN_GENESIS_ACTIVATED),
                 asset_type="lzn",
-                details=(
-                    f"§6.3(3)+§4.2: {LZN_GENESIS_ACTIVATED} LZN активировано (генезис-исключение); "
-                    f"{LZN_TOTAL_SUPPLY_REF - LZN_GENESIS_ACTIVATED} ликвидных; далее потолок ⌊{LZN_TOTAL_SUPPLY_REF}/3⌋ = {LZN_MAX_FROZEN_PER_ADDRESS} на адрес."
-                ),
+                details=f"Seed: {LZN_GENESIS_ACTIVATED} LZN активировано под майнинг.",
                 timestamp=ts,
             ).model_dump(mode="json"),
             Transaction(
@@ -293,35 +386,37 @@ class StateManager:
                 amount=float(GENESIS_VALIDATOR_ANT_BALANCE),
                 asset_type="ant",
                 details=(
-                    f"Ruleset v2: стартовый ANT на genesis-Валидаторе = {GENESIS_VALIDATOR_ANT_BALANCE:.0f} "
-                    f"(EpochBlocks × λ × L_genesis = {BLOCKS_PER_EPOCH} × {BURN_CAP_LAMBDA:.4f} × {LZN_GENESIS_ACTIVATED}; "
-                    "бюджет сжигания §5.4 на первую эпоху — решение genesis «курица-яйцо»)."
-                ),
-                timestamp=ts,
-            ).model_dump(mode="json"),
-            Transaction(
-                tx_hash=uuid.uuid4().hex,
-                tx_type=TransactionType.GENESIS_PROVIDER_ANT,
-                receiver=GENESIS_PROVIDER_ADDR,
-                amount=ant_genesis,
-                asset_type="ant",
-                details=(
-                    f"§6.3(4)+§5.5: стартовая ANT на genesis-Поставщика = {ant_genesis:.0f} "
-                    f"(EpochBlocks×L_total_genesis)."
+                    f"Seed: {GENESIS_VALIDATOR_ANT_BALANCE:.0f} ANT на {GENESIS_VALIDATOR_ADDR} "
+                    "(электричество для Σb_i > 0)."
                 ),
                 timestamp=ts,
             ).model_dump(mode="json"),
         ]
 
+        L_g = float(LZN_GENESIS_ACTIVATED)
         genesis_block = {
             "height": 0,
             "hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
             "timestamp": ts,
             "transactions": txs,
             "tx_count": len(txs),
+            "competition": {
+                "kind": "genesis",
+                "lambda": float(BURN_CAP_LAMBDA),
+                "K": 150,
+                "L_total": L_g,
+                "floor": burn_floor(L_g),
+                "cap": burn_ceiling(L_g),
+                "B_candidates": 0.0,
+                "B_selected": 0.0,
+                "candidates_count": 0,
+                "selected_count": 0,
+                "culled_lambda_count": 0,
+                "culled_k_count": 0,
+                "deferred_count": 0,
+                "entries": [],
+            },
         }
-        # init_genesis вызывается на чистом StateManager (current_height=0);
-        # append блока вручную + индексация, без инкремента высоты.
         self.blocks.append(genesis_block)
         try:
             self.block_ledger.append_block(genesis_block)
@@ -329,6 +424,171 @@ class StateManager:
             pass
         self._index_block(genesis_block)
         self.consensus_validator_set = default_consensus_validator_set(self.accounts)
+
+    def inject_sim_bootstrap_cohort(self, txs_in_block: list) -> bool:
+        """Симуляционный старт 5.0-sim: 5 поставщиков + 5 валидаторов.
+
+        Поставщики получают первую продукцию ANT и LZN (§5.5). Валидаторы получают
+        мощность через sim-fill сделок LZN у Поставщиков (не «эмиссия с неба»).
+        Не канон mainnet §6.3 — алгоритм стенда. Идемпотентно.
+        """
+        import uuid
+
+        if self.sim_bootstrap_injected:
+            return False
+        if all(a in self.accounts for a in GENESIS_BOOTSTRAP_VALIDATORS) and all(
+            a in self.accounts for a in GENESIS_BOOTSTRAP_PROVIDERS
+        ):
+            self.sim_bootstrap_injected = True
+            return False
+
+        ts = time.time()
+        txs_in_block.append(
+            {
+                "tx_hash": uuid.uuid4().hex,
+                "tx_type": "sim_bootstrap_message",
+                "details": (
+                    f"Sim bootstrap height={SIM_BOOTSTRAP_INJECT_HEIGHT} (5.0-sim): "
+                    f"{GENESIS_BOOTSTRAP_PROVIDER_COUNT} поставщиков "
+                    f"(ANT_total={ANT_GENESIS_TOTAL:.0f}, LZN_total={LZN_BOOTSTRAP_TOTAL:.0f}); "
+                    f"{GENESIS_BOOTSTRAP_VALIDATOR_COUNT} валидаторов получают LZN "
+                    f"через sim-fill рынка (по {GENESIS_BOOTSTRAP_VALIDATOR_LZN}). "
+                    f"Не канон mainnet §6.3."
+                ),
+                "timestamp": ts,
+            }
+        )
+
+        # 1) Поставщики: ZKP + роль + продукция ANT + LZN на продажу.
+        for i, addr in enumerate(GENESIS_BOOTSTRAP_PROVIDERS):
+            acc = self.create_account(addr)
+            acc.role = Role.PROVIDER
+            acc.wrt_balance = 0.0
+            acc.lzn_balance = float(LZN_BOOTSTRAP_PER_PROVIDER)
+            acc.ant_balance = float(ANT_GENESIS_PER_PROVIDER)
+            acc.zkp_verified = True
+            for tx in (
+                Transaction(
+                    tx_hash=uuid.uuid4().hex,
+                    tx_type=TransactionType.ZKP_VERIFY,
+                    sender=addr,
+                    receiver=addr,
+                    details=f"Sim bootstrap ZKP §3.1: поставщик[{i}].",
+                    timestamp=ts,
+                ),
+                Transaction(
+                    tx_hash=uuid.uuid4().hex,
+                    tx_type=TransactionType.SET_ROLE,
+                    sender=addr,
+                    receiver=addr,
+                    role=Role.PROVIDER,
+                    details=f"Sim bootstrap §4.2: Поставщик {addr}.",
+                    timestamp=ts,
+                ),
+                Transaction(
+                    tx_hash=uuid.uuid4().hex,
+                    tx_type=TransactionType.GENESIS_PROVIDER_ANT,
+                    receiver=addr,
+                    amount=float(ANT_GENESIS_PER_PROVIDER),
+                    asset_type="ant",
+                    details=(
+                        f"Sim bootstrap ANT: {ANT_GENESIS_PER_PROVIDER:.0f} "
+                        f"(доля от EpochBlocks×λ×L_total={ANT_GENESIS_TOTAL:.0f})."
+                    ),
+                    timestamp=ts,
+                ),
+                Transaction(
+                    tx_hash=uuid.uuid4().hex,
+                    tx_type=TransactionType.EPOCH_LZN_CREDIT,
+                    receiver=addr,
+                    amount=float(LZN_BOOTSTRAP_PER_PROVIDER),
+                    asset_type="lzn",
+                    details=(
+                        f"Sim bootstrap LZN §5.5: {LZN_BOOTSTRAP_PER_PROVIDER:.0f} "
+                        f"продукция Поставщика (fill {GENESIS_BOOTSTRAP_VALIDATOR_LZN} + "
+                        f"книга {LZN_BOOTSTRAP_MARKET_EXTRA:.0f})."
+                    ),
+                    timestamp=ts,
+                ),
+            ):
+                txs_in_block.append(tx.model_dump(mode="json"))
+
+        # 2) Валидаторы: ZKP + роль; мощность — sim-fill LZN у соответствующего Поставщика.
+        # Стартовый ANT = λ·L_i — чтобы сразу набрать низ коридора Σb_i ≥ λ·L_total
+        # (sim-fill «уже купленного» топлива; иначе L_total скачет, а ANT=0 → stall).
+        for i, addr in enumerate(GENESIS_BOOTSTRAP_VALIDATORS):
+            acc = self.create_account(addr)
+            acc.role = Role.VALIDATOR
+            acc.wrt_balance = 0.0
+            acc.lzn_balance = 0.0
+            acc.lzn_frozen_mining = 0.0
+            acc.ant_balance = 0.0
+            acc.zkp_verified = True
+            for tx in (
+                Transaction(
+                    tx_hash=uuid.uuid4().hex,
+                    tx_type=TransactionType.ZKP_VERIFY,
+                    sender=addr,
+                    receiver=addr,
+                    details=f"Sim bootstrap ZKP §3.1: валидатор[{i}].",
+                    timestamp=ts,
+                ),
+                Transaction(
+                    tx_hash=uuid.uuid4().hex,
+                    tx_type=TransactionType.SET_ROLE,
+                    sender=addr,
+                    receiver=addr,
+                    role=Role.VALIDATOR,
+                    details=f"Sim bootstrap §4.2: Валидатор {addr}.",
+                    timestamp=ts,
+                ),
+            ):
+                txs_in_block.append(tx.model_dump(mode="json"))
+
+            prov_addr = GENESIS_BOOTSTRAP_PROVIDERS[i]
+            prov = self.accounts[prov_addr]
+            lot = float(GENESIS_BOOTSTRAP_VALIDATOR_LZN)
+            if prov.lzn_balance + 1e-12 < lot:
+                lot = float(prov.lzn_balance)
+            if lot <= 0:
+                continue
+            prov.lzn_balance -= lot
+            acc.lzn_frozen_mining += lot
+            starter_ant = float(BURN_CAP_LAMBDA) * lot
+            acc.ant_balance += starter_ant
+            self.epoch_lzn_sold_volume += lot
+            txs_in_block.append(
+                {
+                    "tx_hash": uuid.uuid4().hex,
+                    "tx_type": "sim_bootstrap_lzn_fill",
+                    "sender": prov_addr,
+                    "receiver": addr,
+                    "amount": lot,
+                    "asset_type": "lzn",
+                    "details": (
+                        f"Sim bootstrap §5.2/§6.3: исполненная сделка LZN "
+                        f"{lot:.0f} {prov_addr} → {addr} (активировано под майнинг)."
+                    ),
+                    "timestamp": ts,
+                }
+            )
+            txs_in_block.append(
+                {
+                    "tx_hash": uuid.uuid4().hex,
+                    "tx_type": "sim_bootstrap_ant_fill",
+                    "receiver": addr,
+                    "amount": starter_ant,
+                    "asset_type": "ant",
+                    "details": (
+                        f"Sim bootstrap §5.4: стартовый ANT {starter_ant:.4f} "
+                        f"(= λ·L_i) для низа коридора после fill LZN."
+                    ),
+                    "timestamp": ts,
+                }
+            )
+
+        self.sim_bootstrap_injected = True
+        return True
 
     def create_account(self, address: str) -> Account:
         if address not in self.accounts:
@@ -341,6 +601,75 @@ class StateManager:
                     pass
         return self.accounts[address]
 
+    @staticmethod
+    def _is_declare_like(tx: Transaction) -> bool:
+        """§5.4: declare/burn — один слот на адрес в мемпуле (replace-by-sender)."""
+        return tx.tx_type in (
+            TransactionType.DECLARE_PARTICIPATION,
+            TransactionType.BURN,
+        )
+
+    def mempool_admit(self, tx: Transaction) -> bool:
+        """Приём tx в глобальный мемпул.
+
+        Для declare/burn: новый tx того же sender **заменяет** старый
+        (правило стенда / vNext: не копить дубли на высоту).
+        Остальные типы — append.
+        Возвращает True, если был replace (старый вытеснен).
+        """
+        replaced = False
+        if self._is_declare_like(tx) and tx.sender:
+            sid = tx.sender
+            before = len(self.mempool)
+            self.mempool = [
+                t
+                for t in self.mempool
+                if not (t.sender == sid and self._is_declare_like(t))
+            ]
+            replaced = len(self.mempool) < before
+        self.mempool.append(tx)
+        return replaced
+
+    def compact_declare_mempool(self) -> int:
+        """Оставить только последний declare/burn на sender. Возвращает число снятых."""
+        kept: List[Transaction] = []
+        last_declare: Dict[str, Transaction] = {}
+        declare_order: List[str] = []
+        removed = 0
+        for tx in self.mempool:
+            if self._is_declare_like(tx) and tx.sender:
+                sid = tx.sender
+                if sid in last_declare:
+                    removed += 1
+                else:
+                    declare_order.append(sid)
+                last_declare[sid] = tx
+            else:
+                kept.append(tx)
+        for sid in declare_order:
+            kept.append(last_declare[sid])
+        self.mempool = kept
+        return removed
+
+    def submit_tx(self, tx: Transaction) -> str:
+        """Единая подача tx: NetworkSim (если есть) или локальный мемпул.
+
+        Declare/burn на сети тоже replace-by-sender (см. NetworkSim.submit_to).
+        """
+        net = getattr(self, "network", None)
+        if net is not None:
+            addr = getattr(tx, "sender", "") or ""
+            try:
+                if addr:
+                    net.submit_from_addr(addr, tx)
+                else:
+                    net.submit_to("node_0", tx)
+                return "network"
+            except Exception:
+                pass
+        self.mempool_admit(tx)
+        return "local"
+
     def list_open_orders_for_address(self, address: str) -> List[dict]:
         return [
             o.model_dump(mode="json")
@@ -349,30 +678,83 @@ class StateManager:
         ]
 
     def get_orderbook(self):
-        bids = [o.model_dump(mode="json") for o in self.orders.values() if o.order_type == OrderType.BUY]
-        asks = [o.model_dump(mode="json") for o in self.orders.values() if o.order_type == OrderType.SELL]
-        
-        # Sort bids descending (highest price first), asks ascending (lowest price first)
-        bids.sort(key=lambda x: (-x["price"], x["timestamp"]))
-        asks.sort(key=lambda x: (x["price"], x["timestamp"]))
-        
-        hist = self.price_history
-        if len(hist) > MARKET_HISTORY_WS_MAX:
-            hist = hist[-MARKET_HISTORY_WS_MAX:]
-        return {"bids": bids[:10], "asks": asks[:10], "last_price": self.last_price, "history": hist}
+        def _book(asset: str) -> dict:
+            bids = [
+                o.model_dump(mode="json")
+                for o in self.orders.values()
+                if o.order_type == OrderType.BUY and order_asset(o) == asset
+            ]
+            asks = [
+                o.model_dump(mode="json")
+                for o in self.orders.values()
+                if o.order_type == OrderType.SELL and order_asset(o) == asset
+            ]
+            bids.sort(key=lambda x: (-x["price"], x["timestamp"]))
+            asks.sort(key=lambda x: (x["price"], x["timestamp"]))
+            if asset == "lzn":
+                last = self.last_lzn_price
+                hist = self.lzn_price_history
+            else:
+                last = self.last_price
+                hist = self.price_history
+            if len(hist) > MARKET_HISTORY_WS_MAX:
+                hist = hist[-MARKET_HISTORY_WS_MAX:]
+            return {
+                "bids": bids[:10],
+                "asks": asks[:10],
+                "last_price": last,
+                "history": hist,
+            }
 
-    def record_trade_price(self, match_price: float) -> None:
-        """Добавить тик цены с Unix-временем; сразу дописывает на диск (восстановление после перезапуска/сбоя)."""
-        t = time.time()
-        self.last_price = match_price
+        ant = _book("ant")
+        lzn = _book("lzn")
+        # Совместимость: верхний уровень = книга ANT (как раньше).
+        return {
+            "bids": ant["bids"],
+            "asks": ant["asks"],
+            "last_price": ant["last_price"],
+            "history": ant["history"],
+            "ant": ant,
+            "lzn": lzn,
+        }
+
+    def sim_timestamp(self, *, for_height: Optional[int] = None) -> float:
+        """Время симуляции для графиков/блоков: не wall-clock.
+
+        Один блок = CANONICAL_BLOCK_INTERVAL_SEC сим. секунд. При ускорении ×N
+        тики рынка и блоки идут плотнее по реальному времени, но ts растёт
+        пропорционально высоте — график остаётся синхронен цепи.
+        """
+        h = int(self.current_height if for_height is None else for_height)
+        return float(self.genesis_unix) + max(0, h) * CANONICAL_BLOCK_INTERVAL_SEC
+
+    def record_trade_price(self, match_price: float, *, asset: str = "ant") -> None:
+        """Тик цены в sim-time (высота блока + субсекундный индекс сделки)."""
+        self._trades_on_height += 1
+        t = self.sim_timestamp(for_height=self.current_height + 1)
+        t += self._trades_on_height * 1e-3
         row = {
             "time": time.strftime("%H:%M:%S", time.localtime(t)),
             "price": match_price,
             "ts": t,
+            "asset": asset,
         }
+        if asset == "lzn":
+            self.last_lzn_price = match_price
+            self.lzn_price_history.append(row)
+            return
+        self.last_price = match_price
         self.price_history.append(row)
         jsonl = self._price_history_jsonl_path(self._active_state_path)
-        self._append_price_history_jsonl(jsonl, row)
+        try:
+            self._append_price_history_jsonl(jsonl, row)
+        except OSError:
+            pass
+
+    def note_block_committed(self, height: int) -> None:
+        """Сброс счётчика сделок после фиксации блока (новый слот высоты)."""
+        self._trades_on_height = 0
+        _ = height
 
     def get_full_state(self):
         return {
@@ -387,6 +769,9 @@ class StateManager:
             "epoch_ant_sold_volume": self.epoch_ant_sold_volume,
             "epoch_ant_sold_last": self.epoch_ant_sold_last,
             "epoch_emission_coefficient": self.epoch_emission_coefficient,
+            "epoch_lzn_sold_volume": self.epoch_lzn_sold_volume,
+            "epoch_lzn_sold_last": self.epoch_lzn_sold_last,
+            "epoch_lzn_emission_coefficient": self.epoch_lzn_emission_coefficient,
             "blocks_per_epoch": BLOCKS_PER_EPOCH,
             "genesis_validator": GENESIS_VALIDATOR_ADDR,
             "consensus_validators": list(self.consensus_validator_set),
@@ -396,6 +781,10 @@ class StateManager:
                 GENESIS_VALIDATOR_ADDR,
             ),
             "genesis_provider": GENESIS_PROVIDER_ADDR,
+            "genesis_bootstrap_validators": list(GENESIS_BOOTSTRAP_VALIDATORS),
+            "genesis_bootstrap_providers": list(GENESIS_BOOTSTRAP_PROVIDERS),
+            "sim_bootstrap_inject_height": SIM_BOOTSTRAP_INJECT_HEIGHT,
+            "sim_bootstrap_injected": self.sim_bootstrap_injected,
             "sim_treasury": SIM_TREASURY_ADDR,
             "canon_log": self.canon_log.to_list_newest_first(),
             "last_block_wallet_delta": self.last_block_wallet_delta,
@@ -572,12 +961,22 @@ class StateManager:
             "epoch_ant_sold_volume": self.epoch_ant_sold_volume,
             "epoch_ant_sold_last": self.epoch_ant_sold_last,
             "epoch_emission_coefficient": self.epoch_emission_coefficient,
+            "epoch_lzn_sold_volume": self.epoch_lzn_sold_volume,
+            "epoch_lzn_sold_last": self.epoch_lzn_sold_last,
+            "epoch_lzn_emission_coefficient": self.epoch_lzn_emission_coefficient,
+            "last_lzn_price": self.last_lzn_price,
+            "lzn_price_history": self.lzn_price_history,
             "last_block_wallet_delta": self.last_block_wallet_delta,
             "sim_block_interval_sec": self.sim_block_interval_sec,
             "sim_speed": self.sim_speed,
+            "genesis_unix": self.genesis_unix,
             "consensus_validator_set": list(self.consensus_validator_set),
             "genesis_validator": GENESIS_VALIDATOR_ADDR,
             "genesis_provider": GENESIS_PROVIDER_ADDR,
+            "genesis_bootstrap_validators": list(GENESIS_BOOTSTRAP_VALIDATORS),
+            "genesis_bootstrap_providers": list(GENESIS_BOOTSTRAP_PROVIDERS),
+            "sim_bootstrap_inject_height": SIM_BOOTSTRAP_INJECT_HEIGHT,
+            "sim_bootstrap_injected": self.sim_bootstrap_injected,
             "sim_treasury": SIM_TREASURY_ADDR,
             "accounts": {addr: acc.model_dump(mode="json") for addr, acc in self.accounts.items()},
             "orders": {oid: o.model_dump(mode="json") for oid, o in self.orders.items()},
@@ -617,6 +1016,13 @@ class StateManager:
             self.epoch_ant_sold_volume = data.get("epoch_ant_sold_volume", 0.0)
             self.epoch_ant_sold_last = data.get("epoch_ant_sold_last", 0.0)
             self.epoch_emission_coefficient = data.get("epoch_emission_coefficient", 1.0)
+            self.epoch_lzn_sold_volume = data.get("epoch_lzn_sold_volume", 0.0)
+            self.epoch_lzn_sold_last = data.get("epoch_lzn_sold_last", 0.0)
+            self.epoch_lzn_emission_coefficient = data.get(
+                "epoch_lzn_emission_coefficient", 1.0
+            )
+            self.last_lzn_price = float(data.get("last_lzn_price", 0.0) or 0.0)
+            self.lzn_price_history = data.get("lzn_price_history", []) or []
             self.blocks = data.get("blocks", [])
             self.last_block_wallet_delta = data.get("last_block_wallet_delta", {})
             _iv = float(data.get("sim_block_interval_sec", CANONICAL_BLOCK_INTERVAL_SEC))
@@ -630,6 +1036,23 @@ class StateManager:
             else:
                 _spd = float(_spd_raw)
             self.sim_speed = max(SIM_SPEED_MIN, min(SIM_SPEED_MAX, _spd))
+            _gu = data.get("genesis_unix")
+            if _gu is not None:
+                try:
+                    self.genesis_unix = float(_gu)
+                except (TypeError, ValueError):
+                    self.genesis_unix = time.time() - self.current_height * CANONICAL_BLOCK_INTERVAL_SEC
+            else:
+                # Legacy: восстановить якорь так, чтобы текущая высота совпала с «сейчас».
+                self.genesis_unix = time.time() - self.current_height * CANONICAL_BLOCK_INTERVAL_SEC
+            self._trades_on_height = 0
+            self.sim_bootstrap_injected = bool(data.get("sim_bootstrap_injected", False))
+            if not self.sim_bootstrap_injected:
+                # Legacy state с уже созданной когортой в accounts.
+                if all(a in (data.get("accounts") or {}) for a in GENESIS_BOOTSTRAP_VALIDATORS) and all(
+                    a in (data.get("accounts") or {}) for a in GENESIS_BOOTSTRAP_PROVIDERS
+                ):
+                    self.sim_bootstrap_injected = True
 
             accounts_data = data.get("accounts", {})
             merged_accounts = {}
@@ -720,9 +1143,17 @@ class StateManager:
         self.epoch_ant_sold_volume = 0.0
         self.epoch_ant_sold_last = 0.0
         self.epoch_emission_coefficient = 1.0
+        self.epoch_lzn_sold_volume = 0.0
+        self.epoch_lzn_sold_last = 0.0
+        self.epoch_lzn_emission_coefficient = 1.0
+        self.last_lzn_price = 0.0
+        self.lzn_price_history = []
         self.last_block_wallet_delta = {}
         self.sim_block_interval_sec = CANONICAL_BLOCK_INTERVAL_SEC
         self.sim_speed = 1.0
+        self.genesis_unix = time.time()
+        self._trades_on_height = 0
+        self.sim_bootstrap_injected = False
         self.tx_index.clear()
         self.account_tx_index.clear()
         self._blocks_since_snapshot = 0

@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from core.models import OrderType, Role, TransactionType
-from core.state import SIM_TREASURY_ADDR
+from core.state import LZN_TOTAL_SUPPLY_REF, SIM_TREASURY_ADDR
 from core.wallet_validate import validate_and_build_tx, validate_treasury_mint
 
 
@@ -209,3 +209,37 @@ def test_treasury_mint_insufficient_reserves(state_manager, mk_account):
     tr.wrt_balance = 1.0
     ok, msg, _ = validate_treasury_mint(state_manager, a.address, 100.0, "wrt")
     assert not ok and "insufficient" in msg
+
+
+# === §4.1: фиксированная одноразовая эмиссия LZN ===
+
+def test_treasury_mint_lzn_blocked_above_total_supply(state_manager, mk_account):
+    """Выпуск сверх LZN_TOTAL_SUPPLY_REF запрещён (genesis выдал seed+bootstrap)."""
+    from core.state import circulating_lzn, lzn_mint_headroom
+
+    headroom = lzn_mint_headroom(state_manager.accounts)
+    assert circulating_lzn(state_manager.accounts) + headroom == pytest.approx(
+        LZN_TOTAL_SUPPLY_REF
+    )
+    assert headroom > 0
+    a = mk_account("u_lzn_cap", role=Role.CITIZEN)
+    ok, msg, _ = validate_treasury_mint(state_manager, a.address, headroom + 1.0, "lzn")
+    assert not ok
+    assert "§4.1" in msg
+
+
+def test_treasury_mint_lzn_allowed_within_headroom(state_manager, mk_account):
+    """Пока есть headroom — mint LZN из казны разрешён в его пределах."""
+    from core.state import lzn_mint_headroom
+
+    headroom = lzn_mint_headroom(state_manager.accounts)
+    assert headroom >= 40.0
+
+    a = mk_account("u_lzn_ok", role=Role.CITIZEN)
+    ok, _, tx = validate_treasury_mint(state_manager, a.address, 40.0, "lzn")
+    assert ok and tx is not None and tx.asset_type == "lzn"
+
+    ok_over, msg, _ = validate_treasury_mint(
+        state_manager, a.address, headroom + 0.01, "lzn"
+    )
+    assert not ok_over and "§4.1" in msg

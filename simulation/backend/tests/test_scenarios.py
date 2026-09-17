@@ -8,31 +8,19 @@ import pytest
 import yaml
 
 from core.bot_engine import BotEngine
-from core.engine import BURN_CAP_LAMBDA
-from core.models import Transaction, TransactionType
 from core.scenarios import (
     ScenarioRunner,
     list_scenarios,
     load_scenario_file,
 )
 from core.state import GENESIS_VALIDATOR_ADDR
+from tests.conftest import seed_declare_tx
 
 
 def _enqueue_canonical_declare(state_manager, engine):
-    """Хелпер: добавляет declare от genesis-валидатора с b = λ·L_total."""
-    gv = state_manager.accounts[GENESIS_VALIDATOR_ADDR]
-    L_total = engine._network_lzn_total_validators()
-    state_manager.mempool.append(
-        Transaction(
-            tx_hash=uuid.uuid4().hex,
-            tx_type=TransactionType.DECLARE_PARTICIPATION,
-            sender=gv.address,
-            amount=BURN_CAP_LAMBDA * L_total,
-            stake_amount=0.0,
-            asset_type="ant",
-            timestamp=time.time(),
-        )
-    )
+    """Хелпер: добавляет declare от seed-валидатора (b ≤ L_i)."""
+    _ = state_manager
+    engine.state.mempool.append(seed_declare_tx(engine))
 
 
 def test_list_scenarios_returns_yaml_files():

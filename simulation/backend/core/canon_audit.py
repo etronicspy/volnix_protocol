@@ -17,6 +17,7 @@ SKIP_AUDIT = frozenset(
         "genesis_validator_ant",
         "genesis_provider_ant",
         "genesis_market_seed",
+        "sim_bootstrap_message",
     }
 )
 
@@ -225,13 +226,30 @@ def audit_block_ledger(sm: StateManager, txs: List[dict], block_height: int) -> 
                 tx_hash=h,
                 block_height=block_height,
             )
-        elif tx_type in ("epoch_ant_wipe", "epoch_ant_credit", "epoch_emission", "epoch_order_cancel"):
+        elif tx_type in (
+            "epoch_ant_wipe",
+            "epoch_ant_credit",
+            "epoch_lzn_credit",
+            "epoch_emission",
+            "epoch_order_cancel",
+        ):
             log.push(
                 source="engine",
                 status="ok",
                 category="epoch",
                 canon="§5.5",
-                title="Эпоха эмиссии ANT / сброс у Поставщиков",
+                title="Эпоха производства ANT/LZN у Поставщиков",
+                detail=(item.get("details") or "")[:240],
+                tx_hash=h,
+                block_height=block_height,
+            )
+        elif tx_type == "sim_bootstrap_lzn_fill":
+            log.push(
+                source="engine",
+                status="ok",
+                category="market",
+                canon="§5.2 / §6.3",
+                title="Sim bootstrap: fill LZN Поставщик → Валидатор",
                 detail=(item.get("details") or "")[:240],
                 tx_hash=h,
                 block_height=block_height,

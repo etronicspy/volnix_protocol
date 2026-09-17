@@ -111,19 +111,10 @@ def test_account_history_for_genesis_validator(state_manager):
 @pytest.mark.asyncio
 async def test_block_ledger_grows_after_produce(engine):
     """Каждый успешный блок добавляет строку в blocks.jsonl."""
+    from tests.conftest import seed_declare_tx
+
     initial = engine.state.block_ledger.count()
-    gv = engine.state.accounts[GENESIS_VALIDATOR_ADDR]
-    L = engine._network_lzn_total_validators()
-    tx = Transaction(
-        tx_hash=uuid.uuid4().hex,
-        tx_type=TransactionType.DECLARE_PARTICIPATION,
-        sender=gv.address,
-        amount=BURN_CAP_LAMBDA * L,
-        stake_amount=0.0,
-        asset_type="ant",
-        timestamp=time.time(),
-    )
-    engine.state.mempool.append(tx)
+    engine.state.mempool.append(seed_declare_tx(engine))
     await engine.produce_block()
     assert engine.state.block_ledger.count() == initial + 1
 

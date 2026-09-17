@@ -9,13 +9,13 @@ from typing import Optional, Tuple
 
 from core.models import OrderType, Role, Transaction, TransactionType
 from core.state import (
-    GENESIS_PROVIDER_ADDR,
-    GENESIS_VALIDATOR_ADDR,
     LZN_MAX_FROZEN_PER_ADDRESS,
+    LZN_TOTAL_SUPPLY_REF,
     SIM_TREASURY_ADDR,
     StateManager,
     eligible_for_provider_role,
     eligible_for_validator_role,
+    lzn_mint_headroom,
 )
 
 
@@ -46,6 +46,18 @@ def validate_treasury_mint(
         return False, "Simulation treasury has insufficient WRT", None
     if a == "lzn" and tr.lzn_balance + 1e-12 < amount:
         return False, "Simulation treasury has insufficient LZN", None
+    if a == "lzn":
+        # §4.1 5.0-sim: операторский mint из казны — только в пределах потолка обращения.
+        headroom = lzn_mint_headroom(sm.accounts)
+        if amount > headroom + 1e-9:
+            return (
+                False,
+                (
+                    f"§4.1: потолок обращения LZN ({LZN_TOTAL_SUPPLY_REF:.0f}); "
+                    f"свободно {headroom:.4f}, запрошено {amount:.4f}"
+                ),
+                None,
+            )
     if a == "ant" and tr.ant_balance + 1e-12 < amount:
         return False, "Simulation treasury has insufficient ANT", None
     tx = Transaction(
@@ -130,6 +142,12 @@ def validate_and_build_tx(
         if amount is None or amount <= 0:
             return False, "amount must be positive", None
         a = (asset or "wrt").lower()
+        if a == "ant":
+            return False, "ANT только через внутренний рынок (§4.1)", None
+        if a == "lzn":
+            return False, "LZN только через внутренний рынок (§5.2 5.0-sim)", None
+        if a != "wrt":
+            return False, "asset must be wrt (ant/lzn — рынок)", None
         tx = Transaction(
             tx_hash=uuid.uuid4().hex,
             tx_type=TransactionType.TRANSFER,
@@ -158,6 +176,11 @@ def validate_and_build_tx(
         if side not in ("buy", "sell"):
             return False, "side must be buy or sell", None
         ot = OrderType.BUY if side == "buy" else OrderType.SELL
+        a = (asset or "ant").lower()
+        if a == "wrt":
+            a = "ant"  # совместимость: старые клиенты не передавали asset рынка
+        if a not in ("ant", "lzn"):
+            return False, "asset must be ant or lzn", None
 
         if market:
             if amount is None or amount <= 0:
@@ -170,17 +193,18 @@ def validate_and_build_tx(
                     return False, "max_wrt must be a number", None
                 if cap <= 0:
                     return False, "max_wrt must be positive", None
-                tx = Transaction(
-                    tx_hash=uuid.uuid4().hex,
-                    tx_type=TransactionType.CREATE_ORDER,
-                    sender=address,
-                    order_type=ot,
-                    price=0.0,
-                    amount=float(amount),
-                    market=True,
+            tx = Transaction(
+                tx_hash=uuid.uuid4().hex,
+                tx_type=TransactionType.CREATE_ORDER,
+                sender=address,
+                order_type=ot,
+                price=0.0,
+                amount=float(amount),
+                asset_type=a,
+                market=True,
                 max_wrt=cap,
-                    timestamp=ts,
-                )
+                timestamp=ts,
+            )
             return True, "accepted (will be validated in next block)", tx
 
         if price is None or price <= 0 or amount is None or amount <= 0:
@@ -192,6 +216,7 @@ def validate_and_build_tx(
             order_type=ot,
             price=float(price),
             amount=float(amount),
+            asset_type=a,
             timestamp=ts,
         )
         return True, "accepted (will be validated in next block)", tx

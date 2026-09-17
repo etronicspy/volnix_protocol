@@ -6,17 +6,31 @@ from typing import Optional
 
 from core.canon_audit import log_bot_queue, log_wallet_rejection
 from core.models import OrderType, Role, Transaction, TransactionType
+from core.profit_strategy import ProfitStrategy, top_switch_candidates
 from core.state import (
     BLOCKS_PER_EPOCH,
+    CANONICAL_BLOCK_INTERVAL_SEC,
+    LZN_MAX_FROZEN_PER_ADDRESS,
     SIM_TREASURY_ADDR,
     StateManager,
-    eligible_for_provider_role,
-    eligible_for_validator_role,
+    account_total_lzn,
+    lzn_mint_headroom,
 )
+
+# Плотность трафика привязана к сим. времени: intensity = действий / сим. секунду.
+# При intensity=1 → ~60 действий на блок (CANONICAL_BLOCK_INTERVAL_SEC).
+# На высоких sim_speed реальный CPU ограничиваем, иначе 60×блоков/с.
+MAX_BOT_ACTIONS_PER_BLOCK = 60
+MAX_BOT_ACTIONS_PER_REAL_SEC = 250
+MAX_BOT_ACTION_CARRY = MAX_BOT_ACTIONS_PER_BLOCK * 2
 from core.wallet_validate import validate_and_build_tx, validate_treasury_mint
 
 # Бот создаёт только адреса с префиксом bot_<hex>; не трогает genesis / казну / чужие кошельки.
 BOT_ADDRESS_PREFIX = "bot_"
+
+# Разрешение цены на рынке ANT (см. _round_ant_price).
+ANT_PRICE_DECIMALS = 6
+MIN_ANT_PRICE = 10.0 ** -ANT_PRICE_DECIMALS
 
 
 def is_bot_created_address(address: str) -> bool:
@@ -48,6 +62,11 @@ def _wallet_delta_last_block(state: StateManager, address: str) -> tuple[float, 
     return float(raw.get("wrt", 0.0)), float(raw.get("ant", 0.0))
 
 
+def _round_ant_price(price: float) -> float:
+    """Цена ANT живёт около 0.02 WRT — двух знаков не хватает даже на тик."""
+    return round(max(MIN_ANT_PRICE, float(price)), ANT_PRICE_DECIMALS)
+
+
 def _provider_open_sell_ant_pending(state: StateManager, address: str) -> float:
     """ANT в эскроу открытых лимитных SELL (неисполненный остаток) — при §5.5 сгорит, если не исполнить."""
     total = 0.0
@@ -67,16 +86,23 @@ def _epoch_tension_for_provider(current_height: int) -> float:
     return max(0.0, min(1.0, 1.0 - left / float(BLOCKS_PER_EPOCH)))
 
 
+# Смена роли — на середине эпохи ANT и на границе §5.5 (два раза за цикл).
+ROLE_REEVAL_INTERVAL_BLOCKS = BLOCKS_PER_EPOCH // 2  # 5040
+
+
 class BotEngine:
     def __init__(self, state_manager: StateManager):
         self.state = state_manager
         self.is_running = False
+        # intensity: действий бота на одну сим. секунду (не wall-clock).
         self.tx_per_second = 1.0
-        # Настройки "наблюдаемости": генерировать канон-пробы (ожидаемые отклонения в блоке)
+        self.profit_strategy = ProfitStrategy()
+        self._last_reeval_period = 0
+        self._action_carry = 0.0
+        self._real_sec_window_start = 0.0
+        self._actions_this_real_sec = 0
         self.enable_probes = True
-        # Доля probе-tx среди всех действий бота (0..1)
         self.probe_ratio = 0.15
-        # Тогглы конкретных проб
         self.probe_transfer_ant = True
         self.probe_mint_ant_citizen = True
         self.probe_wrong_role_declare = True
@@ -121,19 +147,8 @@ class BotEngine:
             self.probe_cancel_not_owned = bool(cancel_not_owned)
 
     def _mempool_push(self, tx: Transaction, sender: str = "") -> None:
-        """Подача tx: NetworkSim (если attached) или общий мемпул."""
-        net = getattr(self.state, "network", None)
-        if net is not None:
-            addr = sender or getattr(tx, "sender", "") or ""
-            try:
-                if addr:
-                    net.submit_from_addr(addr, tx)
-                else:
-                    net.submit_to("node_0", tx)
-                return
-            except Exception:
-                pass
-        self.state.mempool.append(tx)
+        """Подача tx через StateManager.submit_tx (replace-by-sender для declare)."""
+        self.state.submit_tx(tx)
 
     def _queue_tx(self, tx: Transaction, action: str, detail: str) -> None:
         """Прямая постановка готовой Transaction в мемпул (legacy: для рукотворных tx бота).
@@ -184,25 +199,211 @@ class BotEngine:
         log_bot_queue(self.state, action, detail, tx.tx_hash)
         return tx
 
-    async def start(self):
-        self.is_running = True
-        print(f"Bot Engine started. Intensity: {self.tx_per_second} tx/s")
-        while self.is_running:
+    def step_once(self) -> int:
+        """Один тик перед блоком: трафик ∝ intensity × сим. длительность блока.
+
+        Вызывается из `engine.pre_block_hook`, чтобы рынок/переводы шли в ногу
+        с `sim_speed`, а не с wall-clock sleep(1/intensity).
+        """
+        if not self.is_running:
+            return 0
+
+        self._action_carry += float(self.tx_per_second) * CANONICAL_BLOCK_INTERVAL_SEC
+        if self._action_carry > MAX_BOT_ACTION_CARRY:
+            self._action_carry = float(MAX_BOT_ACTION_CARRY)
+
+        n = int(self._action_carry)
+        if n <= 0:
+            return 0
+        n = min(n, MAX_BOT_ACTIONS_PER_BLOCK)
+
+        now = time.monotonic()
+        if self._real_sec_window_start <= 0.0 or now - self._real_sec_window_start >= 1.0:
+            self._real_sec_window_start = now
+            self._actions_this_real_sec = 0
+        budget = MAX_BOT_ACTIONS_PER_REAL_SEC - self._actions_this_real_sec
+        if budget <= 0:
+            return 0
+        n = min(n, budget)
+
+        self._action_carry -= float(n)
+        done = 0
+        for _ in range(n):
             try:
                 self.generate_traffic()
+                done += 1
             except Exception as e:
                 print(f"Bot error: {e}")
-            # Sleep based on intensity
-            await asyncio.sleep(1.0 / self.tx_per_second)
+        self._actions_this_real_sec += done
+        return done
+
+    async def start(self):
+        """Keepalive: флажок is_running; трафик только из pre_block_hook.step_once."""
+        self.is_running = True
+        print(
+            f"Bot Engine started. Intensity: {self.tx_per_second} actions/sim-sec "
+            f"(~{self.tx_per_second * CANONICAL_BLOCK_INTERVAL_SEC:.0f}/block, via pre_block)"
+        )
+        while self.is_running:
+            await asyncio.sleep(1.0)
 
     def stop(self):
         self.is_running = False
+        self._action_carry = 0.0
         print("Bot Engine stopped.")
+
+    def _periodic_role_reeval(self, accounts: list) -> None:
+        """Смена роли раз в полэпохи ANT — на mid-epoch и на границе §5.5.
+
+        Сравниваем номер полуэпохи, а не точное `h % 5040 == 0`: бот ходит по
+        реальному времени, и на высоких скоростях (сотни блоков за тик) он почти
+        никогда не наблюдает высоту, кратную интервалу, — переоценка не срабатывала
+        вообще и боты навсегда оставались Гражданами.
+        """
+        h = int(self.state.current_height)
+        if h <= 0:
+            return
+        period = h // ROLE_REEVAL_INTERVAL_BLOCKS
+        if period <= self._last_reeval_period:
+            return
+        self._last_reeval_period = period
+
+        switched = 0
+        for acc, new_role, delta in top_switch_candidates(
+            self.profit_strategy, accounts, self.state, limit=len(accounts)
+        ):
+            roi_info = self.profit_strategy.get_cached_roi(acc.address) or {}
+            cur_roi = roi_info.get(acc.role.value)
+            new_roi = roi_info.get(new_role.value)
+            detail = (
+                f"reeval §4.2 → {new_role.value} "
+                f"(cur {acc.role.value} net={cur_roi.net:.1f}, best {new_role.value} net={new_roi.net:.1f}, Δ={delta:.1f})"
+                if cur_roi and new_roi
+                else f"reeval §4.2 → {new_role.value}"
+            )
+            tx = self._submit_op(
+                op="set_role",
+                address=acc.address,
+                action="set_role_reeval",
+                detail=detail,
+                role=new_role,
+            )
+            if tx:
+                switched += 1
+        if switched:
+            print(f"[ProfitStrategy] height {h}: {switched} bots switched role")
+
+    def _trade_lzn_equipment(self, accounts: list) -> None:
+        """§5.2 5.0-sim: покупка LZN («оборудования») на внутреннем рынке.
+
+        Поставщик выставляет/доливает SELL LZN; валидатор — market BUY за WRT.
+        Прямые MsgSend LZN запрещены.
+        """
+        sellers = [
+            a
+            for a in self.state.accounts.values()
+            if a.role == Role.PROVIDER
+            and a.address != SIM_TREASURY_ADDR
+            and a.lzn_balance > 1.0
+        ]
+        buyers = [
+            a
+            for a in accounts
+            if a.role == Role.VALIDATOR
+            and a.zkp_verified
+            and a.wrt_balance > 1.0
+            and account_total_lzn(a) < LZN_MAX_FROZEN_PER_ADDRESS
+        ]
+        if not sellers or not buyers:
+            return
+        seller = max(sellers, key=lambda a: a.lzn_balance)
+        buyer = random.choice([b for b in buyers if b.address != seller.address] or buyers)
+
+        headroom = LZN_MAX_FROZEN_PER_ADDRESS - account_total_lzn(buyer)
+        lot = round(min(seller.lzn_balance, headroom, random.uniform(5.0, 60.0)), 4)
+        if lot < 1.0:
+            return
+        unit = max(
+            0.01,
+            float(getattr(self.state, "last_lzn_price", 0.0) or 0.0)
+            or float(self.state.last_price)
+            or 1.0,
+        )
+        ask_price = round(unit * random.uniform(0.95, 1.1), 4)
+        self._submit_op(
+            op="create_order",
+            address=seller.address,
+            action="lzn_market",
+            detail=f"§5.2 SELL {lot} LZN @ {ask_price} WRT",
+            side="sell",
+            price=ask_price,
+            amount=lot,
+            asset="lzn",
+        )
+        max_wrt = round(min(buyer.wrt_balance * 0.5, lot * ask_price * 1.05), 4)
+        if max_wrt < 0.01:
+            return
+        self._submit_op(
+            op="create_order",
+            address=buyer.address,
+            action="lzn_market",
+            detail=f"§5.2 market BUY до {lot} LZN (max WRT {max_wrt})",
+            side="buy",
+            amount=lot,
+            market=True,
+            max_wrt=max_wrt,
+            asset="lzn",
+        )
+
+    def _try_profit_prep(self, acc) -> bool:
+        """Unlock a more profitable role: ZKP, then activate LZN once validator."""
+        desired = self.profit_strategy.desired_role(acc.address, acc, self.state)
+        if desired == acc.role:
+            if (
+                acc.role == Role.VALIDATOR
+                and acc.lzn_balance > 0.01
+                and acc.lzn_frozen_mining <= 1e-12
+            ):
+                amt = round(acc.lzn_balance, 4)
+                self._submit_op(
+                    op="activate_lzn",
+                    address=acc.address,
+                    action="activate_lzn",
+                    detail=f"profit-prep activate_lzn {amt} (валидатор {acc.address[:14]}…)",
+                    amount=amt,
+                )
+                return True
+            return False
+        if not acc.zkp_verified and desired in (Role.PROVIDER, Role.VALIDATOR):
+            self._submit_op(
+                op="verify_zkp",
+                address=acc.address,
+                action="zkp_verify",
+                detail=f"profit-prep ZKP → цель {desired.value} для {acc.address[:16]}…",
+            )
+            return True
+        if (
+            acc.role == Role.VALIDATOR
+            and desired == Role.VALIDATOR
+            and acc.lzn_balance > 0.01
+        ):
+            amt = round(min(acc.lzn_balance, max(0.01, acc.lzn_balance)), 4)
+            self._submit_op(
+                op="activate_lzn",
+                address=acc.address,
+                action="activate_lzn",
+                detail=f"profit-prep activate_lzn {amt} (валидатор {acc.address[:14]}…)",
+                amount=amt,
+            )
+            return True
+        return False
 
     def generate_traffic(self):
         all_accounts = list(self.state.accounts.values())
         accounts = [a for a in all_accounts if is_bot_created_address(a.address)]
         bot_count = len(accounts)
+
+        self._periodic_role_reeval(accounts)
 
         # 1. Разгон только кошельков bot_*; казна — лишь источник первого минта WRT
         if bot_count < 10 or (bot_count < 100 and random.random() < 0.05):
@@ -242,6 +443,7 @@ class BotEngine:
             "set_role",
             "declare",
             "zkp_verify",
+            "lzn_market",
         ]
 
         if probes and random.random() < self.probe_ratio:
@@ -249,8 +451,12 @@ class BotEngine:
         else:
             action = random.choices(
                 base_actions,
-                weights=[0.24, 0.19, 0.09, 0.12, 0.07, 0.09, 0.06],
+                weights=[0.24, 0.19, 0.09, 0.12, 0.07, 0.09, 0.06, 0.08],
             )[0]
+
+        if action == "lzn_market":
+            self._trade_lzn_equipment(accounts)
+            return
 
         if action == "declare":
             validators = [
@@ -296,44 +502,28 @@ class BotEngine:
             return
 
         elif action == "set_role":
+            # Саму роль меняем только на half-epoch reeval; здесь — ZKP / activate_lzn.
             pool = list(accounts)
-            if not pool:
-                return
-            target = random.choice(pool)
-            order = [Role.CITIZEN, Role.PROVIDER, Role.VALIDATOR]
-            random.shuffle(order)
-            new_role = None
-            for nr in order:
-                if nr == target.role:
-                    continue
-                if nr == Role.VALIDATOR and not eligible_for_validator_role(target.address, target):
-                    continue
-                if nr == Role.PROVIDER:
-                    if not eligible_for_provider_role(target.address, target):
-                        continue
-                new_role = nr
-                break
-            if new_role is None:
-                return
-            self._submit_op(
-                op="set_role",
-                address=target.address,
-                action="set_role",
-                detail=f"§4.2 → {new_role.value} для {target.address[:14]}…",
-                role=new_role,
-            )
+            if pool:
+                self._try_profit_prep(random.choice(pool))
             return
 
         elif action == "mint":
             if not accounts:
                 return
             target = random.choice(accounts)
-            possible_assets = ["wrt", "lzn"]
+            possible_assets = ["wrt"]
+            # §4.1: LZN — фиксированная эмиссия; минтим только в пределах остатка.
+            headroom = lzn_mint_headroom(self.state.accounts)
+            if headroom >= 10.0:
+                possible_assets.append("lzn")
             if target.role in (Role.PROVIDER, Role.VALIDATOR):
                 possible_assets.append("ant")
 
             asset = random.choice(possible_assets)
             amount = round(random.uniform(10, 100), 2)
+            if asset == "lzn":
+                amount = round(min(amount, headroom), 2)
 
             self._submit_mint(
                 receiver=target.address,
@@ -446,13 +636,13 @@ class BotEngine:
                     bid_lo = max(0.76, anchor - 0.035)
                     bid_hi = min(0.91, anchor + 0.025)
                 bid_mult = random.uniform(bid_lo, bid_hi)
-                price = round(max(0.01, base_price * bid_mult), 2)
+                price = _round_ant_price(max(MIN_ANT_PRICE, base_price * bid_mult))
                 # Пересечение спреда только если ask всё ещё укладывается в целевую маржу ~10%
                 hard_cap = base_price * min(0.94, anchor + 0.025)
                 if cross_book and best_ask is not None and best_ask <= hard_cap + 1e-9:
-                    price = round(max(0.01, best_ask * random.uniform(0.97, 1.0)), 2)
+                    price = _round_ant_price(max(MIN_ANT_PRICE, best_ask * random.uniform(0.97, 1.0)))
                 elif cross_book and best_ask is not None:
-                    price = round(max(0.01, base_price * bid_mult), 2)
+                    price = _round_ant_price(max(MIN_ANT_PRICE, base_price * bid_mult))
                 # Не разом выкидывать WRT: скромный notional
                 max_wrt = min(trader.wrt_balance * 0.12, trader.wrt_balance)
                 if max_wrt < price * 0.5:
@@ -522,9 +712,12 @@ class BotEngine:
                     ask_hi *= 1.05
                 ask_lo = max(0.5, ask_lo)
                 ask_hi = max(ask_lo + 0.02, ask_hi)
-                price = round(base_price * random.uniform(ask_lo, ask_hi), 2)
+                # Округление до 2 знаков схлопывало всю книгу: равновесная цена ANT
+                # порядка 0.02 WRT, и любой ask превращался в 0.02/0.03 — то есть
+                # выше безубыточности майнера, из-за чего заявки не исполнялись.
+                price = _round_ant_price(base_price * random.uniform(ask_lo, ask_hi))
                 if cross_book and best_bid is not None:
-                    price = round(max(0.01, best_bid * random.uniform(0.96, 1.0)), 2)
+                    price = _round_ant_price(max(MIN_ANT_PRICE, best_bid * random.uniform(0.96, 1.0)))
                 min_sh, max_sh = 1.0, 22.0
                 size_boost = tension * 18.0
                 cap_ant = min(float(trader.ant_balance), max_sh + size_boost)

@@ -31,6 +31,7 @@ simulation/
 │   └── requirements-dev.txt + pytest / ruff / mypy
 ├── scenarios/              YAML-сценарии (epoch wipe, validator coalition, slashing…)
 ├── docs/                   автогенерируемые API.md, CANON_COVERAGE.md, SCENARIOS.md
+├── wallet-ui/              Standalone кошелёк → FastAPI :8000 (порт 5174)
 └── frontend/               React 19 + Vite 8 + Tailwind 4 + Recharts/ECharts
     └── src/
         ├── App.tsx
@@ -83,12 +84,22 @@ uvicorn main:app --reload --port 8000
 
 OpenAPI документация (Swagger): http://localhost:8000/docs
 
-### Frontend
+### Frontend (dashboard)
 
 ```bash
 cd simulation/frontend
 npm install
 npm run dev                               # http://localhost:5173
+```
+
+### Wallet UI (симулятор)
+
+Standalone-кошелёк к FastAPI `:8000` (не CosmJS / не `frontend/wallet-ui`):
+
+```bash
+cd simulation/wallet-ui
+npm install
+npm run dev                               # http://localhost:5174
 ```
 
 ### Docker (одной командой)
@@ -194,8 +205,8 @@ flowchart LR
 - Симуляция дублирует не консенсус Cosmos-узла, а экономико-протокольные правила
   §3.1 (ZKP-флаг), §4.1–4.2 (типы кошельков, активы), §5.1–5.5 (награды, рынок,
   declare/burn, эпоха ANT), §6.1/§6.3 (genesis и ValidatorSet).
-- **Ruleset v2**: движок реализует поправки к канону v4.20 (только верхний предел
-  `Σb_i ≤ λ·L_total`, возвращаемая ставка `s_i`, фиксированный wipe эпохи,
+- **Коридор §5.4**: `(1−λ)·L_total ≥ Σb_i ≥ λ·L_total` при `λ ≤ 5/12`
+  (эталон λ=1/3), возвращаемая ставка `s_i`, фиксированный wipe эпохи,
   стабильный коэффициент эмиссии, детерминированный tie-breaker) —
   см. `simulation/docs/V2_RULESET.md` и `docs/CANON_PROBLEMS.md`.
 

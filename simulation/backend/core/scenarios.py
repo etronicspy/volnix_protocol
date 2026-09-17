@@ -183,19 +183,8 @@ class ScenarioRunner:
             acc.zkp_verified = True
 
     def _push_tx(self, tx, sender: str = "") -> None:
-        """Route tx via NetworkSim (if attached) or legacy mempool."""
-        net = getattr(self.sm, "network", None)
-        if net is not None:
-            addr = sender or getattr(tx, "sender", "") or ""
-            try:
-                if addr:
-                    net.submit_from_addr(addr, tx)
-                else:
-                    net.submit_to("node_0", tx)
-                return
-            except Exception:
-                pass
-        self.sm.mempool.append(tx)
+        """Route tx via StateManager.submit_tx (declare replace-by-sender)."""
+        self.sm.submit_tx(tx)
 
     def _step_create_account(self, address: str, role: Optional[str] = None, zkp: bool = False, **_) -> None:
         self._ensure_account(address, role=role, zkp=zkp)
