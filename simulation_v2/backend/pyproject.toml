@@ -1,0 +1,32 @@
+[project]
+name = "volnix-simulation-v2-backend"
+version = "0.1.0"
+description = "Off-chain blockchain-node simulator for Volnix Protocol (canon 5.1-sim)"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+pythonpath = ["."]
+markers = [
+    "slow: longer integration tests",
+]
+
+[tool.coverage.run]
+source = ["volnix"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+extend-exclude = ["data", ".pytest_cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]

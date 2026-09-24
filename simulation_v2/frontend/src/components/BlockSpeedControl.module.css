@@ -1,0 +1,66 @@
+.wrap {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0.65rem;
+  row-gap: 0.15rem;
+  min-width: min(280px, 42vw);
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+
+.label {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.slider {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  min-width: 80px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.value {
+  grid-column: 3;
+  grid-row: 1;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+  white-space: nowrap;
+  min-width: 7.5rem;
+  text-align: right;
+}
+
+.err {
+  color: var(--bad);
+  font-size: 0.72rem;
+}
+
+.ends {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  padding: 0 0.1rem;
+}
+
+@media (max-width: 640px) {
+  .wrap {
+    max-width: none;
+    width: 100%;
+    flex-basis: 100%;
+  }
+}

@@ -45,6 +45,8 @@ node_modules/
 # Simulation: local Python virtualenv (not committed)
 simulation/**/venv/
 simulation/**/.venv/
+simulation_v2/**/venv/
+simulation_v2/**/.venv/
 simulation/wallet-ui/dist/
 npm-debug.log*
 yarn-debug.log*
@@ -126,8 +128,9 @@ addrbook.json
 
 # Blockchain data directories
 data/
-# Изолированные data_dir симулятора (VOLNIX_SIM_DATA_DIR)
+# Изолированные data_dir симулятора (VOLNIX_SIM_DATA_DIR / VOLNIX_SIM2_DATA_DIR)
 simulation/backend/data_*/
+simulation_v2/backend/data_*/
 *.db
 *.db-shm
 *.db-wal

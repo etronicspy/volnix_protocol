@@ -1,0 +1,22 @@
+node_url: "http://127.0.0.1:8001"
+control_host: "127.0.0.1"
+control_port: 8002
+autostart: true
+intensity: 2.0
+target_wallets: 30
+bootstrap_wrt: 5000000          # micro-WRT per new bot (~5 WRT)
+min_bot_wrt: 500000             # top-up if below this
+max_actions_per_tick: 40
+poll_interval_sec: 0.25
+enable_market: true
+enable_bots: true
+enable_declare: true
+citizen_fraction: 0.25
+# Action weights (BotEngine)
+weights:
+  transfer: 0.28
+  trade_ant: 0.22
+  trade_lzn: 0.10
+  activate_lzn: 0.10
+  cancel_order: 0.10
+  prep: 0.20

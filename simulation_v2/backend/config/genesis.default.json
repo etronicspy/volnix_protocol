@@ -1,0 +1,47 @@
+{
+  "chain_id": "volnix-sim-2",
+  "genesis_time": "2026-01-01T00:00:00Z",
+  "consensus_params": {
+    "block": {
+      "max_bytes": 22020096,
+      "max_gas": 40000000
+    },
+    "evidence": {
+      "max_age_num_blocks": 100000
+    }
+  },
+  "app_state": {
+    "params": {
+      "epoch_blocks": 10080,
+      "halving_interval": 2100000,
+      "lambda_num": 1,
+      "lambda_den": 3,
+      "alpha_num": 1,
+      "alpha_den": 50,
+      "max_active_validators": 150,
+      "base_block_time": 60,
+      "lzn_total_supply": 1000000000,
+      "base_block_reward": 50000000,
+      "lzn_freeze_period": 10080,
+      "moa_supplier_window": 525600,
+      "moa_validator_window": 262080,
+      "max_active_suppliers": 108,
+      "block_gas_limit": 40000000,
+      "max_block_bytes": 22020096,
+      "ant_supplier_epoch_limit": 0,
+      "gov_voting_period": 10080,
+      "gov_timelock": 20160,
+      "gov_min_deposit": 1000000,
+      "gov_quorum_num": 2,
+      "gov_quorum_den": 5,
+      "gov_threshold_num": 1,
+      "gov_threshold_den": 2
+    },
+    "genesis_validator": {
+      "seed": "volnix-genesis-validator-v2",
+      "lzn_activated": 1,
+      "ant": 10080,
+      "wrt": 0
+    }
+  }
+}
