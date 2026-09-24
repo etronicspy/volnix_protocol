@@ -2,78 +2,103 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import styles from './BlockSpeedControl.module.css'
 
-/** Wall-clock produce interval: 1 ms … 60 s per block. */
-const MIN_MS = 1
-const MAX_MS = 60_000
+const SCALE_MIN = 1
+const SCALE_MAX = 3600
 const SLIDER_MAX = 1000
 
-interface ProduceIntervalResponse {
-  interval_sec: number
-  interval_ms: number
+interface PaceStatus {
+  attempt_window_sec: number
+  pace_debt_blocks: number
+  missed_budget_sec: number
+  base_block_time: number
+  time_scale: number
+  wall_sleep_sec: number
+  produce_interval_sec: number
   auto_produce: boolean
 }
 
-function msToSlider(ms: number): number {
-  const clamped = Math.min(MAX_MS, Math.max(MIN_MS, ms))
-  const t = Math.log(clamped / MIN_MS) / Math.log(MAX_MS / MIN_MS)
+function scaleToSlider(scale: number): number {
+  const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, scale))
+  const t = Math.log(clamped / SCALE_MIN) / Math.log(SCALE_MAX / SCALE_MIN)
   return Math.round(t * SLIDER_MAX)
 }
 
-function sliderToMs(pos: number): number {
+function sliderToScale(pos: number): number {
   const t = Math.min(SLIDER_MAX, Math.max(0, pos)) / SLIDER_MAX
-  return Math.round(MIN_MS * Math.pow(MAX_MS / MIN_MS, t))
+  return Math.round(SCALE_MIN * Math.pow(SCALE_MAX / SCALE_MIN, t))
 }
 
-function formatRate(ms: number): string {
-  if (ms < 1000) return `${ms} ms / block`
-  if (ms < 60_000) {
-    const sec = ms / 1000
-    const digits = sec < 10 ? 2 : 1
-    return `${sec.toFixed(digits)} s / block`
+function formatScale(scale: number): string {
+  if (scale >= 100) return `${Math.round(scale)}×`
+  if (scale >= 10) return `${scale.toFixed(0)}×`
+  return `${scale.toFixed(1)}×`
+}
+
+function formatWindow(sec: number): string {
+  if (sec < 1) return `${Math.round(sec * 1000)} ms`
+  if (sec < 60) {
+    const digits = sec < 10 ? 1 : 0
+    return `${sec.toFixed(digits)} s`
   }
-  return '1 min / block'
+  return '60 s'
+}
+
+function formatWall(sec: number): string {
+  if (sec < 0.01) return `${Math.round(sec * 1000)} ms`
+  if (sec < 1) return `${(sec * 1000).toFixed(0)} ms`
+  if (sec < 10) return `${sec.toFixed(2)} s`
+  return `${sec.toFixed(1)} s`
 }
 
 export function BlockSpeedControl() {
-  const [ms, setMs] = useState(1000)
+  const [pace, setPace] = useState<PaceStatus | null>(null)
+  const [scale, setScale] = useState(60)
   const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<number | null>(null)
-  const latestMs = useRef(ms)
-  latestMs.current = ms
+  const latestScale = useRef(scale)
+  const loadedRef = useRef(false)
+  latestScale.current = scale
 
   useEffect(() => {
     let cancelled = false
-    void (async () => {
+    async function poll() {
       try {
-        const res = await api.get<ProduceIntervalResponse>('/api/v1/operator/produce-interval')
+        const res = await api.get<PaceStatus>('/api/v1/operator/pace')
         if (cancelled) return
-        const next = Math.round(res.interval_sec * 1000)
-        latestMs.current = next
-        setMs(next)
+        setPace(res)
+        if (!loadedRef.current) {
+          const next = Math.max(SCALE_MIN, Math.min(SCALE_MAX, Number(res.time_scale) || 60))
+          latestScale.current = next
+          setScale(next)
+          loadedRef.current = true
+        }
         setError(null)
       } catch {
         if (!cancelled) setError('node offline')
       }
-    })()
+    }
+    void poll()
+    const id = window.setInterval(() => void poll(), 1000)
     return () => {
       cancelled = true
+      window.clearInterval(id)
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
     }
   }, [])
 
-  function pushInterval(nextMs: number) {
-    latestMs.current = nextMs
-    setMs(nextMs)
+  function pushScale(next: number) {
+    latestScale.current = next
+    setScale(next)
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
     debounceRef.current = window.setTimeout(() => {
-      const sec = latestMs.current / 1000
       void (async () => {
         try {
-          const res = await api.post<ProduceIntervalResponse>('/api/v1/operator/produce-interval', {
-            interval_sec: sec,
+          const res = await api.post<PaceStatus>('/api/v1/operator/time-scale', {
+            time_scale: latestScale.current,
           })
-          latestMs.current = Math.round(res.interval_sec * 1000)
-          setMs(latestMs.current)
+          latestScale.current = Number(res.time_scale)
+          setScale(latestScale.current)
+          setPace(res)
           setError(null)
         } catch {
           setError('set failed')
@@ -82,31 +107,48 @@ export function BlockSpeedControl() {
     }, 120)
   }
 
+  const windowLabel = pace ? formatWindow(pace.attempt_window_sec) : '—'
+  const wallLabel = pace ? formatWall(pace.wall_sleep_sec ?? pace.produce_interval_sec) : '—'
+  const debt = pace?.pace_debt_blocks ?? 0
+  const title =
+    'Stand time_scale: wall_sleep = canon T / scale. Traffic follows wall sleep. Canon T stays 1–60 s.'
+
   return (
-    <div className={styles.wrap} title="Wall-clock sim speed: block production; traffic follows height">
-      <label className={styles.label} htmlFor="block-speed">
-        Sim speed
+    <div className={styles.wrap} title={title}>
+      <label className={styles.label} htmlFor="time-scale">
+        Time scale
       </label>
       <input
-        id="block-speed"
+        id="time-scale"
         className={styles.slider}
         type="range"
         min={0}
         max={SLIDER_MAX}
         step={1}
-        value={msToSlider(ms)}
-        onChange={(e) => pushInterval(sliderToMs(Number(e.target.value)))}
-        aria-valuemin={MIN_MS}
-        aria-valuemax={MAX_MS}
-        aria-valuenow={ms}
-        aria-valuetext={formatRate(ms)}
+        value={scaleToSlider(scale)}
+        onChange={(e) => pushScale(sliderToScale(Number(e.target.value)))}
+        aria-valuemin={SCALE_MIN}
+        aria-valuemax={SCALE_MAX}
+        aria-valuenow={scale}
+        aria-valuetext={formatScale(scale)}
       />
       <span className={styles.value}>
-        {error ? <span className={styles.err}>{error}</span> : formatRate(ms)}
+        {error ? (
+          <span className={styles.err}>{error}</span>
+        ) : (
+          <>
+            {formatScale(scale)}
+            <span className={styles.wall}> · {wallLabel}</span>
+          </>
+        )}
       </span>
-      <span className={styles.ends} aria-hidden>
-        <span>1 ms</span>
-        <span>1 min</span>
+      <span className={styles.meta} aria-hidden>
+        canon {windowLabel}
+        {debt > 0 ? ` · debt ${debt}` : ''}
+        <span className={styles.ends}>
+          <span>1×</span>
+          <span>3600×</span>
+        </span>
       </span>
     </div>
   )

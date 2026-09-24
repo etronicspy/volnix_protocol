@@ -39,6 +39,6 @@ Env overrides:
 | `/validators` | Current ValidatorSet |
 | `/market` | ANT/WRT and LZN/WRT books + trades |
 | `/epochs` | Epoch boundary records |
-| `/operator` | Stand helpers + traffic engine control |
+| `/operator` | Traffic dashboard: pools, strategy params, Intensity slider, agent table |
 
 API contract: [`../docs/API.md`](../docs/API.md).

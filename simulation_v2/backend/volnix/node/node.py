@@ -15,6 +15,7 @@ from volnix.consensus.validator_set import increment_proposer_priority
 from volnix.crypto.hashing import hash_obj
 from volnix.node.faults import FaultController
 from volnix.node.mempool import Mempool
+from volnix.node.pace import AttemptPace
 from volnix.store.appsnapshot import AppSnapshotStore
 from volnix.store.blockstore import BlockStore
 from volnix.store.resultstore import ResultStore
@@ -40,13 +41,14 @@ class Node:
         self,
         data_dir: Path,
         genesis_path: Path,
-        produce_interval: float = 1.0,
         auto_declare: bool = True,
+        time_scale: float = 60.0,
     ) -> None:
         self.data_dir = data_dir
         self.genesis_path = genesis_path
-        self.produce_interval = produce_interval
         self.auto_declare = auto_declare
+        self.pace = AttemptPace()
+        self.pace.set_time_scale(time_scale)
         self.app = BaseApp()
         self.blocks = BlockStore(data_dir)
         self.results = ResultStore(data_dir)
@@ -65,6 +67,11 @@ class Node:
         self.consensus_hash = ""
         self._interval_wake = asyncio.Event()
 
+    @property
+    def produce_interval(self) -> float:
+        """Compat alias: wall-clock sleep for current attempt (stand time_scale)."""
+        return self.pace.wall_sleep_sec()
+
     def enqueue_auto_declares(self) -> None:
         """Stand: inject genesis MsgDeclareParticipation so PoVB burns ANT (§5.4)."""
         if not self.auto_declare:
@@ -74,6 +81,16 @@ class Node:
         tx = build_genesis_declare_tx(self)
         if tx is not None:
             self.mempool.insert(tx)
+
+    def _mempool_has_declare(self) -> bool:
+        for tx in self.mempool.pending():
+            if any(m.type == "povb/MsgDeclareParticipation" for m in tx.body.messages):
+                return True
+        return False
+
+    def _participation_ready(self) -> bool:
+        """Commit only with new MsgDeclareParticipation in mempool (§5.4 / 5.5-sim)."""
+        return self._mempool_has_declare()
 
     def subscribe(self, cb: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         self._listeners.append(cb)
@@ -144,9 +161,11 @@ class Node:
         snap = self.app.state.snapshot()
         vset_snap = self.app.validator_set.copy()
 
+        self.enqueue_auto_declares()
+        if not self._participation_ready():
+            return None
         proposer = increment_proposer_priority(self.app.validator_set)
         evidence_items = self.evidence.drain()
-        self.enqueue_auto_declares()
         txs = self.mempool.reap(self.app.state.params.block_gas_limit, self.app.state.params.max_block_bytes)
 
         self.app.begin_block(height, evidence_items)
@@ -206,6 +225,7 @@ class Node:
             )
         self.app.validator_set = next_set
         self.snapshot.save(self.app.state.to_snapshot())
+        self.pace.on_valid_block()
         return block
 
     async def produce_and_notify(self) -> Block | None:
@@ -238,21 +258,40 @@ class Node:
             await self._emit({"type": "new_tx", "hash": txd.get("hash", ""), "height": block.header.height})
         return block
 
-    def set_produce_interval(self, seconds: float) -> float:
-        """Wall-clock seconds between auto-produced blocks (stand control)."""
-        self.produce_interval = max(0.001, float(seconds))
+    def pace_snapshot(self) -> dict[str, Any]:
+        snap = self.pace.snapshot()
+        snap["auto_produce"] = bool(self._running)
+        return snap
+
+    def set_time_scale(self, scale: float) -> dict[str, Any]:
+        """Stand-only wall-clock acceleration (does not change canonical T)."""
+        self.pace.set_time_scale(scale)
         self._interval_wake.set()
-        return self.produce_interval
+        return self.pace_snapshot()
+
+    def reset_pace(self) -> dict[str, Any]:
+        """Force-reset attempt window to BaseBlockTime (tests / operator)."""
+        self.pace.reset()
+        self._interval_wake.set()
+        return self.pace_snapshot()
 
     async def loop(self) -> None:
+        """Canon §6.2: sleep wall_sleep(T/scale), then commit or empty attempt."""
         self._running = True
         while self._running:
-            await self.produce_and_notify()
             self._interval_wake.clear()
             try:
-                await asyncio.wait_for(self._interval_wake.wait(), timeout=self.produce_interval)
+                await asyncio.wait_for(
+                    self._interval_wake.wait(),
+                    timeout=self.pace.wall_sleep_sec(),
+                )
             except asyncio.TimeoutError:
                 pass
+            if not self._running:
+                break
+            block = await self.produce_and_notify()
+            if block is None:
+                self.pace.on_empty_attempt()
 
     def start(self) -> None:
         if self._task is None:

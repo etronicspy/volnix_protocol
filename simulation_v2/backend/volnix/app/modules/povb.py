@@ -1,4 +1,4 @@
-"""PoVB EndBlocker — canon §5.4 (5.2-sim) steps 1–7."""
+"""PoVB EndBlocker — canon §5.4 (5.5-sim) steps 1–7 (no last-scheme replay)."""
 
 from __future__ import annotations
 
@@ -18,6 +18,11 @@ class PovbError(ValueError):
     pass
 
 
+# Genesis §6.3(5) reference package at L_i = 1 LZN (stand auto-declare proportions).
+GENESIS_B_I = 500_000
+GENESIS_S_I = 400_000
+
+
 def entry_burn(l_i: int, alpha: Fraction) -> int:
     """f_i = ⌊α · L_i⌋ = ⌊p · L_i / q⌋ (DeclareEntryAlpha, canon §5.4 / §7.2 п. 13)."""
     if l_i <= 0 or alpha.denominator <= 0:
@@ -34,7 +39,7 @@ def suggest_declare_bs(l_i: int, ant: int, alpha: Fraction) -> Optional[tuple[in
     f_i = entry_burn(l_i, alpha)
     if l_i <= 0 or ant < f_i + 1:
         return None
-    # Scale §6.3(5): b = L/2, s = 2L/5
+    # Scale §6.3(5): b = L/2, s = 2L/5 (1e6 → 500_000 / 400_000)
     b_i = l_i // 2
     s_i = (2 * l_i) // 5
     if s_i <= 0:
@@ -98,6 +103,9 @@ def _priority_key(rec: DeclareRecord) -> tuple[float, str]:
 
 def process_endblocker(state: AppState, current_set: ValidatorSet) -> tuple[ValidatorSet, list[Event], dict[str, Any]]:
     """Run §5.4 steps 1–7. Returns (next_set, events, povb_trace).
+
+    Declares come only from MsgDeclareParticipation delivered this height
+    (BeginBlock clears the table). No last_applied replay.
 
     Sim note: b_i+s_i burn on EndBlocker N when set_updated (applied for N+1),
     equivalent when every produced block commits.

@@ -17,7 +17,7 @@ Amounts in responses are **micro-units** unless a `*_display` field is present
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/chain/summary` | Height, supplies, `L_total`, epoch/halving countdown, λ/α/K, wall-clock `produce_interval_sec` + `auto_produce` |
+| GET | `/chain/summary` | Height, supplies, `L_total`, epoch/halving countdown, λ/α/K, pace (`attempt_window_sec`, `time_scale`, `wall_sleep_sec` / compat `produce_interval_sec`, debt) + `auto_produce` |
 | GET | `/blocks?tail=100` | Block tape (+ PoVB summary: `set_updated`, `n_declares`, `n_passed`, `sum_b`, `fill`, `l_decl`, `b_min`/`b_max`) |
 | GET | `/blocks/{height}` | Block + `block_results` + `consensus` (signing/next set, commit for H, PoVB, voted/total power) |
 | GET | `/txs` | Recent transactions |
@@ -47,8 +47,10 @@ Amounts in responses are **micro-units** unless a `*_display` field is present
 | POST | `/operator/declare` | Sign + mempool `MsgDeclareParticipation` |
 | POST | `/operator/order` | Sign + mempool `MsgPlaceOrder` |
 | POST | `/operator/tx?seed=` | Sign + mempool arbitrary message list (body = `[{type,…}]`) |
-| POST | `/operator/produce` | Produce `count` blocks now |
-| GET/POST | `/operator/produce-interval` | Wall-clock sim speed / block rate (`interval_sec` ∈ `[0.001, 60]`); mirrored in `/chain/summary` as `produce_interval_sec` |
+| POST | `/operator/produce` | Produce `count` blocks now (skips a height if no `MsgDeclareParticipation` in mempool, canon 5.5-sim) |
+| GET/POST | `/operator/pace` | Adaptive attempt window (canon §6.2): GET status; POST `{ "reset": true }` force-resets to `BaseBlockTime` |
+| GET/POST | `/operator/time-scale` | Stand-only acceleration: `{ "time_scale": 1…3600 }` → `wall_sleep = T / scale` (default 60). Traffic follows `produce_interval_sec` (= wall sleep) |
+| GET/POST | `/operator/produce-interval` | Compat: GET returns wall sleep as `interval_sec`; POST resets canonical attempt window. Prefer `/time-scale` for speed |
 | GET/POST | `/operator/consensus` | Fault model: `absent` / `nil_vote` |
 
 ---
@@ -59,18 +61,18 @@ Separate economy / bot process. Default control URL: `http://127.0.0.1:8002`.
 Talks to the node operator + explorer APIs; env prefix `VOLNIX_SIM2_TRAFFIC_*`.
 See [`../traffic/README.md`](../traffic/README.md).
 
-Pace: traffic **follows** node `produce_interval_sec` from `/chain/summary` — adaptive poll and
-per-height catch-up so economy ticks stay synced with Sim speed (frontend slider →
-`/operator/produce-interval`). `intensity` remains actions **per height**.
+Pace: traffic **follows** node `produce_interval_sec` (= `wall_sleep_sec = attempt_window / time_scale`)
+from `/chain/summary` — adaptive poll and per-height catch-up. Frontend **Time scale** slider
+sets `/operator/time-scale`. `intensity` remains actions **per height**.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/status` | running, height, intensity, `produce_interval_sec`, `effective_poll_sec`, wallet roles, last tick |
+| GET | `/status` | running, height, intensity, pools, floor, genesis, `params` (pool sizes, citizen transfers/tick, horizon, peer sample), `agents[]` (expected WRT, last `b_i`/`s_i`, `enter`, `adopted_from`), last tick (`spend_txs` / `citizen_txs` — everyday WRT spend from all wallets) |
 | POST | `/start` | optional `{ "intensity": 2.0 }` |
 | POST | `/stop` | pause height loop |
 | POST | `/intensity` | `{ "intensity": 1.5 }` |
-| GET | `/wallets` | local bot registry (seeds / roles) |
-| POST | `/tick` | force one market→bots→declare tick |
+| GET | `/wallets` | local bot registry (seeds / roles / kind) |
+| POST | `/tick` | force one citizens→enrichment-agents tick |
 
 ---
 

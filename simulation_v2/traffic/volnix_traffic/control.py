@@ -53,7 +53,7 @@ def create_control_app(runtime: TrafficRuntime) -> FastAPI:
 
     @app.post("/intensity")
     def intensity(body: IntensityBody) -> Dict[str, Any]:
-        runtime.bots.set_intensity(body.intensity)
+        runtime.set_intensity(body.intensity)
         return runtime.status()
 
     @app.get("/wallets")

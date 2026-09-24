@@ -33,6 +33,14 @@ export interface ChainSummary {
   n_validators: number
   n_suppliers: number
   mempool: number
+  attempt_window_sec?: number
+  pace_debt_blocks?: number
+  missed_budget_sec?: number
+  base_block_time?: number
+  time_scale?: number
+  wall_sleep_sec?: number
+  produce_interval_sec?: number
+  auto_produce?: boolean
 }
 
 export interface BlockSummary {
@@ -287,21 +295,57 @@ export type WsEvent =
   | { type: 'epoch_boundary'; epoch: number; height: number }
   | { type: 'ping' }
 
+export interface TrafficAgentStatus {
+  address: string
+  role: string
+  genesis?: boolean
+  expected_wrt: number
+  growth_wrt: number
+  b_i: number
+  s_i: number
+  enter: boolean
+  adopted_from: string
+}
+
+export interface TrafficParams {
+  target_enrichment_bots: number
+  target_citizens: number
+  citizen_transfers_per_tick: number
+  horizon_blocks: number
+  peer_sample_min: number
+  peer_sample_max: number
+}
+
 export interface TrafficStatus {
   running: boolean
   height: number
   intensity: number
   wallets: number
   roles: Record<string, number>
+  pools?: Record<string, number>
+  floor?: {
+    min_suppliers: number
+    min_validators: number
+    suppliers: number
+    validators: number
+  }
+  genesis?: { address: string; managed: boolean }
+  agents?: TrafficAgentStatus[]
+  horizon_blocks?: number
+  params?: TrafficParams
   last_tick: {
     height?: number
     market?: number
     bots?: number
     declare?: number
+    citizen_txs?: number
+    spend_txs?: number
   }
   last_errors: string[]
   node_url: string
   produce_interval_sec?: number
+  attempt_window_sec?: number
+  pace_debt_blocks?: number
   effective_poll_sec?: number
   flags: {
     market: boolean

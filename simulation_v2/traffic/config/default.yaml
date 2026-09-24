@@ -3,16 +3,30 @@ control_host: "127.0.0.1"
 control_port: 8002
 autostart: true
 intensity: 2.0
-target_wallets: 30
-bootstrap_wrt: 5000000          # micro-WRT per new bot (~5 WRT)
-min_bot_wrt: 500000             # top-up if below this
+# Enrichment pool includes the genesis validator (1 of 50).
+target_enrichment_bots: 50
+target_citizens: 109
+min_suppliers: 1
+min_validators: 1
+citizen_transfers_per_tick: 3
+horizon_blocks: 12
+peer_sample_min: 5
+peer_sample_max: 10
+role_flip_margin_wrt: 5000000   # 5 WRT
+flip_confirm_ticks: 3
+max_new_per_tick: 3
+bootstrap_wrt: 5000000
+min_bot_wrt: 500000
 max_actions_per_tick: 40
 poll_interval_sec: 0.25
 enable_market: true
 enable_bots: true
 enable_declare: true
-citizen_fraction: 0.25
-# Action weights (BotEngine)
+enable_role_flip: true
+genesis_seed: "volnix-genesis-validator-v2"
+# Legacy (unused by enrichment supervisor; kept for BotEngine tests)
+target_wallets: 50
+citizen_fraction: 0.0
 weights:
   transfer: 0.28
   trade_ant: 0.22

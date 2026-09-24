@@ -16,7 +16,7 @@ const NAV = [
   { to: '/validators', label: 'Validators' },
   { to: '/market', label: 'Market' },
   { to: '/epochs', label: 'Epochs' },
-  { to: '/operator', label: 'Operator' },
+  { to: '/operator', label: 'Traffic' },
 ]
 
 export function Layout() {

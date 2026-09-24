@@ -49,7 +49,13 @@ class ProduceRequest(BaseModel):
     count: int = 1
 
 
-class ProduceIntervalRequest(BaseModel):
-    """Wall-clock seconds between auto-produced blocks (1 ms … 60 s)."""
+class PaceResetRequest(BaseModel):
+    """Optional body for POST /operator/pace (force-reset attempt window)."""
 
-    interval_sec: float = Field(..., ge=0.001, le=60.0)
+    reset: bool = True
+
+
+class TimeScaleRequest(BaseModel):
+    """Stand-only wall-clock acceleration (1× … 3600×)."""
+
+    time_scale: float = Field(..., ge=1.0, le=3600.0)

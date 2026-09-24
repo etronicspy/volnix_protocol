@@ -31,7 +31,15 @@ def test_control_status_start_stop(tmp_path: Path):
     with TestClient(app) as client:
         st = client.get("/status")
         assert st.status_code == 200
-        assert st.json()["running"] is False
+        body0 = st.json()
+        assert body0["running"] is False
+        params = body0["params"]
+        assert params["target_enrichment_bots"] == 50
+        assert params["target_citizens"] == 109
+        assert params["horizon_blocks"] == 12
+        assert params["peer_sample_min"] == 5
+        assert params["peer_sample_max"] == 10
+        assert "citizen_transfers_per_tick" in params
 
         r = client.post("/start", json={"intensity": 3.5})
         assert r.status_code == 200

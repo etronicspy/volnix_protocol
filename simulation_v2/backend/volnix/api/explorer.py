@@ -28,8 +28,9 @@ from volnix.api.schemas import (
     OperatorMintRequest,
     OperatorOrderRequest,
     OperatorRoleRequest,
-    ProduceIntervalRequest,
+    PaceResetRequest,
     ProduceRequest,
+    TimeScaleRequest,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["explorer"])
@@ -174,8 +175,7 @@ def chain_summary(request: Request) -> dict[str, Any]:
         "n_validators": len(node.app.validator_set.validators),
         "n_suppliers": len(st.active_suppliers()),
         "mempool": node.mempool.size(),
-        "produce_interval_sec": float(node.produce_interval),
-        "auto_produce": bool(node._running),
+        **node.pace_snapshot(),
     }
 
 
@@ -569,25 +569,74 @@ async def op_produce(request: Request, body: ProduceRequest) -> dict[str, Any]:
     return {"produced": heights}
 
 
+@router.get("/operator/pace")
+def op_pace_get(request: Request) -> dict[str, Any]:
+    """Adaptive attempt window + stand time_scale (canon §6.2 / stand)."""
+    return _node(request).pace_snapshot()
+
+
+@router.post("/operator/pace")
+def op_pace_reset(request: Request, body: Optional[PaceResetRequest] = None) -> dict[str, Any]:
+    """Force-reset attempt window to BaseBlockTime (tests / operator)."""
+    if body is not None and not body.reset:
+        return _node(request).pace_snapshot()
+    return _node(request).reset_pace()
+
+
+@router.get("/operator/time-scale")
+def op_time_scale_get(request: Request) -> dict[str, Any]:
+    """Stand-only wall-clock acceleration."""
+    return _node(request).pace_snapshot()
+
+
+@router.post("/operator/time-scale")
+def op_time_scale_set(request: Request, body: TimeScaleRequest) -> dict[str, Any]:
+    return _node(request).set_time_scale(body.time_scale)
+
+
 @router.get("/operator/produce-interval")
 def op_produce_interval_get(request: Request) -> dict[str, Any]:
-    node = _node(request)
-    sec = float(node.produce_interval)
+    """Compat: interval_sec = wall_sleep (prefer GET /operator/pace or /time-scale)."""
+    snap = _node(request).pace_snapshot()
+    sec = float(snap["produce_interval_sec"])
     return {
         "interval_sec": sec,
         "interval_ms": round(sec * 1000),
-        "auto_produce": node._running,
+        "auto_produce": snap["auto_produce"],
+        **{
+            k: snap[k]
+            for k in (
+                "attempt_window_sec",
+                "pace_debt_blocks",
+                "missed_budget_sec",
+                "base_block_time",
+                "time_scale",
+                "wall_sleep_sec",
+            )
+        },
     }
 
 
 @router.post("/operator/produce-interval")
-def op_produce_interval_set(request: Request, body: ProduceIntervalRequest) -> dict[str, Any]:
-    node = _node(request)
-    sec = node.set_produce_interval(body.interval_sec)
+def op_produce_interval_set(request: Request, body: Optional[PaceResetRequest] = None) -> dict[str, Any]:
+    """Compat: POST resets canonical attempt window (use POST /time-scale to change speed)."""
+    snap = op_pace_reset(request, body if body is not None else PaceResetRequest(reset=True))
+    sec = float(snap["produce_interval_sec"])
     return {
         "interval_sec": sec,
         "interval_ms": round(sec * 1000),
-        "auto_produce": node._running,
+        "auto_produce": snap["auto_produce"],
+        **{
+            k: snap[k]
+            for k in (
+                "attempt_window_sec",
+                "pace_debt_blocks",
+                "missed_budget_sec",
+                "base_block_time",
+                "time_scale",
+                "wall_sleep_sec",
+            )
+        },
     }
 
 

@@ -84,6 +84,27 @@ async def send_wrt(client: NodeClient, bot: BotWallet, to_address: str, amount: 
     return ok_broadcast(out)
 
 
+async def deactivate_lzn(client: NodeClient, bot: BotWallet, amount: int, reason: str = "strategy") -> bool:
+    if amount <= 0 or not bot.address:
+        return False
+    try:
+        out = await client.signed_tx(
+            bot.seed,
+            [
+                {
+                    "type": "lizenz/MsgDeactivateLZN",
+                    "validator": bot.address,
+                    "amount": int(amount),
+                    "reason": reason,
+                }
+            ],
+        )
+    except Exception as exc:
+        log.debug("deactivate %s failed: %s", bot.address, exc)
+        return False
+    return ok_broadcast(out)
+
+
 async def activate_lzn(client: NodeClient, bot: BotWallet, amount: int) -> bool:
     if amount <= 0 or not bot.address:
         return False

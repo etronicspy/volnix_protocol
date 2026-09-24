@@ -33,7 +33,7 @@ def genesis_kp():
 @pytest.fixture
 def node(tmp_path: Path) -> Node:
     g = write_genesis(tmp_path / "genesis.default.json")
-    n = Node(data_dir=tmp_path / "data", genesis_path=g, produce_interval=0.01)
+    n = Node(data_dir=tmp_path / "data", genesis_path=g)
     n.load_or_init()
     return n
 
@@ -41,6 +41,6 @@ def node(tmp_path: Path) -> Node:
 @pytest.fixture
 def fast_node(tmp_path: Path) -> Node:
     g = write_genesis(tmp_path / "genesis.default.json", epoch_blocks=3, moa_validator_window=10_000)
-    n = Node(data_dir=tmp_path / "data", genesis_path=g, produce_interval=0.01)
+    n = Node(data_dir=tmp_path / "data", genesis_path=g)
     n.load_or_init()
     return n

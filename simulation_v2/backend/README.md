@@ -1,6 +1,6 @@
 # Volnix Simulator v2 — blockchain node (Python)
 
-Off-chain node that **simulates the real chain** under working canon **5.2-sim**
+Off-chain node that **simulates the real chain** under working canon **5.5-sim**
 ([`../docs/volnix_protocol.md`](../docs/volnix_protocol.md)). Greenfield: it does
 not wrap `simulation/` (v1). Go modules in `x/` are **not** the spec.
 
@@ -17,6 +17,9 @@ not wrap `simulation/` (v1). Go modules in `x/` are **not** the spec.
 - Amounts are **micro-units** (`SCALE = 1_000_000` = `UNIT`): 1 displayed token = 1e6.
 - PoVB uses **`L_decl`** (sum of `L_i` over valid declares) for λ corridor and Fill;
   epoch emission uses network **`L_total`**. Subsidy and fees both split by **`b_i`**.
+- **Adaptive attempt window (§6.2):** declare acceptance lasts current `T` (60→…→1 s).
+  Empty attempts accumulate `missed_budget` and halve `T`; catch-up debt
+  `⌊missed/60⌋` blocks at `T=1`, then reset to 60 s.
 
 ## Run
 
@@ -41,7 +44,7 @@ volnix/types/                 # Header, Block, Tx, Msg*, ValidatorSet
 volnix/store/                 # JSONL blockstore / results / tx index
 volnix/app/modules/           # bank, ident, lizenz, anteil, povb, mint, epoch, gov
 volnix/consensus/             # proposer-priority, rounds, evidence
-volnix/node/                  # mempool + produce loop
+volnix/node/                  # mempool + produce loop + AttemptPace
 volnix/api/                   # CometBFT RPC + /api/v1 + /ws
 data/                         # runtime chain (gitignored)
 ```
@@ -53,18 +56,19 @@ data/                         # runtime chain (gitignored)
 | `DATA_DIR` | `backend/data` | JSONL stores |
 | `GENESIS_PATH` | `config/genesis.default.json` | genesis template |
 | `PORT` | `8001` | HTTP port |
-| `PRODUCE_INTERVAL` | `1.0` | wall-clock seconds between blocks / Sim speed (`0.001`…`60`; live via `/api/v1/operator/produce-interval`; exposed on `/api/v1/chain/summary` as `produce_interval_sec` for traffic sync) |
-| `AUTO_PRODUCE` | `true` | start the produce loop on boot |
-| `AUTO_DECLARE` | `true` | enqueue genesis `MsgDeclareParticipation` each height (§6.3(5) `b/s`) so PoVB burns `f_i` + `b_i+s_i`; empty blocks burn nothing |
+| `AUTO_PRODUCE` | `true` | start the produce loop on boot (pace from §6.2, not a fixed interval) |
+| `AUTO_DECLARE` | `true` | stand helper: enqueue genesis `MsgDeclareParticipation` each height. **Required** for emission without traffic: canon 5.5-sim has **no** last_applied replay — without a fresh declare tx the height is **not finalized** (empty attempt shrinks `T`). Set **`false`** when `simulation_v2/traffic` owns `(b_i, s_i)` |
+| `TIME_SCALE` | `60` | stand-only: `wall_sleep = attempt_window / time_scale` (`1`…`3600`; live via `/api/v1/operator/time-scale`). Default 60 → canon minute ≈ 1 s wall-clock |
 | `CORS_ORIGINS` | `*` | CORS |
 
-**PoVB burns:** without a declare, EndBlocker does not burn ANT (canon §5.4). Entry fee
-`f_i = ⌊α · L_i⌋` with genesis `α = 1/50` → **20 000** micro-ANT per valid declare
-(at `L_i = 1 LZN`). Full §6.3(5) package burns **920 000** micro (`f+b+s`) when the set updates.
+**PoVB burns (5.5-sim):** a height commits only with **new** `MsgDeclareParticipation` in the block (`f_i + b_i + s_i` paid from ANT). Without declares the
+node does **not** finalize the height (empty attempt). Entry fee `f_i = ⌊α · L_i⌋` with genesis
+`α = 1/50` → **20 000** micro-ANT (at `L_i = 1 LZN`). Full §6.3(5) package burns
+**920 000** micro (`f+b+s`) when the set updates.
 
-Canonical block time in the header is still `BaseBlockTime` (60s). Wall clock is independent.
-The traffic process reads `produce_interval_sec` and adapts its poll / height catch-up so
-economy ticks stay aligned with Sim speed.
+Canonical time in the header advances `BaseBlockTime` (60s) per finalized height.
+Canonical attempt window `T` is adaptive (§6.2). Stand `time_scale` only compresses wall-clock
+(`wall_sleep_sec` / compat `produce_interval_sec` on `/api/v1/chain/summary`). Traffic polls that field.
 
 ## Genesis (canon §6.3)
 

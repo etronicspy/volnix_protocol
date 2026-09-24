@@ -13,7 +13,6 @@ def test_explorer_and_rpc(tmp_path: Path):
         data_dir=tmp_path / "data",
         genesis_path=g,
         auto_produce=False,
-        produce_interval=0.01,
     )
     app = create_app(settings, auto_produce=False)
     with TestClient(app) as client:
@@ -28,7 +27,12 @@ def test_explorer_and_rpc(tmp_path: Path):
         body = summary.json()
         assert body["height"] == 0
         assert body["params"]["k"] == 150
-        assert body["produce_interval_sec"] == 0.01
+        assert body["attempt_window_sec"] == 60
+        assert body["pace_debt_blocks"] == 0
+        assert body["missed_budget_sec"] == 0
+        assert body["time_scale"] == 60.0
+        assert body["wall_sleep_sec"] == 1.0
+        assert body["produce_interval_sec"] == 1.0
         assert body["auto_produce"] is False
         blocks = client.get("/api/v1/blocks")
         assert blocks.status_code == 200
@@ -37,18 +41,44 @@ def test_explorer_and_rpc(tmp_path: Path):
         assert produced.status_code == 200
         assert produced.json()["produced"] == [1]
 
+        pace = client.get("/api/v1/operator/pace")
+        assert pace.status_code == 200
+        assert pace.json()["attempt_window_sec"] == 60
+        assert pace.json()["base_block_time"] == 60
+        assert pace.json()["time_scale"] == 60.0
+        assert pace.json()["wall_sleep_sec"] == 1.0
+
+        ts = client.post("/api/v1/operator/time-scale", json={"time_scale": 120})
+        assert ts.status_code == 200
+        assert ts.json()["time_scale"] == 120.0
+        assert ts.json()["wall_sleep_sec"] == 0.5
+        assert ts.json()["produce_interval_sec"] == 0.5
+        bad_ts = client.post("/api/v1/operator/time-scale", json={"time_scale": 0})
+        assert bad_ts.status_code == 422
+
         interval = client.get("/api/v1/operator/produce-interval")
         assert interval.status_code == 200
-        assert interval.json()["interval_sec"] == 0.01
-        set_iv = client.post("/api/v1/operator/produce-interval", json={"interval_sec": 0.5})
-        assert set_iv.status_code == 200
-        assert set_iv.json()["interval_sec"] == 0.5
-        assert set_iv.json()["interval_ms"] == 500
+        assert interval.json()["interval_sec"] == 0.5
+        assert interval.json()["attempt_window_sec"] == 60
+        assert interval.json()["time_scale"] == 120.0
+
+        # Simulate empty attempts then reset via POST
+        node = app.state.node
+        node.pace.on_empty_attempt()
+        assert node.pace.attempt_window_sec == 30
+        reset = client.post("/api/v1/operator/pace", json={"reset": True})
+        assert reset.status_code == 200
+        assert reset.json()["attempt_window_sec"] == 60
+        assert reset.json()["missed_budget_sec"] == 0
+        assert reset.json()["time_scale"] == 120.0
+        assert reset.json()["wall_sleep_sec"] == 0.5
+
         summary_iv = client.get("/api/v1/chain/summary")
         assert summary_iv.status_code == 200
+        assert summary_iv.json()["attempt_window_sec"] == 60
+        assert summary_iv.json()["time_scale"] == 120.0
         assert summary_iv.json()["produce_interval_sec"] == 0.5
-        bad = client.post("/api/v1/operator/produce-interval", json={"interval_sec": 0})
-        assert bad.status_code == 422
+
         accounts = client.get("/api/v1/accounts")
         assert accounts.status_code == 200
         body = accounts.json()

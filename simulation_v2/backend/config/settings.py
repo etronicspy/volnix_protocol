@@ -17,12 +17,12 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
     cors_origins: str = "*"
-    # Wall-clock seconds between produced blocks (canonical time still advances BaseBlockTime).
-    produce_interval: float = 1.0
     auto_produce: bool = True
-    # Enqueue MsgDeclareParticipation for the genesis validator before each block
-    # so PoVB burns f_i / b_i+s_i on the stand (empty blocks burn nothing per canon).
+    # Stand helper: enqueue genesis MsgDeclareParticipation each height (canon
+    # 5.5-sim requires a fresh declare tx every height — no last_applied replay).
     auto_declare: bool = True
+    # Stand-only: wall_sleep = attempt_window / time_scale (default 60 → 1s per canon minute).
+    time_scale: float = 60.0
     chain_id: str = "volnix-sim-2"
 
 

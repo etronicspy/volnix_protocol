@@ -40,8 +40,8 @@ def create_app(settings: Optional[Settings] = None, auto_produce: Optional[bool]
     node = Node(
         data_dir=Path(settings.data_dir),
         genesis_path=Path(settings.genesis_path),
-        produce_interval=settings.produce_interval,
         auto_declare=settings.auto_declare,
+        time_scale=settings.time_scale,
     )
     app.state.node = node
     app.state.settings = settings

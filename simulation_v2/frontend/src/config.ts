@@ -9,5 +9,5 @@ export const TRAFFIC_BASE = import.meta.env.VITE_TRAFFIC_URL ?? 'http://127.0.0.
 
 export const SCALE = 1_000_000
 
-/** Explorer REST refresh interval (backend/traffic stay on Sim speed). */
+/** Explorer REST refresh interval (node pace is adaptive attempt window §6.2). */
 export const EXPLORER_POLL_MS = 1000

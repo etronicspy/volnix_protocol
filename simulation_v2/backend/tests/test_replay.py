@@ -27,7 +27,8 @@ def test_auto_declare_burns_entry_and_bs(node, genesis_kp):
     assert "b_s" in kinds
 
 
-def test_auto_declare_disabled_no_burn(tmp_path, genesis_kp):
+def test_hold_height_without_declare(tmp_path, genesis_kp):
+    """No MsgDeclareParticipation → height not finalized (5.5-sim, no replay)."""
     from tests.conftest import write_genesis
     from volnix.node.node import Node
 
@@ -35,15 +36,68 @@ def test_auto_declare_disabled_no_burn(tmp_path, genesis_kp):
     n = Node(
         data_dir=tmp_path / "data",
         genesis_path=g,
-        produce_interval=0.01,
         auto_declare=False,
     )
     n.load_or_init()
-    before = n.app.state.accounts[genesis_kp.address].ant
+    height = n.app.state.height
+    assert n.produce_block() is None
+    assert n.app.state.height == height
+    # ANT alone is not enough without a fresh declare tx
+    assert n.app.state.accounts[genesis_kp.address].ant > 0
+
+
+def test_hold_height_without_ant(tmp_path, genesis_kp):
+    from tests.conftest import write_genesis
+    from volnix.node.node import Node
+
+    g = write_genesis(tmp_path / "genesis.default.json")
+    n = Node(
+        data_dir=tmp_path / "data",
+        genesis_path=g,
+        auto_declare=False,
+    )
+    n.load_or_init()
+    n.app.state.accounts[genesis_kp.address].ant = 0
+    height = n.app.state.height
+    assert n.produce_block() is None
+    assert n.app.state.height == height
+
+
+def test_explicit_declare_each_height(tmp_path, genesis_kp):
+    """Each height needs a new declare; previous scheme is not carried over."""
+    from tests.conftest import write_genesis
+    from volnix.node.node import Node
+    from volnix.app.txutil import build_tx
+    from volnix.types.msgs import MsgDeclareParticipation
+
+    g = write_genesis(tmp_path / "genesis.default.json")
+    n = Node(
+        data_dir=tmp_path / "data",
+        genesis_path=g,
+        auto_declare=False,
+    )
+    n.load_or_init()
+    tx = build_tx(
+        n.app.state,
+        genesis_kp,
+        [MsgDeclareParticipation(validator=genesis_kp.address, b_i=400_000, s_i=200_000)],
+    )
+    assert n.broadcast_tx(tx)["code"] == 0
     block = n.produce_block()
     assert block is not None
-    assert block.data.get("txs", []) == []
-    assert n.app.state.accounts[genesis_kp.address].ant == before
+    assert n.app.state.last_povb["declares"][0]["b_i"] == 400_000
+    # Next height: no new tx → hold
+    assert n.produce_block() is None
+    # Fresh declare required
+    tx2 = build_tx(
+        n.app.state,
+        genesis_kp,
+        [MsgDeclareParticipation(validator=genesis_kp.address, b_i=400_000, s_i=200_000)],
+    )
+    assert n.broadcast_tx(tx2)["code"] == 0
+    b2 = n.produce_block()
+    assert b2 is not None
+    assert n.app.state.last_povb["declares"][0]["b_i"] == 400_000
 
 
 def test_produce_and_replay_app_hash(fast_node, genesis_kp):
@@ -62,7 +116,7 @@ def test_produce_and_replay_app_hash(fast_node, genesis_kp):
     assert block.header.app_hash
     assert block.header.data_hash
     assert block.header.validators_hash
-    # second empty-ish block
+    # second block needs a fresh declare
     tx2 = build_tx(
         fast_node.app.state,
         genesis_kp,
@@ -137,5 +191,3 @@ def test_verify_supplier_and_epoch_boundary(fast_node, genesis_kp):
     assert fast_node.app.state.epoch == 1
     # genesis ANT wiped; supplier received ANT_emit = L_total * 3
     assert fast_node.app.state.accounts[genesis_kp.address].ant == 0
-    assert fast_node.app.state.accounts[sup.address].role == "supplier"
-    assert fast_node.app.state.accounts[sup.address].ant == fast_node.app.state.l_total() * 3

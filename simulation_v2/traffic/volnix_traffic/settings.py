@@ -33,7 +33,17 @@ class TrafficSettings(BaseSettings):
     control_port: int = 8002
     autostart: bool = True
     intensity: float = 2.0
-    target_wallets: int = 30
+    target_enrichment_bots: int = 50
+    target_citizens: int = 109
+    min_suppliers: int = 1
+    min_validators: int = 1
+    citizen_transfers_per_tick: int = 3
+    horizon_blocks: int = 12
+    peer_sample_min: int = 5
+    peer_sample_max: int = 10
+    role_flip_margin_wrt: int = 5_000_000
+    flip_confirm_ticks: int = 3
+    max_new_per_tick: int = 3
     bootstrap_wrt: int = 5_000_000
     min_bot_wrt: int = 500_000
     max_actions_per_tick: int = 40
@@ -41,7 +51,11 @@ class TrafficSettings(BaseSettings):
     enable_market: bool = True
     enable_bots: bool = True
     enable_declare: bool = True
-    citizen_fraction: float = 0.25
+    enable_role_flip: bool = True
+    genesis_seed: str = "volnix-genesis-validator-v2"
+    # Legacy BotEngine knobs (tests / unused supervisor path)
+    target_wallets: int = 50
+    citizen_fraction: float = 0.0
     weights: Weights = Field(default_factory=Weights)
     config_path: Optional[Path] = None
 
@@ -54,13 +68,10 @@ class TrafficSettings(BaseSettings):
                 raw = yaml.safe_load(f) or {}
             if isinstance(raw, dict):
                 data = raw
-        # Env / constructor overrides YAML
         inst = cls(**{k: v for k, v in data.items() if k != "weights"})
         if "weights" in data and isinstance(data["weights"], dict):
             inst.weights = Weights(**data["weights"])
         inst.config_path = cfg_path
-        # Re-apply env on top (BaseSettings already did for fields present;
-        # rebuild from env after YAML for correct precedence).
         env_inst = cls()
         for name in cls.model_fields:
             if name in ("weights", "config_path"):

@@ -36,7 +36,14 @@ async def test_catch_up_ticks_each_missed_height(tmp_path: Path):
     runtime = TrafficRuntime(settings, state_path=tmp_path / "wallets.json")
     runtime.last_height = 1
     runtime.client.chain_summary = AsyncMock(
-        return_value={"height": 5, "produce_interval_sec": 0.05, "l_total": 0, "params": {}}
+        return_value={
+            "height": 5,
+            "attempt_window_sec": 0.05,
+            "produce_interval_sec": 0.05,
+            "pace_debt_blocks": 0,
+            "l_total": 0,
+            "params": {},
+        }
     )
     runtime.client.params = AsyncMock(return_value={})
     runtime.client.accounts = AsyncMock(return_value=[])
@@ -47,6 +54,7 @@ async def test_catch_up_ticks_each_missed_height(tmp_path: Path):
     assert runtime.last_height == 5
     assert runtime.client.chain_summary.await_count == 4
     assert runtime.produce_interval_sec == 0.05
+    assert runtime.attempt_window_sec == 0.05
     assert runtime.effective_poll_sec == pytest.approx(0.0125)
 
 
@@ -77,7 +85,28 @@ def test_status_includes_pace_fields(tmp_path: Path):
     settings = TrafficSettings(autostart=False, node_url="http://127.0.0.1:9")
     runtime = TrafficRuntime(settings, state_path=tmp_path / "wallets.json")
     runtime.produce_interval_sec = 0.5
+    runtime.attempt_window_sec = 0.5
+    runtime.pace_debt_blocks = 2
     runtime.effective_poll_sec = 0.125
     st = runtime.status()
     assert st["produce_interval_sec"] == 0.5
+    assert st["attempt_window_sec"] == 0.5
+    assert st["pace_debt_blocks"] == 2
     assert st["effective_poll_sec"] == 0.125
+
+
+def test_sync_pace_prefers_wall_sleep(tmp_path: Path):
+    settings = TrafficSettings(autostart=False, node_url="http://127.0.0.1:9", poll_interval_sec=0.25)
+    runtime = TrafficRuntime(settings, state_path=tmp_path / "wallets.json")
+    runtime._sync_pace(
+        {
+            "attempt_window_sec": 60,
+            "wall_sleep_sec": 1.0,
+            "produce_interval_sec": 1.0,
+            "pace_debt_blocks": 3,
+        }
+    )
+    assert runtime.attempt_window_sec == 60
+    assert runtime.produce_interval_sec == 1.0
+    assert runtime.pace_debt_blocks == 3
+    assert runtime.effective_poll_sec == pytest.approx(0.25)
