@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from fractions import Fraction
+from functools import cmp_to_key
 from typing import Any, Optional
 
 from volnix.app.modules.bank import BankError, burn
@@ -96,9 +97,18 @@ def deliver_declare(state: AppState, msg: MsgDeclareParticipation) -> list[Event
     ]
 
 
-def _priority_key(rec: DeclareRecord) -> tuple[float, str]:
-    """Head = highest priority: w_i descending, then address ascending."""
-    return (-rec.w_i, rec.validator)
+def _cmp_priority(a: DeclareRecord, b: DeclareRecord) -> int:
+    """Higher w_i = s/L first via cross-multiply; tie → address ascending (§5.4)."""
+    # s_a/l_a > s_b/l_b ⇔ s_a*l_b > s_b*l_a
+    left = int(a.s_i) * int(b.l_i)
+    right = int(b.s_i) * int(a.l_i)
+    if left != right:
+        return -1 if left > right else 1
+    if a.validator < b.validator:
+        return -1
+    if a.validator > b.validator:
+        return 1
+    return 0
 
 
 def process_endblocker(state: AppState, current_set: ValidatorSet) -> tuple[ValidatorSet, list[Event], dict[str, Any]]:
@@ -107,8 +117,9 @@ def process_endblocker(state: AppState, current_set: ValidatorSet) -> tuple[Vali
     Declares come only from MsgDeclareParticipation delivered this height
     (BeginBlock clears the table). No last_applied replay.
 
-    Sim note: b_i+s_i burn on EndBlocker N when set_updated (applied for N+1),
-    equivalent when every produced block commits.
+    Sim note (G3 deferred): b_i+s_i burn on EndBlocker N when set_updated
+    (applied for N+1). Equivalent on this stand because every produced height
+    commits; diverge only if N commits and N+1 does not.
     """
     events: list[Event] = []
     params = state.params
@@ -149,7 +160,8 @@ def process_endblocker(state: AppState, current_set: ValidatorSet) -> tuple[Vali
             rec.reason = "insufficient_ant"
             rejected.append(rec)
             continue
-        rec.w_i = rec.s_i / rec.l_i
+        # Display-only float for traces; sort uses integer cross-multiply.
+        rec.w_i = rec.s_i / rec.l_i if rec.l_i else 0.0
         rec.valid = True
         candidates.append(rec)
 
@@ -162,8 +174,8 @@ def process_endblocker(state: AppState, current_set: ValidatorSet) -> tuple[Vali
         rest = sum(r.b_i + r.s_i for r in group)
         return f_sum + rest
 
-    # Priority order: head = highest w_i
-    remaining = sorted(candidates, key=_priority_key)
+    # Priority order: head = highest w_i (integer compare)
+    remaining = sorted(candidates, key=cmp_to_key(_cmp_priority))
 
     # Step 3: λ upper — exclude from tail
     while remaining and sum(r.b_i for r in remaining) > b_max:

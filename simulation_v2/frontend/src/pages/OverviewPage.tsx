@@ -1,6 +1,7 @@
 import { useOutletContext } from 'react-router-dom'
 import { formatMicro } from '../lib/api'
 import { useFetch } from '../hooks/useFetch'
+import { useMempool } from '../hooks/useMempool'
 import { HashLink } from '../components/HashLink'
 import type { BlockSummary, ChainSummary, TxListItem } from '../types/api'
 
@@ -14,6 +15,7 @@ export function OverviewPage() {
   const summary = useFetch<ChainSummary>('/api/v1/chain/summary', livePulse)
   const blocks = useFetch<{ blocks: BlockSummary[] }>('/api/v1/blocks?tail=12', livePulse)
   const txs = useFetch<{ txs: TxListItem[] }>('/api/v1/txs?limit=12', livePulse)
+  const mempool = useMempool(livePulse)
 
   const s = summary.data
 
@@ -60,7 +62,7 @@ export function OverviewPage() {
             <div className="panel-title">Canon parameters</div>
             <div className="grid-3">
               <div className="stat">
-                <div className="stat-label">λ / α / K</div>
+                <div className="stat-label as-written">λ / α / K</div>
                 <div className="stat-value sm">
                   {s.params.lambda} · {s.params.alpha} · {s.params.k}
                 </div>
@@ -129,7 +131,8 @@ export function OverviewPage() {
 
         <div className="panel">
           <div className="panel-title">Recent transactions</div>
-          {txs.data?.txs?.length ? (
+          {mempool.rejects.length ? <p className="error">{mempool.rejects.join(' · ')}</p> : null}
+          {mempool.txs.length || txs.data?.txs?.length ? (
             <div className="table-wrap">
               <table className="data">
                 <thead>
@@ -140,7 +143,23 @@ export function OverviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {txs.data.txs.map((t) => (
+                  {mempool.txs.map((t) => (
+                    <tr key={t.hash}>
+                      <td>
+                        <HashLink hash={t.hash} />
+                      </td>
+                      <td>
+                        <span className="badge warn">in mempool</span>
+                        <div className="muted" style={{ marginTop: 4, fontSize: '0.75rem' }}>
+                          {t.label}
+                        </div>
+                      </td>
+                      <td>
+                        <HashLink address={t.sender} />
+                      </td>
+                    </tr>
+                  ))}
+                  {txs.data?.txs.map((t) => (
                     <tr key={t.hash}>
                       <td>
                         <HashLink hash={t.hash} />

@@ -46,6 +46,7 @@ alwaysApply: true
 - `simulation_v2/` is a **greenfield** off-chain blockchain-node simulator for canon **5.1-sim** (`simulation_v2/docs/volnix_protocol.md`). It is **not** the Cosmos node and **not** `simulation/` (v1).
 - `simulation_v2/backend/` — Python FastAPI node: JSONL blockstore, ABCI-like application (canon modules), CometBFT-style RPC, explorer REST `/api/v1`, WebSocket `/ws`.
 - `simulation_v2/frontend/` — explorer / dashboard (to be implemented against `/api/v1`).
+- `simulation_v2/wallet/` — отдельный UI кошелька (сид-фраза, роль, сжигание), не explorer и не нода.
 - `simulation_v2/traffic/` — separate process for network traffic / economy (bot wallets, stub ZKP, transfers, market, declare). Talks to the node over HTTP operator + explorer APIs; does **not** embed into `backend/volnix/node/`. Control API default `:8002`. Env prefix: `VOLNIX_SIM2_TRAFFIC_*`.
 - `simulation_v2/docs/` — working canon and API for the v2 stand.
 - Runtime chain data lives in `simulation_v2/backend/data/` (gitignored via the global `data/` pattern). Genesis template is `config/genesis.default.json` (do **not** name it `genesis.json` — that filename is globally gitignored).

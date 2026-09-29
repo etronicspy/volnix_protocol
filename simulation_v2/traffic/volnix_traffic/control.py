@@ -17,7 +17,7 @@ class StartBody(BaseModel):
 
 
 class IntensityBody(BaseModel):
-    intensity: float = Field(..., ge=0.0, le=100.0)
+    intensity: float = Field(..., ge=0.0, le=10.0)
 
 
 def create_control_app(runtime: TrafficRuntime) -> FastAPI:
@@ -64,5 +64,15 @@ def create_control_app(runtime: TrafficRuntime) -> FastAPI:
     async def tick() -> Dict[str, Any]:
         """Force one height tick (useful when auto_produce is off)."""
         return await runtime.tick_once()
+
+    @app.post("/reset")
+    async def reset() -> Dict[str, Any]:
+        """Clear the bot registry. Does not touch chain state."""
+        return await runtime.reset_bots()
+
+    @app.post("/release")
+    async def release() -> Dict[str, Any]:
+        """Stop every bot except genesis. Genesis only declares so blocks keep finalizing."""
+        return await runtime.release_bots()
 
     return app

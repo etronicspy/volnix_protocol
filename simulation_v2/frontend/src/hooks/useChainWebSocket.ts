@@ -52,8 +52,9 @@ export function useChainWebSocket(): LiveState {
               next.height = msg.height
               next.chainId = msg.chain_id
             }
-            if (msg.type === 'new_block') {
+            if (msg.type === 'new_block' || msg.type === 'chain_reset') {
               next.height = msg.height
+              if (msg.type === 'chain_reset') next.chainId = msg.chain_id
             }
             return next
           })

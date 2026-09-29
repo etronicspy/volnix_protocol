@@ -104,12 +104,9 @@ class ProfitStrategy:
         return roi
 
     def _estimate_validator(self, account: AccountView, snap: MarketSnapshot) -> RoleROI:
+        """Reward by b_i among entered set (§5.4); L_i is declare ceiling only."""
         roi = RoleROI(role=ROLE_VALIDATOR)
         L_i = account.lzn_total or SCALE  # assume can buy ~1 LZN if none yet
-        L_total = max(snap.l_total, L_i)
-        if account.role != ROLE_VALIDATOR:
-            L_total = max(L_total, snap.l_total + L_i)
-        share = L_i / max(1, L_total)
         ant_price = self._ant_price(snap)
         ant_budget = float(account.ant)
         if account.role != ROLE_VALIDATOR:
@@ -121,9 +118,11 @@ class ProfitStrategy:
         if b_per_block <= 0:
             return roi
         blocks_active = min(target_blocks, ant_budget / b_per_block)
-        roi.income_wrt = float(snap.block_reward) * share * blocks_active
+        # Equal-share proxy among validators (same spirit as competitive b_i when peers match).
         n_decl = max(1, snap.n_validators + (0 if account.role == ROLE_VALIDATOR else 1))
-        roi.income_wrt += FEE_PER_TX * AVG_TXS_PER_BLOCK * (1.0 / n_decl) * blocks_active
+        share = 1.0 / n_decl
+        roi.income_wrt = float(snap.block_reward) * share * blocks_active
+        roi.income_wrt += FEE_PER_TX * AVG_TXS_PER_BLOCK * share * blocks_active
         roi.cost_wrt = b_per_block * ant_price * blocks_active
         return roi
 

@@ -202,6 +202,8 @@ class EnrichmentSupervisor:
         alpha: Fraction,
         lam: Fraction,
         k: int,
+        ant_orderbook: Optional[Dict[str, Any]] = None,
+        lzn_orderbook: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, int]:
         self.prune_retired()
         for bot in self.registry.enrichment():
@@ -237,6 +239,8 @@ class EnrichmentSupervisor:
                 enable_market=self.settings.enable_market,
                 enable_declare=self.settings.enable_declare,
                 enable_role_flip=self.settings.enable_role_flip,
+                ant_orderbook=ant_orderbook,
+                lzn_orderbook=lzn_orderbook,
             )
 
         agents = list(self.agents.values())

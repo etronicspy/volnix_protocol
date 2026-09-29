@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from volnix.app.abci import BaseApp
 from volnix.app.genesis import format_time, parse_time
+from volnix.app.txutil import build_tx, next_account_sequence
+from volnix.crypto.keys import KeyPair
+from volnix.types.msgs import Msg
 from volnix.consensus.evidence import EvidencePool
 from volnix.consensus.rounds import ConsensusEngine, Decision
 from volnix.consensus.validator_set import increment_proposer_priority
@@ -41,8 +45,8 @@ class Node:
         self,
         data_dir: Path,
         genesis_path: Path,
-        auto_declare: bool = True,
-        time_scale: float = 60.0,
+        auto_declare: bool = False,  # STAND-ONLY helper; default off (traffic owns declares)
+        time_scale: float = 60.0,  # STAND-ONLY wall-clock compression
     ) -> None:
         self.data_dir = data_dir
         self.genesis_path = genesis_path
@@ -61,6 +65,7 @@ class Node:
         self.faults = FaultController()
         self.consensus.faults = self.faults.model
         self._listeners: list[Callable[[dict[str, Any]], Awaitable[None]]] = []
+        self._chain_lock = threading.Lock()
         self._task: asyncio.Task[None] | None = None
         self._running = False
         self._last_commit = None
@@ -73,7 +78,7 @@ class Node:
         return self.pace.wall_sleep_sec()
 
     def enqueue_auto_declares(self) -> None:
-        """Stand: inject genesis MsgDeclareParticipation so PoVB burns ANT (§5.4)."""
+        """STAND-ONLY: inject genesis MsgDeclareParticipation so PoVB burns ANT (§5.4)."""
         if not self.auto_declare:
             return
         from volnix.node.autodeclare import build_genesis_declare_tx
@@ -87,6 +92,13 @@ class Node:
             if any(m.type == "povb/MsgDeclareParticipation" for m in tx.body.messages):
                 return True
         return False
+
+    def _flush_blockstore(self) -> None:
+        """One disk flush for every JSONL written by this height."""
+        self.blocks.flush()
+        self.results.flush()
+        self.valsets.flush()
+        self.tx_index.flush()
 
     def _participation_ready(self) -> bool:
         """Commit only with new MsgDeclareParticipation in mempool (§5.4 / 5.5-sim)."""
@@ -118,6 +130,7 @@ class Node:
             self.blocks.append(genesis_block)
             self.results.append(BlockResults(height=0))
             self.valsets.append(0, self.app.validator_set)
+            self._flush_blockstore()
             self.snapshot.save(self.app.state.to_snapshot())
             self._last_commit = genesis_block.last_commit
             return
@@ -145,11 +158,65 @@ class Node:
         # persist reconstructed snapshot
         self.snapshot.save(self.app.state.to_snapshot())
 
+    def compose_tx(
+        self,
+        keypair: KeyPair,
+        messages: list[Msg],
+        *,
+        fee: int = 0,
+        gas_limit: int = 200_000,
+        memo: str = "",
+        sequence: int | None = None,
+    ) -> Tx:
+        """Sign a tx with sequence = committed + mempool pending for this signer."""
+        if sequence is None:
+            sequence = next_account_sequence(
+                self.app.state,
+                keypair.address,
+                self.mempool.pending_count(keypair.address),
+            )
+        return build_tx(
+            self.app.state,
+            keypair,
+            messages,
+            fee=fee,
+            gas_limit=gas_limit,
+            memo=memo,
+            sequence=sequence,
+        )
+
     def broadcast_tx(self, tx: Tx) -> dict[str, Any]:
-        result = self.mempool.insert(tx)
-        return {"code": result.code, "log": result.log, "hash": tx.tx_hash()}
+        with self._chain_lock:
+            result = self.mempool.insert(tx)
+            return {"code": result.code, "log": result.log, "hash": tx.tx_hash()}
+
+    def reset_chain(self) -> dict[str, Any]:
+        """STAND-ONLY: wipe blockstore and reload genesis. Keeps time_scale."""
+        with self._chain_lock:
+            scale = self.pace.time_scale
+            self.mempool.clear()
+            self.evidence.drain()
+            self.blocks.clear()
+            self.results.clear()
+            self.tx_index.clear()
+            self.valsets.clear()
+            self.snapshot.clear()
+            self.load_or_init()
+            self.pace.reset()
+            self.pace.set_time_scale(scale)
+            self._interval_wake.set()
+            return {
+                "height": self.app.state.height,
+                "chain_id": self.app.state.chain_id,
+                "app_hash": self.app.state.app_hash(),
+                "time_scale": self.pace.time_scale,
+            }
 
     def produce_block(self) -> Block | None:
+        with self._chain_lock:
+            return self._produce_block()
+
+    def _produce_block(self) -> Block | None:
         prev = self.blocks.get(self.app.state.height if self.app.state.height > 0 else 0)
         if prev is None:
             prev = self.blocks.get(0)
@@ -158,12 +225,12 @@ class Node:
         prev_time = parse_time(prev.header.time)
         block_time = format_time(prev_time + timedelta(seconds=self.app.state.params.base_block_time))
 
-        snap = self.app.state.snapshot()
-        vset_snap = self.app.validator_set.copy()
-
         self.enqueue_auto_declares()
         if not self._participation_ready():
             return None
+
+        snap = self.app.state.snapshot()
+        vset_snap = self.app.validator_set.copy()
         proposer = increment_proposer_priority(self.app.validator_set)
         evidence_items = self.evidence.drain()
         txs = self.mempool.reap(self.app.state.params.block_gas_limit, self.app.state.params.max_block_bytes)
@@ -171,6 +238,13 @@ class Node:
         self.app.begin_block(height, evidence_items)
         tx_results = [self.app.deliver_tx(tx) for tx in txs]
         next_set, _, _ = self.app.end_block()
+        # Canon §5.4 / §6.2: no valid MsgDeclareParticipation → empty attempt, no height.
+        if not any(r.valid for r in self.app.state.declares.values()):
+            self.app.state.restore(snap)
+            self.app.validator_set = vset_snap
+            for tx in txs:
+                self.mempool.insert(tx)
+            return None
         app_hash = self.app.commit()
         results = self.app.collect_results()
 
@@ -223,8 +297,8 @@ class Node:
             self.tx_index.append(
                 TxLocation(tx_hash=tx.tx_hash(), height=height, index=i, sender=tx.signer())
             )
+        self._flush_blockstore()
         self.app.validator_set = next_set
-        self.snapshot.save(self.app.state.to_snapshot())
         self.pace.on_valid_block()
         return block
 
@@ -254,8 +328,6 @@ class Node:
         if self.app.state.epochs and self.app.state.epochs[-1].height == block.header.height:
             rec = self.app.state.epochs[-1]
             await self._emit({"type": "epoch_boundary", **rec.to_dict()})
-        for txd in block.data.get("txs", []):
-            await self._emit({"type": "new_tx", "hash": txd.get("hash", ""), "height": block.header.height})
         return block
 
     def pace_snapshot(self) -> dict[str, Any]:

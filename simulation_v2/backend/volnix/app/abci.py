@@ -42,7 +42,11 @@ class BaseApp:
         self.state.passed_validators = []
         self.state.set_updated = False
         events: list[Event] = []
-        events.extend(ident.check_moa(self.state))
+        moa_events, stripped = ident.check_moa(self.state)
+        events.extend(moa_events)
+        for addr in stripped:
+            ident.remove_from_validator_set(self.validator_set, addr)
+            ident.remove_from_validator_set(self.next_validator_set, addr)
         events.extend(gov.tally_and_execute(self.state))
         for evd in evidence or []:
             events.append(
@@ -66,8 +70,10 @@ class BaseApp:
     def deliver_tx(self, tx: Tx) -> TxResult:
         gas_wanted = tx.auth_info.fee.gas_limit
         snap = self.state.snapshot()
+        verified = False
         try:
             self._verify_tx(tx)
+            verified = True
             gas_used = estimate_gas(tx)
             if gas_used > gas_wanted:
                 raise ValueError("out of gas")
@@ -81,13 +87,7 @@ class BaseApp:
                 payer.wrt -= fee
                 self._fee_pool += fee
             events = dispatch(self.state, tx)
-            signer = self.state.accounts.get(tx.signer())
-            if signer:
-                info = tx.auth_info.signer_infos[0]
-                if not signer.pub_hex:
-                    signer.pub_hex = info.pub_hex
-                signer.sequence += 1
-                signer.last_tx_height = self.state.height
+            self._consume_sequence(tx)
             result = TxResult(
                 code=0,
                 log="ok",
@@ -98,6 +98,9 @@ class BaseApp:
             )
         except Exception as exc:
             self.state.restore(snap)
+            # Cosmos-like: ante passed → included tx consumes sequence even on fail.
+            if verified:
+                self._consume_sequence(tx)
             result = TxResult(
                 code=1,
                 log=str(exc),
@@ -108,6 +111,18 @@ class BaseApp:
             )
         self._tx_results.append(result)
         return result
+
+    def _consume_sequence(self, tx: Tx) -> None:
+        signer = self.state.accounts.get(tx.signer())
+        if signer is None or not tx.auth_info.signer_infos:
+            return
+        info = tx.auth_info.signer_infos[0]
+        if info.sequence != signer.sequence:
+            return
+        if not signer.pub_hex:
+            signer.pub_hex = info.pub_hex
+        signer.sequence += 1
+        signer.last_tx_height = self.state.height
 
     def end_block(self) -> tuple[ValidatorSet, list[Event], dict[str, Any]]:
         next_set, povb_events, trace = povb.process_endblocker(self.state, self.validator_set)

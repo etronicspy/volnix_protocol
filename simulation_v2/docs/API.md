@@ -41,13 +41,14 @@ Amounts in responses are **micro-units** unless a `*_display` field is present
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/operator/account` | Derive `volnix1…` from a seed |
+| POST | `/operator/account` | Derive `volnix1…` from a seed. Read-only: does not create an account |
 | POST | `/operator/mint` | `MsgSend` WRT from genesis (must already hold subsidy; no premint) |
 | POST | `/operator/verify` | Sign + mempool `MsgVerifyIdentity` |
 | POST | `/operator/declare` | Sign + mempool `MsgDeclareParticipation` |
 | POST | `/operator/order` | Sign + mempool `MsgPlaceOrder` |
 | POST | `/operator/tx?seed=` | Sign + mempool arbitrary message list (body = `[{type,…}]`) |
 | POST | `/operator/produce` | Produce `count` blocks now (skips a height if no `MsgDeclareParticipation` in mempool, canon 5.5-sim) |
+| POST | `/operator/reset-chain` | Wipe the blockstore and reload genesis. Stand `time_scale` is kept |
 | GET/POST | `/operator/pace` | Adaptive attempt window (canon §6.2): GET status; POST `{ "reset": true }` force-resets to `BaseBlockTime` |
 | GET/POST | `/operator/time-scale` | Stand-only acceleration: `{ "time_scale": 1…3600 }` → `wall_sleep = T / scale` (default 60). Traffic follows `produce_interval_sec` (= wall sleep) |
 | GET/POST | `/operator/produce-interval` | Compat: GET returns wall sleep as `interval_sec`; POST resets canonical attempt window. Prefer `/time-scale` for speed |
@@ -63,7 +64,8 @@ See [`../traffic/README.md`](../traffic/README.md).
 
 Pace: traffic **follows** node `produce_interval_sec` (= `wall_sleep_sec = attempt_window / time_scale`)
 from `/chain/summary` — adaptive poll and per-height catch-up. Frontend **Time scale** slider
-sets `/operator/time-scale`. `intensity` remains actions **per height**.
+sets `/operator/time-scale`. `intensity` is everyday **spend share** in `[0, 10]`
+(0 = none, 10 = every funded wallet; floor also uses `citizen_transfers_per_tick`).
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -73,6 +75,7 @@ sets `/operator/time-scale`. `intensity` remains actions **per height**.
 | POST | `/intensity` | `{ "intensity": 1.5 }` |
 | GET | `/wallets` | local bot registry (seeds / roles / kind) |
 | POST | `/tick` | force one citizens→enrichment-agents tick |
+| POST | `/reset` | clear the local bot registry (chain state unchanged; the loop recruits again) |
 
 ---
 

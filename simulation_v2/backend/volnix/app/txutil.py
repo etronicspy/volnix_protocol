@@ -8,6 +8,13 @@ from volnix.types.msgs import Msg
 from volnix.types.tx import AuthInfo, Fee, SignerInfo, Tx, TxBody
 
 
+def next_account_sequence(state: AppState, address: str, pending: int = 0) -> int:
+    """Next signer sequence: committed account.sequence + txs already in mempool."""
+    acc = state.accounts.get(address)
+    base = acc.sequence if acc else 0
+    return base + max(0, int(pending))
+
+
 def build_tx(
     state: AppState,
     keypair: KeyPair,
@@ -15,9 +22,11 @@ def build_tx(
     fee: int = 0,
     gas_limit: int = 200_000,
     memo: str = "",
+    sequence: int | None = None,
 ) -> Tx:
     acc = state.accounts.get(keypair.address)
-    sequence = acc.sequence if acc else 0
+    if sequence is None:
+        sequence = acc.sequence if acc else 0
     tx = Tx(
         body=TxBody(messages=list(messages), memo=memo),
         auth_info=AuthInfo(

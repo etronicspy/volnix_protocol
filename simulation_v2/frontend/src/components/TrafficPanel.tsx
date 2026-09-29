@@ -135,7 +135,7 @@ export function TrafficPanel() {
         <section className={styles.card} title="Запуск экономики и текущая высота цепи">
           <div className={styles.title}>Экономика</div>
           <div className={styles.value}>
-            {online ? (status.running ? 'Запущено' : 'Пауза') : 'Нет связи'}
+            {online ? (status.release ? 'Релиз' : status.running ? 'Запущено' : 'Пауза') : 'Нет связи'}
           </div>
           <p className={styles.meta}>
             Высота блока:{' '}
@@ -146,7 +146,7 @@ export function TrafficPanel() {
             )}
           </p>
           <p className={styles.hint}>
-            Start и Stop — цикл ботов. Force tick — один шаг без ожидания нового блока.
+            Release оставляет только genesis: он лишь объявляет участие, чтобы шли блоки. Burn снова включает всех ботов.
           </p>
           <div className={styles.actions}>
             <button
@@ -175,6 +175,40 @@ export function TrafficPanel() {
             </button>
             <button type="button" className="btn secondary" disabled={busy} onClick={() => void refresh()}>
               Refresh
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={controlsDisabled}
+              onClick={() => {
+                if (status?.release) {
+                  void run(() => trafficApi.post('/start', { intensity }))
+                  return
+                }
+                if (
+                  !window.confirm(
+                    'Release: остановить всех ботов, кроме genesis? Он будет только создавать блоки. Цепочка не изменится.',
+                  )
+                ) {
+                  return
+                }
+                void run(() => trafficApi.post('/release'))
+              }}
+            >
+              {status?.release ? 'Burn' : 'Release'}
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={controlsDisabled}
+              onClick={() => {
+                if (!window.confirm('Обнулить контроль ботов? Реестр очистится, цепочка не изменится.')) {
+                  return
+                }
+                void run(() => trafficApi.post('/reset'))
+              }}
+            >
+              Обнулить ботов
             </button>
           </div>
         </section>

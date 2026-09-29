@@ -7,6 +7,7 @@ import math
 from volnix.app.modules.anteil import cancel_ant_orders
 from volnix.app.state import LZN_HALVING_ERAS, SCALE, AppState, EpochRecord
 from volnix.types.events import Event, ev
+from volnix.types.role import Role
 
 
 def is_boundary(height: int, epoch_blocks: int) -> bool:
@@ -23,6 +24,26 @@ def remaining_boundaries(height: int, epoch_blocks: int, h_end: int) -> int:
     if current_k < 1:
         return last_k
     return max(0, last_k - current_k + 1)
+
+
+def remaining_boundaries_after(height: int, epoch_blocks: int, h_end: int) -> int:
+    """Boundaries still ahead after `height` (includes `height` if it is a boundary)."""
+    if epoch_blocks <= 0 or height > h_end:
+        return 0
+    if height > 0 and height % epoch_blocks == 0:
+        return remaining_boundaries(height, epoch_blocks, h_end)
+    last_k = h_end // epoch_blocks
+    next_k = height // epoch_blocks + 1
+    if next_k < 1:
+        next_k = 1
+    return max(0, last_k - next_k + 1)
+
+
+def lzn_horizon(state: AppState) -> tuple[int, int]:
+    """(H_end, N_rem) from current params. Pool R is unchanged (§5.5 DAO recalc)."""
+    h_end = LZN_HALVING_ERAS * state.params.halving_interval
+    n_rem = remaining_boundaries_after(state.height, state.params.epoch_blocks, h_end)
+    return h_end, n_rem
 
 
 def lzn_epoch_amount(remaining_pool: int, n_rem: int) -> int:
@@ -46,6 +67,9 @@ def process_boundary(state: AppState) -> list[Event]:
 
     wiped = 0
     for acc in state.accounts.values():
+        # §5.5 (5.6-sim): validator ANT bought and not burned via declare survives.
+        if acc.role == Role.VALIDATOR:
+            continue
         wiped += acc.ant
         acc.ant = 0
     events.append(ev("anteil.epoch_reset", epoch=state.epoch + 1, wiped=wiped, height=state.height))

@@ -28,7 +28,6 @@
       "max_active_suppliers": 108,
       "block_gas_limit": 40000000,
       "max_block_bytes": 22020096,
-      "ant_supplier_epoch_limit": 0,
       "gov_voting_period": 10080,
       "gov_timelock": 20160,
       "gov_min_deposit": 1000000,

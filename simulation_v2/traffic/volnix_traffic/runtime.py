@@ -8,8 +8,10 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from volnix_traffic import actions
 from volnix_traffic.citizens import CitizenTraffic
 from volnix_traffic.client import NodeClient
+from volnix_traffic.declare import suggest_declare_bs
 from volnix_traffic.engine import BotEngine
 from volnix_traffic.profit import snapshot_from_chain
 from volnix_traffic.registry import KIND_CITIZEN, KIND_ENRICHMENT, KIND_RETIRED, BotRegistry
@@ -47,10 +49,19 @@ class TrafficRuntime:
         self.pace_debt_blocks: int = 0
         self.effective_poll_sec: float = float(settings.poll_interval_sec)
         self._task: Optional[asyncio.Task] = None
+        # Created on first use so it binds to uvicorn's loop (Python 3.9 locks capture the loop at init).
+        self._op_lock: Optional[asyncio.Lock] = None
+        self.release = False
         self.intensity = float(settings.intensity)
 
+    def _lock(self) -> asyncio.Lock:
+        if self._op_lock is None:
+            self._op_lock = asyncio.Lock()
+        return self._op_lock
+
     def set_intensity(self, value: float) -> None:
-        self.intensity = max(0.0, min(100.0, float(value)))
+        # README + TrafficPanel: spend share 0–10 (0 = none, 10 = everyone with spare WRT).
+        self.intensity = max(0.0, min(10.0, float(value)))
         self.bots.set_intensity(self.intensity)
 
     def status(self) -> Dict[str, Any]:
@@ -71,6 +82,7 @@ class TrafficRuntime:
         errors = list(self.supervisor.last_errors) + list(self.bots.last_errors)
         return {
             "running": self.running,
+            "release": self.release,
             "height": self.last_height,
             "intensity": self.intensity,
             "wallets": len(self.registry),
@@ -108,11 +120,53 @@ class TrafficRuntime:
     def start(self, intensity: Optional[float] = None) -> None:
         if intensity is not None:
             self.set_intensity(intensity)
+        self.release = False
         self.running = True
         self._ensure_loop()
 
     def stop(self) -> None:
         self.running = False
+
+    async def reset_bots(self) -> Dict[str, Any]:
+        """Drop the local bot registry. Chain state is unchanged; the loop recruits again."""
+        async with self._lock():
+            self.registry.clear()
+            self.supervisor.agents.clear()
+            self.supervisor.board.clear()
+            self.supervisor.last_errors.clear()
+            self.supervisor._next_index = 0
+            self.supervisor._forced_supplier_done = False
+            self.citizens._next_index = 0
+            self.bots._next_index = 0
+            self.bots.last_errors.clear()
+            self.last_tick = {}
+            self.last_height = -1
+            self.release = False
+            self._persist()
+            return self.status()
+
+    async def release_bots(self) -> Dict[str, Any]:
+        """Pause every bot except genesis. Genesis only posts a declare so heights can finalize."""
+        async with self._lock():
+            self.release = True
+            self.running = True
+            seed = self.settings.genesis_seed
+            self.supervisor.agents = {
+                key: agent for key, agent in self.supervisor.agents.items() if key == seed
+            }
+            self.supervisor.board = [agent.card() for agent in self.supervisor.agents.values()]
+            self._ensure_loop()
+            return self.status()
+
+    async def _genesis_declare_only(self, accounts_by_addr: Dict[str, Dict[str, Any]], alpha: Fraction) -> bool:
+        bot = await self.supervisor.adopt_genesis(self.client)
+        if bot is None or not bot.address:
+            return False
+        row = accounts_by_addr.get(bot.address) or {}
+        pair = suggest_declare_bs(int(row.get("lzn_activated") or 0), int(row.get("ant") or 0), alpha)
+        if pair is None:
+            return False
+        return await actions.declare(self.client, bot, pair[0], pair[1])
 
     def _ensure_loop(self) -> None:
         try:
@@ -181,6 +235,10 @@ class TrafficRuntime:
         await self.client.aclose()
 
     async def tick_once(self, height: Optional[int] = None) -> Dict[str, Any]:
+        async with self._lock():
+            return await self._tick_once(height)
+
+    async def _tick_once(self, height: Optional[int] = None) -> Dict[str, Any]:
         summary = await self.client.chain_summary()
         self._sync_pace(summary)
         h = int(height if height is not None else (summary.get("height") or 0))
@@ -199,7 +257,15 @@ class TrafficRuntime:
         snap.height = h
 
         citizen_n = bot_n = decl_n = market_n = 0
-        if self.settings.enable_bots:
+        if self.settings.enable_bots and self.release:
+            declared = await self._genesis_declare_only(
+                by_addr,
+                Fraction(int(params.get("alpha_num") or 1), int(params.get("alpha_den") or 50)),
+            )
+            decl_n = 1 if declared else 0
+            bot_n = 1
+            self._persist()
+        elif self.settings.enable_bots:
             await self.supervisor.adopt_genesis(self.client)
             max_new = self.settings.max_new_per_tick
             citizen_created = await self.citizens.ensure_pool(self.client, max_new=max_new)
@@ -221,6 +287,8 @@ class TrafficRuntime:
                 alpha=Fraction(int(params.get("alpha_num") or 1), int(params.get("alpha_den") or 50)),
                 lam=Fraction(int(params.get("lambda_num") or 1), int(params.get("lambda_den") or 3)),
                 k=int(params.get("max_active_validators") or params.get("k") or 150),
+                ant_orderbook=orderbook,
+                lzn_orderbook=lzn_orderbook,
             )
             bot_n = counts.get("agents", 0)
             decl_n = counts.get("declare", 0)

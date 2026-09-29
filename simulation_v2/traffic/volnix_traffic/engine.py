@@ -42,7 +42,7 @@ class BotEngine:
         self.last_errors: List[str] = []
 
     def set_intensity(self, value: float) -> None:
-        self.intensity = max(0.0, min(100.0, float(value)))
+        self.intensity = max(0.0, min(10.0, float(value)))
 
     def _note_error(self, msg: str) -> None:
         self.last_errors.append(msg)

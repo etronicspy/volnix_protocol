@@ -293,6 +293,7 @@ export type WsEvent =
   | { type: 'new_tx'; hash: string; height: number }
   | { type: 'validator_set_update'; height: number; validators: unknown[] }
   | { type: 'epoch_boundary'; epoch: number; height: number }
+  | { type: 'chain_reset'; height: number; chain_id: string; app_hash: string }
   | { type: 'ping' }
 
 export interface TrafficAgentStatus {
@@ -318,6 +319,7 @@ export interface TrafficParams {
 
 export interface TrafficStatus {
   running: boolean
+  release?: boolean
   height: number
   intensity: number
   wallets: number

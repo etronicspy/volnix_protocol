@@ -2,6 +2,7 @@ from fractions import Fraction
 
 from volnix.app.modules.mint import distribute_rewards
 from volnix.app.modules.povb import (
+    _cmp_priority,
     corridor_bounds,
     entry_burn,
     process_endblocker,
@@ -200,3 +201,35 @@ def test_fee_burn_when_b_zero_set_not_updated():
     events = distribute_rewards(st, fee_pool=1000)
     assert st.wrt_supply == 5_000_000 - 1000
     assert any(e.type == "consensus.fee_burned" for e in events)
+
+
+def test_priority_integer_cross_multiply_equal_ratios():
+    """Equal s/L with different L: order by address, not float w_i (§5.4)."""
+    from functools import cmp_to_key
+
+    a = DeclareRecord(validator="volnix1aaa", b_i=0, s_i=1, l_i=3)
+    b = DeclareRecord(validator="volnix1bbb", b_i=0, s_i=2, l_i=6)
+    assert _cmp_priority(a, b) == -1  # equal weight → address ascending
+    assert _cmp_priority(b, a) == 1
+    hi = DeclareRecord(validator="z", b_i=0, s_i=2, l_i=5)
+    lo = DeclareRecord(validator="a", b_i=0, s_i=1, l_i=3)
+    assert _cmp_priority(hi, lo) == -1  # 2/5 > 1/3
+    ordered = sorted([lo, hi, b, a], key=cmp_to_key(_cmp_priority))
+    assert [r.validator for r in ordered] == ["z", "a", "volnix1aaa", "volnix1bbb"]
+
+
+def test_endblocker_priority_order_independent_of_float():
+    st, vset = _state_with_validators(2, SCALE, 5 * SCALE)
+    addrs = sorted(st.accounts)
+    # Equal w = 1/4 via different (s, L); enough b for B_min under λ=1/3
+    st.accounts[addrs[0]].lzn_activated = 4 * SCALE
+    st.accounts[addrs[1]].lzn_activated = 2 * SCALE
+    st.declares[addrs[0]] = DeclareRecord(
+        validator=addrs[0], b_i=SCALE, s_i=SCALE
+    )  # w = 1/4
+    st.declares[addrs[1]] = DeclareRecord(
+        validator=addrs[1], b_i=SCALE, s_i=SCALE // 2
+    )  # w = 1/4
+    next_set, _, trace = process_endblocker(st, vset)
+    assert trace["set_updated"] is True
+    assert [v.address for v in next_set.validators] == sorted(addrs)

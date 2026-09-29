@@ -1,3 +1,4 @@
+from volnix.app.state import SCALE
 from volnix.app.txutil import build_tx
 from volnix.crypto.keys import derive_keypair
 from volnix.types.msgs import MsgDeclareParticipation, MsgSend, MsgVerifyIdentity
@@ -147,13 +148,22 @@ def test_msgsend_wrt_via_node(fast_node, genesis_kp):
     block = fast_node.produce_block()
     assert block is not None
     assert fast_node.app.state.accounts[other.address].wrt == 100
-    # ANT send rejected
+    # ANT send rejected at deliver; declare at current sequence so the height can finalize (§5.4).
+    acc = fast_node.app.state.accounts[genesis_kp.address]
+    d = build_tx(
+        fast_node.app.state,
+        genesis_kp,
+        [MsgDeclareParticipation(validator=genesis_kp.address, b_i=400_000, s_i=200_000)],
+        sequence=acc.sequence,
+    )
     tx_bad = build_tx(
         fast_node.app.state,
         genesis_kp,
         [MsgSend(from_address=genesis_kp.address, to_address=other.address, denom="uant", amount=1)],
+        sequence=acc.sequence + 1,
     )
-    assert fast_node.broadcast_tx(tx_bad)["code"] == 0  # mempool check is light
+    assert fast_node.broadcast_tx(d)["code"] == 0
+    assert fast_node.broadcast_tx(tx_bad)["code"] == 0  # mempool accepts; deliver rejects
     b2 = fast_node.produce_block()
     assert b2 is not None
     res = fast_node.results.get(b2.header.height)
@@ -189,5 +199,54 @@ def test_verify_supplier_and_epoch_boundary(fast_node, genesis_kp):
         assert block is not None
     assert fast_node.app.state.height == 3
     assert fast_node.app.state.epoch == 1
-    # genesis ANT wiped; supplier received ANT_emit = L_total * 3
-    assert fast_node.app.state.accounts[genesis_kp.address].ant == 0
+    # f_i + b_i + s_i burned each height; epoch wipe keeps the validator remainder.
+    burn_per_height = 20_000 + 400_000 + 200_000
+    assert fast_node.app.state.accounts[genesis_kp.address].ant == 10080 * SCALE - 3 * burn_per_height
+    # supplier received ANT_emit = L_total * epoch_blocks
+    assert fast_node.app.state.accounts[sup.address].ant == SCALE * 3
+
+
+def test_failed_deliver_consumes_sequence(fast_node, genesis_kp):
+    """Included but failed tx still bumps sequence so a later declare can land."""
+    other = derive_keypair("fail-seq-citizen")
+    fast_node.app.state.ensure_account(other.address, other.pub_hex)
+    assert fast_node.produce_block() is not None
+    acc = fast_node.app.state.accounts[genesis_kp.address]
+    seq0 = acc.sequence
+    bad = fast_node.compose_tx(
+        genesis_kp,
+        [MsgSend(from_address=genesis_kp.address, to_address=other.address, denom="uant", amount=1)],
+    )
+    assert fast_node.broadcast_tx(bad)["code"] == 0
+    decl = fast_node.compose_tx(
+        genesis_kp,
+        [MsgDeclareParticipation(validator=genesis_kp.address, b_i=400_000, s_i=200_000)],
+    )
+    assert decl.auth_info.signer_infos[0].sequence == seq0 + 1
+    assert fast_node.broadcast_tx(decl)["code"] == 0
+    block = fast_node.produce_block()
+    assert block is not None
+    assert fast_node.app.state.accounts[genesis_kp.address].sequence == seq0 + 2
+    assert fast_node.app.state.accounts[other.address].ant == 0
+
+
+def test_compose_tx_chains_pending_sequence(fast_node, genesis_kp):
+    """Mint then declare from genesis: second tx uses committed+pending, height finalizes."""
+    other = derive_keypair("pending-seq-citizen")
+    fast_node.app.state.ensure_account(other.address, other.pub_hex)
+    assert fast_node.produce_block() is not None
+    send = fast_node.compose_tx(
+        genesis_kp,
+        [MsgSend(from_address=genesis_kp.address, to_address=other.address, denom="uwrt", amount=100)],
+    )
+    assert send.auth_info.signer_infos[0].sequence == fast_node.app.state.accounts[genesis_kp.address].sequence
+    assert fast_node.broadcast_tx(send)["code"] == 0
+    decl = fast_node.compose_tx(
+        genesis_kp,
+        [MsgDeclareParticipation(validator=genesis_kp.address, b_i=400_000, s_i=200_000)],
+    )
+    assert decl.auth_info.signer_infos[0].sequence == send.auth_info.signer_infos[0].sequence + 1
+    assert fast_node.broadcast_tx(decl)["code"] == 0
+    block = fast_node.produce_block()
+    assert block is not None
+    assert fast_node.app.state.accounts[other.address].wrt == 100

@@ -14,6 +14,8 @@ from volnix_traffic.settings import TrafficSettings
 log = logging.getLogger("volnix_traffic.citizens")
 
 MIN_TRANSFER = 10_000
+TRANSFERS_FLOOR_MIN = 2
+TRANSFERS_FLOOR_MAX = 4
 
 
 def spend_probability(intensity: float) -> float:
@@ -21,6 +23,11 @@ def spend_probability(intensity: float) -> float:
     if intensity <= 0:
         return 0.0
     return min(1.0, 0.1 * float(intensity))
+
+
+def transfers_floor(citizen_transfers_per_tick: int) -> int:
+    """MsgSend floor per height when intensity > 0 (README clamp 2–4)."""
+    return max(TRANSFERS_FLOOR_MIN, min(TRANSFERS_FLOOR_MAX, int(citizen_transfers_per_tick)))
 
 
 class CitizenTraffic:
@@ -88,10 +95,14 @@ class CitizenTraffic:
         if p <= 0:
             return 0
         spenders = [b for b in wallets if rng.random() < p]
-        # Keep the economy visibly alive at low intensity.
-        if not spenders:
-            spenders = rng.sample(wallets, min(2, len(wallets)))
-        cap = max(2, int(self.settings.max_actions_per_tick))
+        # README: citizen_transfers_per_tick (clamped 2–4) is the floor when intensity > 0.
+        floor = min(transfers_floor(self.settings.citizen_transfers_per_tick), len(wallets))
+        if len(spenders) < floor:
+            remaining = [b for b in wallets if b not in spenders]
+            need = floor - len(spenders)
+            if remaining:
+                spenders.extend(rng.sample(remaining, min(need, len(remaining))))
+        cap = max(floor, int(self.settings.max_actions_per_tick))
         if len(spenders) > cap:
             rng.shuffle(spenders)
             spenders = spenders[:cap]

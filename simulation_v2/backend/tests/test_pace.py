@@ -19,11 +19,14 @@ def test_debt_from_missed_budget_catchup_then_reset():
     p = AttemptPace()
     p.missed_budget_sec = 150  # 2 target minutes
     p.attempt_window_sec = 1
-    # First valid: debt=2, then decrement → 1, T=1
+    # First valid: convert → debt=2, T=1 (do not consume debt on same success)
+    assert p.on_valid_block() == T_MIN
+    assert p.pace_debt_blocks == 2
+    assert p.missed_budget_sec == 0
+    # Second: debt→1, T=1
     assert p.on_valid_block() == T_MIN
     assert p.pace_debt_blocks == 1
-    assert p.missed_budget_sec == 0
-    # Second valid: debt→0, T=60
+    # Third: debt→0, T=60
     assert p.on_valid_block() == BASE_BLOCK_TIME
     assert p.pace_debt_blocks == 0
     assert p.attempt_window_sec == BASE_BLOCK_TIME
@@ -36,15 +39,13 @@ def test_valid_without_missed_stays_at_base():
     assert p.missed_budget_sec == 0
 
 
-def test_missed_under_one_minute_no_debt():
+def test_one_minute_missed_starts_catchup_t1():
     p = AttemptPace()
     p.on_empty_attempt()  # missed=60, T=30
-    p.on_empty_attempt()  # missed=90, T=15 — still debt only applied on valid
-    # Force missed below 2 minutes but >= 1: after first empty alone debt=1
-    p2 = AttemptPace()
-    p2.on_empty_attempt()  # missed=60
-    assert p2.on_valid_block() == BASE_BLOCK_TIME  # debt=1 then -=1 → 0 → reset
-    assert p2.pace_debt_blocks == 0
+    assert p.on_valid_block() == T_MIN  # debt=1, next window T=1
+    assert p.pace_debt_blocks == 1
+    assert p.on_valid_block() == BASE_BLOCK_TIME
+    assert p.pace_debt_blocks == 0
 
 
 def test_reset():

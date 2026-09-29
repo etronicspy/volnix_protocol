@@ -32,15 +32,17 @@ def genesis_kp():
 
 @pytest.fixture
 def node(tmp_path: Path) -> Node:
+    """Node with STAND-ONLY auto_declare so heights finalize without traffic."""
     g = write_genesis(tmp_path / "genesis.default.json")
-    n = Node(data_dir=tmp_path / "data", genesis_path=g)
+    n = Node(data_dir=tmp_path / "data", genesis_path=g, auto_declare=True)
     n.load_or_init()
     return n
 
 
 @pytest.fixture
 def fast_node(tmp_path: Path) -> Node:
+    """Fast epoch fixture; auto_declare=True for subsidy without explicit declares."""
     g = write_genesis(tmp_path / "genesis.default.json", epoch_blocks=3, moa_validator_window=10_000)
-    n = Node(data_dir=tmp_path / "data", genesis_path=g)
+    n = Node(data_dir=tmp_path / "data", genesis_path=g, auto_declare=True)
     n.load_or_init()
     return n

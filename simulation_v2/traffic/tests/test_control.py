@@ -58,5 +58,31 @@ def test_control_status_start_stop(tmp_path: Path):
         client.post("/intensity", json={"intensity": 1.0})
         assert client.get("/status").json()["intensity"] == 1.0
 
+        # API rejects > 10; runtime clamps if set directly.
+        bad = client.post("/intensity", json={"intensity": 50.0})
+        assert bad.status_code == 422
+        runtime.set_intensity(50.0)
+        assert runtime.intensity == 10.0
+
         client.post("/stop")
         assert client.get("/status").json()["running"] is False
+
+        runtime.registry.add(BotWallet(seed="bot-1", address="volnix1y", role="validator"))
+        runtime.supervisor.agents["bot-1"] = object()  # type: ignore[assignment]
+        runtime.last_height = 4
+        released = client.post("/release")
+        assert released.status_code == 200
+        body_rel = released.json()
+        assert body_rel["release"] is True
+        assert body_rel["running"] is True
+        assert "bot-1" not in runtime.supervisor.agents
+
+        reset = client.post("/reset")
+        assert reset.status_code == 200
+        body_r = reset.json()
+        assert body_r["wallets"] == 0
+        assert body_r["agents"] == []
+        assert runtime.last_height == -1
+        assert client.get("/wallets").json()["count"] == 0
+        saved = (tmp_path / "wallets.json").read_text(encoding="utf-8")
+        assert '"wallets": []' in saved

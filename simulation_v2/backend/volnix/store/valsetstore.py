@@ -21,6 +21,9 @@ class ValidatorSetStore:
         self._log.append({"height": height, "validator_set": vset.to_dict()})
         self._by_height[height] = vset
 
+    def flush(self) -> None:
+        self._log.flush()
+
     def get(self, height: int) -> ValidatorSet | None:
         return self._by_height.get(height)
 

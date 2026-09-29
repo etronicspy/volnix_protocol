@@ -55,7 +55,7 @@ a:hover {
 }
 
 button,
-input,
+input:not([type='range']),
 select,
 textarea {
   font: inherit;
@@ -149,6 +149,10 @@ p {
   letter-spacing: 0.06em;
   color: var(--ink-muted);
   margin-bottom: 0.35rem;
+}
+
+.stat-label.as-written {
+  text-transform: none;
 }
 
 .stat-value {

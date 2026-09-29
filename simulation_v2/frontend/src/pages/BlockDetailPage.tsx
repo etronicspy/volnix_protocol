@@ -91,7 +91,7 @@ function PovbPanel({ povb }: { povb: PovbTrace }) {
           <div className="stat-value sm">{formatMicro(sumB)}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">α / λ / K</div>
+          <div className="stat-label as-written">α / λ / K</div>
           <div className="stat-value sm">
             {povb.alpha ?? '—'} / {povb.lambda ?? '—'} / {povb.k ?? '—'}
           </div>

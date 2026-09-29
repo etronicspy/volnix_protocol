@@ -99,6 +99,10 @@ class BotRegistry:
     def get_by_seed(self, seed: str) -> Optional[BotWallet]:
         return self._by_seed.get(seed)
 
+    def clear(self) -> None:
+        self._by_seed.clear()
+        self._by_address.clear()
+
     def add(self, bot: BotWallet) -> BotWallet:
         self._by_seed[bot.seed] = bot
         if bot.address:

@@ -38,6 +38,9 @@ class TxIndex:
         )
         self._add(loc)
 
+    def flush(self) -> None:
+        self._log.flush()
+
     def _add(self, loc: TxLocation) -> None:
         self._by_hash[loc.tx_hash] = loc
         self._by_account.setdefault(loc.sender, []).append(loc)

@@ -43,13 +43,20 @@ class AttemptPace:
         return self.attempt_window_sec
 
     def on_valid_block(self) -> int:
-        """After a finalized height; return the next attempt window T."""
+        """After a finalized height; return the next attempt window T.
+
+        Canon §6.2: convert missed→debt on success; while debt>0 the *next*
+        window is T=1. Do not consume a newly converted debt on the same success.
+        """
+        converted = False
         if self.pace_debt_blocks <= 0 and self.missed_budget_sec > 0:
             self.pace_debt_blocks = self.missed_budget_sec // self.base_block_time
             self.missed_budget_sec = 0
+            converted = True
 
         if self.pace_debt_blocks > 0:
-            self.pace_debt_blocks -= 1
+            if not converted:
+                self.pace_debt_blocks -= 1
             if self.pace_debt_blocks > 0:
                 self.attempt_window_sec = self.t_min
             else:

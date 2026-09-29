@@ -21,6 +21,9 @@ class ResultStore:
         self._log.append(results.to_dict())
         self._by_height[results.height] = results
 
+    def flush(self) -> None:
+        self._log.flush()
+
     def get(self, height: int) -> BlockResults | None:
         return self._by_height.get(height)
 

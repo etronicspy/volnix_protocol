@@ -1,4 +1,4 @@
-"""Canonical application messages (canon 5.1-sim)."""
+"""Canonical application messages (canon 5.5-sim)."""
 
 from __future__ import annotations
 

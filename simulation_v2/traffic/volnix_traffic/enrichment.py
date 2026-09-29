@@ -53,7 +53,10 @@ def forecast_validator(
     b_frac: float,
     s_frac: float,
 ) -> HorizonForecast:
-    L_i = account.lzn_activated or account.lzn_total or 0
+    # Capacity after same-horizon activate: activated + free (not L_i/L_total share).
+    L_i = int(account.lzn_activated) + int(account.lzn)
+    if L_i <= 0:
+        L_i = SCALE  # assume can buy ~1 LZN if none yet (bootstrap)
     fees = int(FEE_PER_TX * AVG_TXS_PER_BLOCK)
     pick = pick_declare(
         address=account.address,
@@ -72,7 +75,7 @@ def forecast_validator(
     if pick is None:
         return HorizonForecast(role=ROLE_VALIDATOR, income_wrt=0, cost_wrt=0, risk_wrt=0, enter=False)
     h = max(1, int(horizon))
-    # pick.expected_wrt is already net per block (reward - ant_price * burned)
+    # pick.expected_wrt is already net per block (reward - ant_price * burned) — by b_i.
     if pick.enter:
         income = max(0, pick.expected_wrt) * h
         cost = 0

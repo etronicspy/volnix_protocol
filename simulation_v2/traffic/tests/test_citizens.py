@@ -59,6 +59,26 @@ async def test_spend_stops_when_intensity_zero():
 
 
 @pytest.mark.asyncio
+async def test_spend_floor_from_citizen_transfers_per_tick():
+    """Low intensity still spends at least clamp(citizen_transfers_per_tick, 2, 4)."""
+    settings = TrafficSettings(autostart=False, citizen_transfers_per_tick=3)
+    reg = BotRegistry()
+    for i in range(6):
+        w = BotWallet(seed=f"w{i}", address=f"volnix1w{i}", kind=KIND_CITIZEN)
+        reg.add(w)
+    by_addr = {
+        f"volnix1w{i}": {"address": f"volnix1w{i}", "wrt": MIN_TRANSFER * 20} for i in range(6)
+    }
+    traffic = CitizenTraffic(settings, reg)
+    with patch("volnix_traffic.citizens.actions.send_wrt", new_callable=AsyncMock) as send:
+        send.return_value = True
+        # intensity 0.01 → p≈0.001; with fixed rng almost nobody samples → floor kicks in
+        n = await traffic.step(AsyncMock(), by_addr, intensity=0.01, rng=random.Random(1))
+    assert n == 3
+    assert send.await_count == 3
+
+
+@pytest.mark.asyncio
 async def test_citizen_step_sends_n_transfers():
     settings = TrafficSettings(autostart=False, citizen_transfers_per_tick=3)
     reg = BotRegistry()

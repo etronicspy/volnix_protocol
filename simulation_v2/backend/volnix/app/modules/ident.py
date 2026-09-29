@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from volnix.app.modules.supplier_gate import check_new_supplier
 from volnix.app.state import Account, AppState
 from volnix.types.events import Event, ev
 from volnix.types.msgs import MsgMigrateRole, MsgVerifyIdentity
 from volnix.types.role import Role
+
+if TYPE_CHECKING:
+    from volnix.types.validator import ValidatorSet
 
 
 class IdentError(ValueError):
@@ -45,6 +50,39 @@ def deliver_verify(state: AppState, msg: MsgVerifyIdentity) -> list[Event]:
     ]
 
 
+def check_moa(state: AppState) -> tuple[list[Event], list[str]]:
+    """Strip idle roles. Returns (events, addresses of validators stripped)."""
+    events: list[Event] = []
+    stripped_validators: list[str] = []
+    for acc in list(state.accounts.values()):
+        if acc.role == Role.CITIZEN:
+            continue
+        window = (
+            state.params.moa_supplier_window
+            if acc.role == Role.SUPPLIER
+            else state.params.moa_validator_window
+        )
+        last = acc.last_tx_height if acc.last_tx_height > 0 else acc.created_height
+        if state.height - last < window:
+            continue
+        was_validator = acc.role == Role.VALIDATOR
+        events.extend(_strip_role_moa(state, acc))
+        if was_validator:
+            stripped_validators.append(acc.address)
+    return events, stripped_validators
+
+
+def remove_from_validator_set(vset: "ValidatorSet", address: str) -> None:
+    """Eject address from set; keep last member so the stand can still propose."""
+    if not any(v.address == address for v in vset.validators):
+        return
+    if len(vset.validators) <= 1:
+        return
+    vset.validators = [v for v in vset.validators if v.address != address]
+    if vset.proposer == address and vset.validators:
+        vset.proposer = vset.validators[0].address
+
+
 def deliver_migrate(state: AppState, msg: MsgMigrateRole) -> list[Event]:
     from volnix.app.modules.anteil import cancel_order
 
@@ -55,6 +93,11 @@ def deliver_migrate(state: AppState, msg: MsgMigrateRole) -> list[Event]:
         raise IdentError("genesis validator without ZKP cannot migrate via ZKP")
     if not msg.zkp_proof:
         raise IdentError("zkp_proof required")
+    # §3.2: bind a *new* ZKP nullifier — do not reuse/copy src.zkp_id
+    if msg.zkp_proof == src.zkp_id:
+        raise IdentError("migrate requires a new zkp_proof")
+    if msg.zkp_proof in state.nullifiers:
+        raise IdentError("zkp proof already used")
     dst = state.ensure_account(msg.to_address)
     if dst.role != Role.CITIZEN:
         raise IdentError("destination must be a new citizen wallet")
@@ -64,17 +107,21 @@ def deliver_migrate(state: AppState, msg: MsgMigrateRole) -> list[Event]:
         if o.owner == src.address and o.status == "open":
             cancel_order(state, o.order_id, protocol=True)
 
+    # Headroom: room = MAX_FROZEN − dst.lzn_activated (§3.2)
     activated = src.lzn_activated
     free = src.lzn
-    if activated > state.params.lzn_max_frozen_per_address:
-        # Overflow beyond per-address ceiling becomes free LZN on destination
-        overflow = activated - state.params.lzn_max_frozen_per_address
-        activated = state.params.lzn_max_frozen_per_address
-        free += overflow
+    room = max(0, state.params.lzn_max_frozen_per_address - int(dst.lzn_activated))
+    if activated > room:
+        free += activated - room
+        activated = room
 
     old_role = src.role
+    if src.zkp_id:
+        state.nullifiers.discard(src.zkp_id)
+    state.nullifiers.add(msg.zkp_proof)
+
     dst.role = old_role
-    dst.zkp_id = src.zkp_id
+    dst.zkp_id = msg.zkp_proof
     dst.ant = src.ant
     dst.lzn = free
     dst.lzn_activated = activated
@@ -99,23 +146,6 @@ def deliver_migrate(state: AppState, msg: MsgMigrateRole) -> list[Event]:
             block_height=state.height,
         )
     ]
-
-
-def check_moa(state: AppState) -> list[Event]:
-    events: list[Event] = []
-    for acc in list(state.accounts.values()):
-        if acc.role == Role.CITIZEN:
-            continue
-        window = (
-            state.params.moa_supplier_window
-            if acc.role == Role.SUPPLIER
-            else state.params.moa_validator_window
-        )
-        last = acc.last_tx_height if acc.last_tx_height > 0 else acc.created_height
-        if state.height - last < window:
-            continue
-        events.extend(_strip_role_moa(state, acc))
-    return events
 
 
 def _strip_role_moa(state: AppState, acc: Account) -> list[Event]:

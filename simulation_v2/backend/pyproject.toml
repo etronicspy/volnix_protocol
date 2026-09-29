@@ -1,7 +1,7 @@
 [project]
 name = "volnix-simulation-v2-backend"
 version = "0.1.0"
-description = "Off-chain blockchain-node simulator for Volnix Protocol (canon 5.1-sim)"
+description = "Off-chain blockchain-node simulator for Volnix Protocol (canon 5.5-sim)"
 requires-python = ">=3.9"
 
 [tool.pytest.ini_options]

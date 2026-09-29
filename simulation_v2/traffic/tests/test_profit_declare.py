@@ -73,6 +73,32 @@ def test_profit_prefers_verified_when_capital():
     assert desired in (ROLE_CITIZEN, ROLE_SUPPLIER, ROLE_VALIDATOR)
 
 
+def test_validator_roi_equal_share_not_l_mass():
+    """§5.4: reward share is among validators (b_i spirit), not L_i/L_total."""
+    strat = ProfitStrategy()
+    snap = MarketSnapshot(
+        block_reward=50 * SCALE,
+        ant_price=1,
+        l_total=100 * SCALE,  # huge network mass — must not crush income to ~1%
+        n_validators=2,
+        n_suppliers=1,
+        epoch_blocks=10080,
+        lambda_f=1 / 3,
+    )
+    # Small L_i relative to l_total
+    acc = AccountView(
+        address="v",
+        role=ROLE_VALIDATOR,
+        wrt=10 * SCALE,
+        lzn=0,
+        lzn_activated=SCALE,
+        ant=10 * SCALE,
+    )
+    roi = strat._estimate_validator(acc, snap)
+    # Equal share among 2 validators over half-epoch would be large vs L-share of 1%.
+    assert roi.income_wrt > float(snap.block_reward) * 0.05 * 100
+
+
 def test_snapshot_from_chain_mid_price():
     summary = {
         "height": 10,

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { EXPLORER_POLL_MS } from '../config'
-import { api } from '../lib/api'
+import { api, trafficApi } from '../lib/api'
 import { useChainWebSocket } from '../hooks/useChainWebSocket'
 import { useLiveRefresh } from '../hooks/useFetch'
 import { BlockSpeedControl } from './BlockSpeedControl'
@@ -25,6 +25,27 @@ export function Layout() {
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
+
+  async function onResetChain() {
+    if (resetting) return
+    if (!window.confirm('Reset the chain to genesis? Blocks and accounts will be wiped.')) return
+    setResetting(true)
+    setSearchError(null)
+    try {
+      await api.post('/api/v1/operator/reset-chain')
+      try {
+        await trafficApi.post('/reset')
+      } catch {
+        /* traffic process is optional */
+      }
+      navigate('/')
+    } catch {
+      setSearchError('Reset failed')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   async function onSearch(e: FormEvent) {
     e.preventDefault()
@@ -39,6 +60,8 @@ export function Layout() {
         navigate(`/txs/${res.hash}`)
       } else if (res.kind === 'account' && res.address) {
         navigate(`/accounts/${res.address}`)
+      } else if (/^[0-9a-fA-F]{64}$/.test(query)) {
+        navigate(`/txs/${query}`)
       } else {
         setSearchError('Nothing found')
       }
@@ -57,6 +80,9 @@ export function Layout() {
             </Link>
             <div className={styles.brandControls}>
               <BlockSpeedControl />
+              <button type="button" className={styles.reset} disabled={resetting} onClick={() => void onResetChain()}>
+                {resetting ? 'Resetting…' : 'Reset chain'}
+              </button>
               <div className={styles.live}>
                 <span className={`${styles.dot} ${live.connected ? styles.on : ''}`} />
                 {live.connected ? 'live' : 'offline'}

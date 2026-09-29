@@ -32,11 +32,13 @@ def build_genesis_declare_tx(node: "Node") -> Optional[Tx]:
         return None
     if acc.lzn_activated <= 0:
         return None
+    pending_from = 0
     for existing in node.mempool.pending():
-        if existing.signer() == kp.address and any(
-            m.type == "povb/MsgDeclareParticipation" for m in existing.body.messages
-        ):
+        if existing.signer() != kp.address:
+            continue
+        if any(m.type == "povb/MsgDeclareParticipation" for m in existing.body.messages):
             return None
+        pending_from += 1
 
     pair = suggest_declare_bs(acc.lzn_activated, acc.ant, node.app.state.params.alpha)
     if pair is None:
@@ -46,4 +48,5 @@ def build_genesis_declare_tx(node: "Node") -> Optional[Tx]:
         node.app.state,
         kp,
         [MsgDeclareParticipation(validator=kp.address, b_i=b_i, s_i=s_i)],
+        sequence=acc.sequence + pending_from,
     )

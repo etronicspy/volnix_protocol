@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fractions import Fraction
 
+from volnix.app.modules.epoch import lzn_horizon
 from volnix.app.state import ALPHA_MAX, ALPHA_MIN, LAMBDA_MAX, PARAM_BOUNDS, AppState, Proposal
 from volnix.types.events import Event, ev
 from volnix.types.msgs import MsgSubmitProposal, MsgVote
@@ -17,7 +18,6 @@ ALLOWED_PARAMS = {
     "lzn_freeze_period",
     "moa_supplier_window",
     "moa_validator_window",
-    "ant_supplier_epoch_limit",
     "block_gas_limit",
     "max_block_bytes",
     "max_active_suppliers",
@@ -99,7 +99,7 @@ def tally_and_execute(state: AppState) -> list[Event]:
                 _refund(state, prop)
                 events.append(ev("governance.proposal_rejected", proposal_id=prop.proposal_id))
         if prop.status == "passed" and state.height >= prop.execute_height:
-            _apply(state, prop)
+            events.extend(_apply(state, prop))
             prop.status = "executed"
             _refund(state, prop)
             events.append(ev("governance.proposal_executed", proposal_id=prop.proposal_id))
@@ -113,9 +113,11 @@ def _refund(state: AppState, prop: Proposal) -> None:
         prop.deposit = 0
 
 
-def _apply(state: AppState, prop: Proposal) -> None:
+def _apply(state: AppState, prop: Proposal) -> list[Event]:
     p = state.params
     changes = dict(prop.parameter_changes)
+    period_keys = ("epoch_blocks", "halving_interval")
+    period_changed = any(k in changes for k in period_keys)
     # apply numeric fields with bounds
     for key, val in list(changes.items()):
         if key in ("lambda_num", "lambda_den", "alpha_num", "alpha_den"):
@@ -141,3 +143,17 @@ def _apply(state: AppState, prop: Proposal) -> None:
         if a < ALPHA_MIN or a > ALPHA_MAX:
             raise GovError("alpha out of bounds")
         p.alpha_num, p.alpha_den = n, d
+    events: list[Event] = []
+    if period_changed:
+        # §5.5: leftover LZN pool R is not burned; N_rem follows new H_end.
+        h_end, n_rem = lzn_horizon(state)
+        events.append(
+            ev(
+                "anteil.lzn_horizon_recomputed",
+                h_end=h_end,
+                n_rem=n_rem,
+                pool_remaining=state.lzn_pool_remaining,
+                height=state.height,
+            )
+        )
+    return events

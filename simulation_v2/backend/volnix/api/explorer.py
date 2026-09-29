@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from volnix.app.modules.anteil import ANT_WRT, LZN_WRT
 from volnix.app.modules.mint import block_reward, era_at
 from volnix.app.state import SCALE
-from volnix.app.txutil import build_tx
 from volnix.crypto.keys import derive_keypair
 from volnix.types.msgs import (
     MsgDeclareParticipation,
@@ -459,15 +458,19 @@ def submit_tx(request: Request, body: BroadcastTxRequest) -> dict[str, Any]:
     return _node(request).broadcast_tx(tx)
 
 
-# --- operator helpers (stand construction, not on-chain messages) ---
+# --- STAND-ONLY operator helpers (not on-chain messages / not production RPC) ---
 
 
 @router.post("/operator/account")
 def op_account(request: Request, body: OperatorAccountRequest) -> dict[str, Any]:
+    """Derive address from a seed. Does not write chain state."""
     kp = derive_keypair(body.seed)
-    node = _node(request)
-    acc = node.app.state.ensure_account(kp.address, kp.pub_hex)
-    return {"address": kp.address, "pub_hex": kp.pub_hex, "account": acc.to_dict()}
+    acc = _node(request).app.state.accounts.get(kp.address)
+    return {
+        "address": kp.address,
+        "pub_hex": kp.pub_hex,
+        "account": acc.to_dict() if acc is not None else None,
+    }
 
 
 @router.post("/operator/mint")
@@ -480,15 +483,13 @@ def op_mint(request: Request, body: OperatorMintRequest) -> dict[str, Any]:
         raise HTTPException(400, "amount must be positive")
     genesis_seed = "volnix-genesis-validator-v2"
     kp = derive_keypair(genesis_seed)
-    node.app.state.ensure_account(body.address)
     genesis_acc = node.app.state.accounts.get(kp.address)
     if genesis_acc is None or genesis_acc.wrt < body.amount:
         raise HTTPException(
             400,
             "genesis WRT insufficient (canon §6.3: no premint; earn via block subsidy, then send)",
         )
-    tx = build_tx(
-        node.app.state,
+    tx = node.compose_tx(
         kp,
         [MsgSend(from_address=kp.address, to_address=body.address, denom="uwrt", amount=body.amount)],
     )
@@ -501,7 +502,7 @@ def op_signed_tx(request: Request, seed: str, messages: list[dict[str, Any]]) ->
     node = _node(request)
     kp = derive_keypair(seed)
     msgs = [msg_from_dict(m) for m in messages]
-    tx = build_tx(node.app.state, kp, msgs)
+    tx = node.compose_tx(kp, msgs)
     return node.broadcast_tx(tx)
 
 
@@ -509,8 +510,7 @@ def op_signed_tx(request: Request, seed: str, messages: list[dict[str, Any]]) ->
 def op_declare(request: Request, body: OperatorDeclareRequest) -> dict[str, Any]:
     node = _node(request)
     kp = derive_keypair(body.seed)
-    tx = build_tx(
-        node.app.state,
+    tx = node.compose_tx(
         kp,
         [MsgDeclareParticipation(validator=kp.address, b_i=body.b_i, s_i=body.s_i)],
     )
@@ -521,9 +521,7 @@ def op_declare(request: Request, body: OperatorDeclareRequest) -> dict[str, Any]
 def op_verify(request: Request, body: OperatorRoleRequest) -> dict[str, Any]:
     node = _node(request)
     kp = derive_keypair(body.seed)
-    node.app.state.ensure_account(kp.address, kp.pub_hex)
-    tx = build_tx(
-        node.app.state,
+    tx = node.compose_tx(
         kp,
         [
             MsgVerifyIdentity(
@@ -541,8 +539,7 @@ def op_verify(request: Request, body: OperatorRoleRequest) -> dict[str, Any]:
 def op_order(request: Request, body: OperatorOrderRequest) -> dict[str, Any]:
     node = _node(request)
     kp = derive_keypair(body.seed)
-    tx = build_tx(
-        node.app.state,
+    tx = node.compose_tx(
         kp,
         [
             MsgPlaceOrder(
@@ -573,6 +570,22 @@ async def op_produce(request: Request, body: ProduceRequest) -> dict[str, Any]:
 def op_pace_get(request: Request) -> dict[str, Any]:
     """Adaptive attempt window + stand time_scale (canon §6.2 / stand)."""
     return _node(request).pace_snapshot()
+
+
+@router.post("/operator/reset-chain")
+async def op_reset_chain(request: Request) -> dict[str, Any]:
+    """STAND-ONLY: delete chain data and reload genesis. time_scale is kept."""
+    node = _node(request)
+    snap = node.reset_chain()
+    await node._emit(
+        {
+            "type": "chain_reset",
+            "height": snap["height"],
+            "chain_id": snap["chain_id"],
+            "app_hash": snap["app_hash"],
+        }
+    )
+    return snap
 
 
 @router.post("/operator/pace")

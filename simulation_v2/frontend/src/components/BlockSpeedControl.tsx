@@ -28,6 +28,13 @@ function sliderToScale(pos: number): number {
   return Math.round(SCALE_MIN * Math.pow(SCALE_MAX / SCALE_MIN, t))
 }
 
+function scaleFromClientX(el: HTMLInputElement, clientX: number): number {
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 0) return SCALE_MIN
+  const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+  return sliderToScale(ratio * SLIDER_MAX)
+}
+
 function formatScale(scale: number): string {
   if (scale >= 100) return `${Math.round(scale)}×`
   if (scale >= 10) return `${scale.toFixed(0)}×`
@@ -57,6 +64,7 @@ export function BlockSpeedControl() {
   const debounceRef = useRef<number | null>(null)
   const latestScale = useRef(scale)
   const loadedRef = useRef(false)
+  const pointerDriven = useRef(false)
   latestScale.current = scale
 
   useEffect(() => {
@@ -107,6 +115,10 @@ export function BlockSpeedControl() {
     }, 120)
   }
 
+  function applyPointer(el: HTMLInputElement, clientX: number) {
+    pushScale(scaleFromClientX(el, clientX))
+  }
+
   const windowLabel = pace ? formatWindow(pace.attempt_window_sec) : '—'
   const wallLabel = pace ? formatWall(pace.wall_sleep_sec ?? pace.produce_interval_sec) : '—'
   const debt = pace?.pace_debt_blocks ?? 0
@@ -115,23 +127,50 @@ export function BlockSpeedControl() {
 
   return (
     <div className={styles.wrap} title={title}>
-      <label className={styles.label} htmlFor="time-scale">
+      <span className={styles.label} id="time-scale-label">
         Time scale
-      </label>
-      <input
-        id="time-scale"
-        className={styles.slider}
-        type="range"
-        min={0}
-        max={SLIDER_MAX}
-        step={1}
-        value={scaleToSlider(scale)}
-        onChange={(e) => pushScale(sliderToScale(Number(e.target.value)))}
-        aria-valuemin={SCALE_MIN}
-        aria-valuemax={SCALE_MAX}
-        aria-valuenow={scale}
-        aria-valuetext={formatScale(scale)}
-      />
+      </span>
+      <div className={styles.sliderCell}>
+        <input
+          id="time-scale"
+          className={styles.slider}
+          type="range"
+          min={0}
+          max={SLIDER_MAX}
+          step={1}
+          value={scaleToSlider(scale)}
+          aria-labelledby="time-scale-label"
+          aria-valuemin={SCALE_MIN}
+          aria-valuemax={SCALE_MAX}
+          aria-valuenow={scale}
+          aria-valuetext={formatScale(scale)}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return
+            // Ancestor backdrop-filter maps a native range click to the minimum.
+            e.preventDefault()
+            pointerDriven.current = true
+            e.currentTarget.setPointerCapture(e.pointerId)
+            applyPointer(e.currentTarget, e.clientX)
+          }}
+          onPointerMove={(e) => {
+            if (!pointerDriven.current || !e.currentTarget.hasPointerCapture(e.pointerId)) return
+            applyPointer(e.currentTarget, e.clientX)
+          }}
+          onPointerUp={(e) => {
+            if (!pointerDriven.current) return
+            applyPointer(e.currentTarget, e.clientX)
+          }}
+          onLostPointerCapture={() => {
+            window.setTimeout(() => {
+              pointerDriven.current = false
+            }, 0)
+          }}
+          onChange={(e) => {
+            if (pointerDriven.current) return
+            pushScale(sliderToScale(Number(e.target.value)))
+          }}
+        />
+      </div>
       <span className={styles.value}>
         {error ? (
           <span className={styles.err}>{error}</span>

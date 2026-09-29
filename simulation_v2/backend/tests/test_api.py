@@ -13,6 +13,7 @@ def test_explorer_and_rpc(tmp_path: Path):
         data_dir=tmp_path / "data",
         genesis_path=g,
         auto_produce=False,
+        auto_declare=True,  # STAND-ONLY: finalize heights without traffic
     )
     app = create_app(settings, auto_produce=False)
     with TestClient(app) as client:
@@ -124,3 +125,28 @@ def test_explorer_and_rpc(tmp_path: Path):
         assert rpc_block.status_code == 200
         search = client.get("/api/v1/search", params={"q": "1"})
         assert search.json()["kind"] == "block"
+
+
+def test_reset_chain_reloads_genesis(tmp_path: Path):
+    g = write_genesis(tmp_path / "genesis.default.json", epoch_blocks=10)
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        genesis_path=g,
+        auto_produce=False,
+        auto_declare=True,
+    )
+    app = create_app(settings, auto_produce=False)
+    with TestClient(app) as client:
+        assert client.post("/api/v1/operator/produce", json={"count": 1}).json()["produced"] == [1]
+        assert client.post("/api/v1/operator/time-scale", json={"time_scale": 90}).status_code == 200
+        wiped = client.post("/api/v1/operator/reset-chain")
+        assert wiped.status_code == 200
+        body = wiped.json()
+        assert body["height"] == 0
+        assert body["time_scale"] == 90.0
+        assert client.get("/status").json()["result"]["sync_info"]["latest_block_height"] == "0"
+        assert client.get("/api/v1/blocks").json()["latest"] == 0
+        assert client.get("/api/v1/blocks/1").status_code == 404
+        again = client.post("/api/v1/operator/produce", json={"count": 1})
+        assert again.status_code == 200
+        assert again.json()["produced"] == [1]

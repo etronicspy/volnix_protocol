@@ -102,11 +102,11 @@ def test_epoch_wipe_and_ant_emit():
     )
     st.accounts["sup"] = Account(address="sup", role=Role.SUPPLIER, ant=50)
     events = process_boundary(st)
-    assert st.accounts["val"].ant == 0
+    assert st.accounts["val"].ant == 100
     assert st.accounts["sup"].ant == SCALE * 3
     types = [e.type for e in events]
     assert "anteil.epoch_reset" in types
-    assert st.epochs[-1].ant_wiped == 150
+    assert st.epochs[-1].ant_wiped == 50
     assert st.epochs[-1].ant_emit == SCALE * 3
 
 

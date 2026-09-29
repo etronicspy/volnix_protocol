@@ -23,6 +23,9 @@ class BlockStore:
         self._log.append(block.to_dict())
         self._index(block)
 
+    def flush(self) -> None:
+        self._log.flush()
+
     def _index(self, block: Block) -> None:
         h = block.header.height
         self._by_height[h] = block

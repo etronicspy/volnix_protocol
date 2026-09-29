@@ -1,1 +1,1 @@
-"""Application modules implementing canon 5.1-sim."""
+"""Application modules implementing canon 5.5-sim."""

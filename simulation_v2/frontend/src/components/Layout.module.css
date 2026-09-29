@@ -56,6 +56,30 @@
   color: var(--accent);
 }
 
+.reset {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--bad);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.55rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.reset:hover:not(:disabled) {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 8%, transparent);
+}
+
+.reset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .live {
   display: flex;
   align-items: center;

@@ -57,9 +57,11 @@ data/                         # runtime chain (gitignored)
 | `GENESIS_PATH` | `config/genesis.default.json` | genesis template |
 | `PORT` | `8001` | HTTP port |
 | `AUTO_PRODUCE` | `true` | start the produce loop on boot (pace from §6.2, not a fixed interval) |
-| `AUTO_DECLARE` | `true` | stand helper: enqueue genesis `MsgDeclareParticipation` each height. **Required** for emission without traffic: canon 5.5-sim has **no** last_applied replay — without a fresh declare tx the height is **not finalized** (empty attempt shrinks `T`). Set **`false`** when `simulation_v2/traffic` owns `(b_i, s_i)` |
-| `TIME_SCALE` | `60` | stand-only: `wall_sleep = attempt_window / time_scale` (`1`…`3600`; live via `/api/v1/operator/time-scale`). Default 60 → canon minute ≈ 1 s wall-clock |
+| `AUTO_DECLARE` | `false` | **STAND-ONLY:** enqueue genesis `MsgDeclareParticipation` each height. Canon 5.5-sim has **no** last_applied replay — without a fresh declare the height is **not finalized**. Set `true` only for lone-node demos/tests; leave `false` when `simulation_v2/traffic` owns `(b_i, s_i)` |
+| `TIME_SCALE` | `60` | **STAND-ONLY:** `wall_sleep = attempt_window / time_scale` (`1`…`3600`; live via `/api/v1/operator/time-scale`). Default 60 → canon minute ≈ 1 s wall-clock |
 | `CORS_ORIGINS` | `*` | CORS |
+
+**Stand-only surfaces** (not on-chain canon): `AUTO_DECLARE`, `TIME_SCALE`, and `/api/v1/operator/*` (mint/tx/declare/verify/produce/pace). Use traffic or explicit txs for production-like runs.
 
 **PoVB burns (5.5-sim):** a height commits only with **new** `MsgDeclareParticipation` in the block (`f_i + b_i + s_i` paid from ANT). Without declares the
 node does **not** finalize the height (empty attempt). Entry fee `f_i = ⌊α · L_i⌋` with genesis

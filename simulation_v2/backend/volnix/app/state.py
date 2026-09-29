@@ -34,7 +34,6 @@ class Params:
     max_active_suppliers: int = 108
     block_gas_limit: int = 40_000_000
     max_block_bytes: int = 22_020_096
-    ant_supplier_epoch_limit: int = 0  # 0 = disabled
     gov_voting_period: int = 10_080
     gov_timelock: int = 20_160
     gov_min_deposit: int = 1_000_000
@@ -73,7 +72,6 @@ PARAM_BOUNDS: dict[str, tuple[int, int]] = {
     "lzn_freeze_period": (1, 5_256_000),
     "moa_supplier_window": (1, 10_512_000),
     "moa_validator_window": (1, 5_256_000),
-    "ant_supplier_epoch_limit": (0, 10**18),
     "block_gas_limit": (1_000, 200_000_000),
     "max_block_bytes": (1024, 100_000_000),
     "max_active_suppliers": (1, 1_000_000),
@@ -254,11 +252,41 @@ class AppState:
         return [a for a in self.accounts.values() if a.role == Role.VALIDATOR]
 
     def snapshot(self) -> AppState:
-        return copy.deepcopy(self)
+        """Isolated copy for rollback. Flat records are shallow-copied; nested proposals are deep."""
+        other = AppState.__new__(AppState)
+        other.params = copy.copy(self.params)
+        other.accounts = {k: copy.copy(v) for k, v in self.accounts.items()}
+        other.orders = {k: copy.copy(v) for k, v in self.orders.items()}
+        other.nullifiers = set(self.nullifiers)
+        other.declares = {k: copy.copy(v) for k, v in self.declares.items()}
+        other.height = self.height
+        other.chain_id = self.chain_id
+        other.genesis_time = self.genesis_time
+        other.next_order_id = self.next_order_id
+        other.next_proposal_id = self.next_proposal_id
+        other.proposals = {k: copy.deepcopy(v) for k, v in self.proposals.items()}
+        other.wrt_supply = self.wrt_supply
+        other.lzn_minted_tokens = self.lzn_minted_tokens
+        other.lzn_pool_remaining = self.lzn_pool_remaining
+        other.epoch = self.epoch
+        epochs: list[EpochRecord] = []
+        for rec in self.epochs:
+            copied = copy.copy(rec)
+            copied.suppliers = list(rec.suppliers)
+            epochs.append(copied)
+        other.epochs = epochs
+        other.fee_pool = self.fee_pool
+        other.last_povb = copy.deepcopy(self.last_povb)
+        other.passed_validators = list(self.passed_validators)
+        other.set_updated = self.set_updated
+        other.genesis_validator = self.genesis_validator
+        other.last_ant_wrt_price = self.last_ant_wrt_price
+        return other
 
     def restore(self, other: AppState) -> None:
+        """Install a snapshot. The snapshot object must not be used afterwards."""
         self.__dict__.clear()
-        self.__dict__.update(copy.deepcopy(other.__dict__))
+        self.__dict__.update(other.__dict__)
 
     def canonical(self) -> dict[str, Any]:
         return {

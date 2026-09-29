@@ -29,6 +29,25 @@ MIN_ORDER = 10_000
 SCALE = 1_000_000
 FEE_PER_TX = 0.02 * SCALE
 AVG_TXS_PER_BLOCK = 4.0
+# Canon §4.1: ⌊LZN_TOTAL_SUPPLY / 3⌋ in whole LZN, then × SCALE micro-units.
+LZN_TOTAL_SUPPLY = 1_000_000_000
+LZN_MAX_FROZEN = (LZN_TOTAL_SUPPLY // 3) * SCALE
+ANT_BUFFER_BLOCKS = 16
+WRT_FEE_RESERVE = int(FEE_PER_TX * 4)
+
+
+def _side_orders(orderbook: Optional[Dict[str, Any]], address: str, side: str) -> list[Dict[str, Any]]:
+    if not orderbook or not address:
+        return []
+    key = "bids" if side == "BUY" else "asks"
+    out: list[Dict[str, Any]] = []
+    for raw in orderbook.get(key) or []:
+        if raw.get("owner") != address:
+            continue
+        if int(raw.get("remaining") or 0) <= 0:
+            continue
+        out.append(raw)
+    return out
 
 
 @dataclass
@@ -148,7 +167,8 @@ class EnrichmentAgent:
     def adopt(self, card: StrategyCard) -> None:
         self.strategy.b_frac = card.b_frac
         self.strategy.s_frac = card.s_frac
-        self.strategy.activate_ratio = card.activate_ratio
+        # Capacity race: always max-activate; peer cards cannot teach deactivation.
+        self.strategy.activate_ratio = 1.0
         self.strategy.ask_shade = card.ask_shade
         self.strategy.bid_shade = card.bid_shade
         if card.desired_role in (ROLE_SUPPLIER, ROLE_VALIDATOR):
@@ -185,6 +205,8 @@ class EnrichmentAgent:
         enable_market: bool,
         enable_declare: bool,
         enable_role_flip: bool,
+        ant_orderbook: Optional[Dict[str, Any]] = None,
+        lzn_orderbook: Optional[Dict[str, Any]] = None,
     ) -> AgentTickResult:
         out = AgentTickResult()
         view = account_view_from_row(row)
@@ -236,7 +258,14 @@ class EnrichmentAgent:
 
         try:
             if enable_market:
-                out.market = await self._maybe_market(client, view, snap, row)
+                out.market = await self._maybe_market(
+                    client,
+                    view,
+                    snap,
+                    row,
+                    ant_orderbook=ant_orderbook,
+                    lzn_orderbook=lzn_orderbook,
+                )
             if self.wallet.role == ROLE_VALIDATOR and enable_declare:
                 pick = pick_declare(
                     address=self.wallet.address,
@@ -280,44 +309,166 @@ class EnrichmentAgent:
         view: AccountView,
         snap: MarketSnapshot,
         row: Dict[str, Any],
+        *,
+        ant_orderbook: Optional[Dict[str, Any]] = None,
+        lzn_orderbook: Optional[Dict[str, Any]] = None,
     ) -> bool:
+        del row  # freeze/deactivate no longer consulted
         if self.wallet.role == ROLE_VALIDATOR:
-            freeze_until = int(row.get("lzn_freeze_until") or 0)
-            height = int(snap.height or 0)
-            if view.lzn > MIN_ORDER and self.strategy.activate_ratio > 0:
-                amt = max(MIN_ORDER, int(view.lzn * self.strategy.activate_ratio))
-                return await actions.activate_lzn(client, self.wallet, min(amt, view.lzn))
-            if (
-                view.lzn_activated > MIN_ORDER
-                and height >= freeze_until > 0
-                and self.strategy.activate_ratio < 0.5
-            ):
-                extra = view.lzn_activated // 2
-                if extra >= MIN_ORDER:
-                    return await actions.deactivate_lzn(client, self.wallet, extra)
-            if view.ant < view.lzn_activated // 4 and view.wrt > snap.ant_price * MIN_ORDER:
-                price = max(1, int(snap.ant_price * self.strategy.bid_shade))
-                lot = min(MIN_ORDER * 5, view.wrt // price)
-                if lot >= MIN_ORDER:
-                    return await actions.place_order(
-                        client,
-                        self.wallet,
-                        market="ANT/WRT",
-                        side="BUY",
-                        amount=lot,
-                        price=price,
-                    )
-            return False
+            return await self._validator_market(
+                client,
+                view,
+                snap,
+                ant_orderbook=ant_orderbook,
+                lzn_orderbook=lzn_orderbook,
+            )
 
         if self.wallet.role == ROLE_SUPPLIER and view.ant >= MIN_ORDER:
+            owned = _side_orders(ant_orderbook, self.wallet.address, "SELL")
             lot = max(MIN_ORDER, int(view.ant * 0.10))
             price = max(1, int(snap.ant_price * self.strategy.ask_shade))
-            return await actions.place_order(
+            return await self._merge_place(
                 client,
-                self.wallet,
                 market="ANT/WRT",
                 side="SELL",
                 amount=min(lot, view.ant),
                 price=price,
+                existing=owned,
             )
+        if self.wallet.role == ROLE_SUPPLIER:
+            owned = _side_orders(ant_orderbook, self.wallet.address, "SELL")
+            if len(owned) > 1:
+                price = max(1, int(snap.ant_price * self.strategy.ask_shade))
+                return await self._merge_place(
+                    client,
+                    market="ANT/WRT",
+                    side="SELL",
+                    amount=0,
+                    price=price,
+                    existing=owned,
+                )
         return False
+
+    async def _merge_place(
+        self,
+        client: NodeClient,
+        *,
+        market: str,
+        side: str,
+        amount: int,
+        price: int,
+        existing: Sequence[Dict[str, Any]],
+        quote_free: int = 0,
+    ) -> bool:
+        """Cancel this wallet's open orders on the same side, then post one combined order."""
+        extra = max(0, int(amount))
+        if extra < MIN_ORDER and len(existing) <= 1:
+            return False
+        released = 0
+        quote_back = 0
+        for raw in existing:
+            oid = str(raw.get("order_id") or "")
+            rem = int(raw.get("remaining") or 0)
+            old_px = int(raw.get("price") or 0)
+            if not oid or rem <= 0:
+                continue
+            if await actions.cancel_order(client, self.wallet, oid):
+                released += rem
+                quote_back += rem * old_px
+        total = extra + released
+        if side == "BUY" and price > 0:
+            total = min(total, (max(0, quote_free) + quote_back) // price)
+        if total < MIN_ORDER:
+            return released > 0
+        return await actions.place_order(
+            client,
+            self.wallet,
+            market=market,
+            side=side,
+            amount=total,
+            price=price,
+        )
+
+    async def _validator_market(
+        self,
+        client: NodeClient,
+        view: AccountView,
+        snap: MarketSnapshot,
+        *,
+        ant_orderbook: Optional[Dict[str, Any]] = None,
+        lzn_orderbook: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Activate max → ANT buffer → BUY LZN (capacity race vs L_total) in one tick."""
+        did = False
+        free = int(view.lzn)
+        activated = int(view.lzn_activated)
+        ant = int(view.ant)
+        wrt = int(view.wrt)
+
+        room = max(0, LZN_MAX_FROZEN - activated)
+        # 1. Activate all free LZN up to per-address ceiling.
+        if free >= MIN_ORDER and room >= MIN_ORDER:
+            amt = min(free, room)
+            if amt >= MIN_ORDER and await actions.activate_lzn(client, self.wallet, amt):
+                did = True
+                free -= amt
+                activated += amt
+                room = max(0, LZN_MAX_FROZEN - activated)
+
+        L_i = max(activated, 1)
+        ant_target = max(MIN_ORDER, int(snap.lambda_f * L_i * ANT_BUFFER_BLOCKS))
+        ant_price = max(1, int(snap.ant_price * self.strategy.bid_shade))
+        lzn_price = max(1, int(snap.lzn_price * self.strategy.bid_shade))
+        ant_buys = _side_orders(ant_orderbook, self.wallet.address, "BUY")
+        ant_open = sum(int(o.get("remaining") or 0) for o in ant_buys)
+        held = ant + ant_open
+
+        # 2. Refill ANT when below declare fuel buffer. Resting bids count toward the buffer.
+        lot = 0
+        spare_wrt = wrt - WRT_FEE_RESERVE
+        if held < ant_target and spare_wrt > ant_price * MIN_ORDER:
+            want = ant_target - held
+            affordable = spare_wrt // ant_price
+            lot = min(want, affordable, MIN_ORDER * 5)
+        if lot >= MIN_ORDER or len(ant_buys) > 1:
+            extra = lot if lot >= MIN_ORDER else 0
+            if await self._merge_place(
+                client,
+                market="ANT/WRT",
+                side="BUY",
+                amount=extra,
+                price=ant_price,
+                existing=ant_buys,
+                quote_free=spare_wrt,
+            ):
+                did = True
+                ant += extra
+                wrt -= extra * ant_price
+
+        # 3. LZN demand sized by network mass (fair share of l_total) under freeze cap.
+        lzn_buys = _side_orders(lzn_orderbook, self.wallet.address, "BUY")
+        lzn_open = sum(int(o.get("remaining") or 0) for o in lzn_buys)
+        room_left = room - lzn_open
+        lzn_lot = 0
+        lzn_spare = 0
+        if room_left >= MIN_ORDER:
+            lzn_spare = wrt - WRT_FEE_RESERVE
+            ant_reserve = max(0, ant_target - ant) * ant_price
+            lzn_spare -= ant_reserve
+            n_v = max(1, int(snap.n_validators))
+            fair_share = max(MIN_ORDER, int(snap.l_total) // n_v)
+            if lzn_spare >= lzn_price * MIN_ORDER and lzn_open < fair_share:
+                lzn_lot = min(room_left, lzn_spare // lzn_price, fair_share - lzn_open)
+        if lzn_lot >= MIN_ORDER or len(lzn_buys) > 1:
+            extra = lzn_lot if lzn_lot >= MIN_ORDER else 0
+            if await self._merge_place(
+                client,
+                market="LZN/WRT",
+                side="BUY",
+                amount=extra,
+                price=lzn_price,
+                existing=lzn_buys,
+                quote_free=max(0, lzn_spare),
+            ):
+                did = True
+        return did

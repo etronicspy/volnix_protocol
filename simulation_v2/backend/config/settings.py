@@ -18,10 +18,11 @@ class Settings(BaseSettings):
     port: int = 8001
     cors_origins: str = "*"
     auto_produce: bool = True
-    # Stand helper: enqueue genesis MsgDeclareParticipation each height (canon
-    # 5.5-sim requires a fresh declare tx every height — no last_applied replay).
-    auto_declare: bool = True
-    # Stand-only: wall_sleep = attempt_window / time_scale (default 60 → 1s per canon minute).
+    # STAND-ONLY: enqueue genesis MsgDeclareParticipation each height (canon
+    # 5.5-sim requires a fresh declare every height — no last_applied replay).
+    # Default false so traffic (or explicit declares) owns (b_i, s_i).
+    auto_declare: bool = False
+    # STAND-ONLY: wall_sleep = attempt_window / time_scale (default 60 → 1s per canon minute).
     time_scale: float = 60.0
     chain_id: str = "volnix-sim-2"
 
