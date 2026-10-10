@@ -173,6 +173,8 @@ def chain_summary(request: Request) -> dict[str, Any]:
         "n_accounts": len(st.accounts),
         "n_validators": len(node.app.validator_set.validators),
         "n_suppliers": len(st.active_suppliers()),
+        "last_ant_wrt_price": st.last_ant_wrt_price,
+        "last_lzn_wrt_price": st.last_lzn_wrt_price,
         "mempool": node.mempool.size(),
         **node.pace_snapshot(),
     }
@@ -223,7 +225,7 @@ def get_block(request: Request, height: int) -> dict[str, Any]:
 @router.get("/txs")
 def list_txs(request: Request, limit: int = 30) -> dict[str, Any]:
     node = _node(request)
-    hashes = node.tx_index.all_hashes_newest_first()[:limit]
+    hashes = node.tx_index.newest_hashes(limit)
     items = []
     for h in hashes:
         loc = node.tx_index.get(h)
@@ -410,7 +412,8 @@ def orderbook(request: Request, market: str = ANT_WRT) -> dict[str, Any]:
 def trades(request: Request, tail: int = 50) -> dict[str, Any]:
     node = _node(request)
     found: list[dict[str, Any]] = []
-    for h in reversed(node.blocks.heights()):
+    latest = node.blocks.latest_height()
+    for h in range(latest, -1, -1):
         res = node.results.get(h)
         if not res:
             continue

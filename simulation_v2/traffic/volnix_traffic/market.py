@@ -9,6 +9,7 @@ from typing import Any, Optional
 from volnix_traffic import actions
 from volnix_traffic.client import NodeClient
 from volnix_traffic.registry import BotRegistry
+from volnix_traffic.profit import qty_affordable, reservation_bootstrap
 
 log = logging.getLogger("volnix_traffic.market")
 
@@ -31,11 +32,11 @@ def miner_reservation_price(
     l_i: int,
     l_active: int,
     block_reward: int,
-    lambda_f: float,
+    lambda_f: float = 1.0 / 3.0,
 ) -> int:
-    if l_active <= 0 or lambda_f <= 0:
-        return 1
-    return max(1, int(block_reward / (lambda_f * l_active)))
+    """Fair max WRT/ANT using worst-case 1 ANT per LZN + fairness split."""
+    del l_i  # reservation is network-mass based
+    return reservation_bootstrap(block_reward, lambda_f, max(1, int(l_active)))
 
 
 def _open_by_owner(orderbook: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -65,13 +66,13 @@ class AutoMarket:
         *,
         height: int,
         wrt: int,
-        bootstrap: int,
+        seed_price: int,
         sold_signal: bool,
         demand: float,
     ) -> int:
         prev = self._quotes.get(address)
         if prev is None or height < prev[0]:
-            ask = floor_price(bootstrap)
+            ask = floor_price(max(1, seed_price))
             self._quotes[address] = (height, wrt, ask)
             return ask
         reviewed_at, _wrt_at, ask = prev
@@ -98,17 +99,22 @@ class AutoMarket:
         l_total: int,
         lzn_orderbook: Optional[dict[str, Any]] = None,
         lzn_price: Optional[int] = None,
+        last_ant_price: int = 0,
+        last_lzn_price: int = 0,
     ) -> int:
         submitted = 0
         if l_total <= 0:
             return 0
-        bootstrap = max(1, int(block_reward / (lambda_f * l_total)))
+        # Private opponent value for empty-book seed (not a market mid).
+        private_ant = reservation_bootstrap(block_reward, lambda_f, l_total)
+        private_lzn = max(1, (int(block_reward) // max(1, l_total)) * SCALE)
+        ant_seed = max(1, int(last_ant_price) if last_ant_price > 0 else private_ant)
         asks = orderbook.get("asks") or []
         bids = orderbook.get("bids") or []
         bid_vol = sum(int(b.get("remaining") or 0) for b in bids)
         ask_vol = sum(int(a.get("remaining") or 0) for a in asks)
         demand = bid_vol / (bid_vol + ask_vol) if (bid_vol + ask_vol) else 0.0
-        best_ask = int(asks[0]["price"]) if asks else bootstrap
+        best_ask = int(asks[0]["price"]) if asks else 0
 
         open_by_owner = _open_by_owner(orderbook)
 
@@ -127,7 +133,7 @@ class AutoMarket:
                 bot.address,
                 height=height,
                 wrt=wrt,
-                bootstrap=bootstrap,
+                seed_price=ant_seed,
                 sold_signal=sold,
                 demand=demand,
             )
@@ -176,9 +182,13 @@ class AutoMarket:
             reservation = miner_reservation_price(
                 l_i=l_i, l_active=max(l_i, l_active), block_reward=block_reward, lambda_f=lambda_f
             )
-            bid = floor_price(min(best_ask, reservation))
+            # Join ask if present and affordable; else post private reservation bid.
+            if best_ask > 0:
+                bid = floor_price(min(best_ask, reservation))
+            else:
+                bid = floor_price(reservation)
             want = target - held
-            affordable = wrt // bid if bid > 0 else 0
+            affordable = qty_affordable(wrt, bid)
             lot = min(want, affordable)
             if lot < MIN_LOT:
                 continue
@@ -188,13 +198,18 @@ class AutoMarket:
                 submitted += 1
 
         # Free-LZN holders post LZN/WRT asks (no LZN BUY market-maker)
+        lzn_seed = (
+            max(1, int(lzn_price))
+            if lzn_price
+            else (max(1, int(last_lzn_price)) if last_lzn_price > 0 else private_lzn)
+        )
         submitted += await self._lzn_asks(
             client,
             registry,
             height=height,
             accounts_by_addr=accounts_by_addr,
             lzn_orderbook=lzn_orderbook or {},
-            bootstrap=max(1, int(lzn_price) if lzn_price else bootstrap),
+            seed_price=lzn_seed,
         )
         return submitted
 
@@ -206,7 +221,7 @@ class AutoMarket:
         height: int,
         accounts_by_addr: dict[str, dict[str, Any]],
         lzn_orderbook: dict[str, Any],
-        bootstrap: int,
+        seed_price: int,
     ) -> int:
         submitted = 0
         asks = lzn_orderbook.get("asks") or []
@@ -231,7 +246,7 @@ class AutoMarket:
                 key,
                 height=height,
                 wrt=wrt,
-                bootstrap=bootstrap,
+                seed_price=seed_price,
                 sold_signal=sold,
                 demand=demand,
             )

@@ -8,8 +8,11 @@ not wrap `simulation/` (v1). Go modules in `x/` are **not** the spec.
 
 - A single-process chain: mempool → BeginBlock → DeliverTx → EndBlock (PoVB §5.4,
   rewards, epoch §5.5) → CometBFT-style rounds (+2/3) → persist.
-- **Source of truth:** append-only JSONL (`blocks.jsonl`). State is rebuilt by
-  replay; `app_snapshot.json` is only a cache.
+- **Source of truth:** append-only JSONL (`blocks.jsonl` + `.idx` offset sidecars).
+  Hot path keeps **tip + app state** in RAM; historical blocks/results are read by
+  seek. `app_snapshot.json` is a versioned cache (app + validator set + last commit);
+  on boot the node restores from snapshot when `app_hash` matches tip, otherwise
+  stream-replays from JSONL.
 - Blocks carry a full CometBFT-like header (`data_hash`, `app_hash`,
   `validators_hash`, `last_results_hash`, `last_commit`, …). Tx hash is
   SHA-256 of canonical bytes. Merkle roots follow RFC 6962. Signatures are
@@ -74,8 +77,9 @@ Canonical attempt window `T` is adaptive (§6.2). Stand `time_scale` only compre
 
 ## Genesis (canon §6.3)
 
-One validator, no ZKP, **1 LZN** activated, **10 080 ANT**, **0 WRT** premint (§6.3),
-`chain_id = volnix-sim-2`. WRT appears only via block subsidy.
-Parameters: `EpochBlocks = 10080`, `HalvingInterval = 2100000`, `λ = 1/3`,
+One validator, no ZKP, **1 LZN** activated, **genesis ANT = `epoch_blocks × lzn_activated`**
+(stand: **108 ANT** at `EpochBlocks = 108`; canon etalon **10 080** when `EpochBlocks = 10080`),
+**0 WRT** premint (§6.3), `chain_id = volnix-sim-2`. WRT appears only via block subsidy.
+Parameters: stand-temporary `EpochBlocks = 108` (canon etalon remains `10080`), `HalvingInterval = 2100000`, `λ = 1/3`,
 `α = 1/50`, `K = 150`, `max_active_suppliers = 108`,
 `SUPPLIER_MIN_EPOCH_INCOME (X) = 1008 WRT` (constitutional, §5.6).

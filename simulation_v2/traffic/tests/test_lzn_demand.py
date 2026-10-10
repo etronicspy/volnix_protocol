@@ -39,16 +39,36 @@ def _summary(**kwargs):
     return base
 
 
-def test_lzn_price_bootstrap_when_book_empty():
+def test_lzn_price_zero_when_book_empty():
     summary = _summary()
     ant_book = {
         "bids": [{"price": 100, "remaining": 1000}],
         "asks": [{"price": 200, "remaining": 2000}],
     }
     snap = snapshot_from_chain(summary, ant_book, lzn_orderbook={"bids": [], "asks": []})
-    expected = reservation_bootstrap(50 * SCALE, 1 / 3, SCALE)
-    assert snap.ant_price == 150
-    assert snap.lzn_price == expected
+    assert snap.ant_price == 150  # ANT book mid
+    assert snap.lzn_price == 0  # no synthetic bootstrap mid
+
+
+def test_empty_books_no_synthetic_mid():
+    summary = _summary()
+    snap = snapshot_from_chain(
+        summary, {"bids": [], "asks": []}, lzn_orderbook={"bids": [], "asks": []}
+    )
+    assert snap.ant_price == 0
+    assert snap.lzn_price == 0
+
+
+def test_last_trade_from_summary():
+    summary = _summary(last_ant_wrt_price=42, last_lzn_wrt_price=7)
+    snap = snapshot_from_chain(
+        summary, {"bids": [], "asks": []}, lzn_orderbook={"bids": [], "asks": []}
+    )
+    assert snap.ant_price == 0
+    assert snap.last_ant_price == 42
+    assert snap.last_lzn_price == 7
+    assert reservation_bootstrap(50 * SCALE, 1 / 3, SCALE) == 25 * SCALE  # WRT/ANT × SCALE
+
 
 
 def test_lzn_price_from_lzn_book_mid():
@@ -78,7 +98,7 @@ async def test_trade_lzn_buys_without_sellers():
             "ant": 0,
         }
     }
-    snap = MarketSnapshot(lzn_price=100, ant_price=50, l_total=SCALE, block_reward=50 * SCALE)
+    snap = MarketSnapshot(lzn_price=100 * SCALE, ant_price=50 * SCALE, l_total=SCALE, block_reward=50 * SCALE)
     client = AsyncMock()
 
     with patch("volnix_traffic.engine.actions.place_order", new_callable=AsyncMock) as place:
@@ -89,7 +109,7 @@ async def test_trade_lzn_buys_without_sellers():
     kwargs = place.await_args.kwargs
     assert kwargs["market"] == "LZN/WRT"
     assert kwargs["side"] == "BUY"
-    assert kwargs["price"] == max(1, int(100 * 0.95))
+    assert kwargs["price"] == max(1, int(100 * SCALE * 0.95))
     assert kwargs["amount"] >= MIN_ORDER
 
 
@@ -109,7 +129,7 @@ async def test_prep_bids_when_validator_has_zero_lzn():
             "ant": 0,
         }
     }
-    snap = MarketSnapshot(lzn_price=200, ant_price=50, l_total=SCALE)
+    snap = MarketSnapshot(lzn_price=200 * SCALE, ant_price=50 * SCALE, l_total=SCALE)
     client = AsyncMock()
 
     with patch("volnix_traffic.engine.actions.place_order", new_callable=AsyncMock) as place:
@@ -120,4 +140,4 @@ async def test_prep_bids_when_validator_has_zero_lzn():
     kwargs = place.await_args.kwargs
     assert kwargs["market"] == "LZN/WRT"
     assert kwargs["side"] == "BUY"
-    assert kwargs["price"] == max(1, int(200 * 0.95))
+    assert kwargs["price"] == max(1, int(200 * SCALE * 0.95))

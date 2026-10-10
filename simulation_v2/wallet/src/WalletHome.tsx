@@ -293,7 +293,7 @@ export function WalletHome({ session, onLogout }: WalletHomeProps) {
                 <th>market</th>
                 <th>side</th>
                 <th>amount</th>
-                <th>price</th>
+                <th>price (WRT)</th>
                 <th></th>
               </tr>
             </thead>
@@ -306,7 +306,7 @@ export function WalletHome({ session, onLogout }: WalletHomeProps) {
                     <td>{order.market}</td>
                     <td>{order.side}</td>
                     <td>{formatMicro(order.amount)}</td>
-                    <td>{order.price}</td>
+                    <td>{formatMicro(order.price)}</td>
                     <td>
                       {lifting ? (
                         <span className="tag">снимается</span>
@@ -340,7 +340,7 @@ export function WalletHome({ session, onLogout }: WalletHomeProps) {
                   <td>{row.market}</td>
                   <td>{row.side}</td>
                   <td>{formatMicro(row.amount)}</td>
-                  <td>{row.price}</td>
+                  <td>{formatMicro(row.price)}</td>
                   <td>
                     <span className="tag">ордер в мемпуле</span>
                   </td>
@@ -611,8 +611,8 @@ function OrderForm({
       onSubmit={(e: FormEvent) => {
         e.preventDefault()
         const micro = tokensToMicro(amount)
-        const priceN = Number(price)
-        if (micro === null || micro <= 0 || !Number.isInteger(priceN) || priceN <= 0) return
+        const priceMicro = tokensToMicro(price)
+        if (micro === null || micro <= 0 || priceMicro === null || priceMicro <= 0) return
         onSubmit({
           type: 'anteil/MsgPlaceOrder',
           owner,
@@ -620,12 +620,12 @@ function OrderForm({
           side,
           order_type: 'LIMIT',
           amount: micro,
-          price: priceN,
+          price: priceMicro,
         })
       }}
     >
       <div className="panel-title">Лимитный ордер</div>
-      <p>Цена — целое число micro-WRT за micro базового актива (1 = один к одному).</p>
+      <p>Цена — WRT за 1 целый ANT/LZN (можно меньше 1, например 0.25).</p>
       <div className="grid-2">
         <div className="field">
           <label htmlFor="market">Рынок</label>

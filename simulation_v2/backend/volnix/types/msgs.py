@@ -62,6 +62,7 @@ class MsgPlaceOrder(Msg):
     side: str = ""
     order_type: str = ""
     amount: int = 0
+    # micro-WRT per 1 whole ANT/LZN (fixed-point); cost = (amount * price) // SCALE
     price: int = 0
     type: str = "anteil/MsgPlaceOrder"
 

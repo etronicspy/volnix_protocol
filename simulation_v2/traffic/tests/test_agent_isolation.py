@@ -48,7 +48,7 @@ def test_different_balances_different_picks():
         k=150,
         subsidy=50 * SCALE,
         fees=0,
-        ant_price=1,
+        ant_price=1 * SCALE,
     )
     poor = pick_declare(
         address="volnix1poor",
@@ -60,7 +60,7 @@ def test_different_balances_different_picks():
         k=150,
         subsidy=50 * SCALE,
         fees=0,
-        ant_price=1,
+        ant_price=1 * SCALE,
     )
     assert rich is not None
     assert poor is not None

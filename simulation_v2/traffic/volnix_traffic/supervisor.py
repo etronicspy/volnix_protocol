@@ -23,6 +23,8 @@ from volnix_traffic.profit import (
     MarketSnapshot,
     ProfitStrategy,
     account_view_from_row,
+    quote_ant_ref,
+    quote_lzn_ref,
 )
 from volnix_traffic.registry import (
     KIND_CITIZEN,
@@ -310,8 +312,8 @@ class EnrichmentSupervisor:
 
         ant = int(row.get("ant") or 0)
         lzn = int(row.get("lzn") or 0)
-        price_ant = max(1, snap.ant_price)
-        price_lzn = max(1, snap.lzn_price)
+        price_ant = quote_ant_ref(snap)
+        price_lzn = quote_lzn_ref(snap)
         if old.role == ROLE_SUPPLIER and ant >= MIN_ORDER:
             await actions.place_order(
                 client, old, market="ANT/WRT", side="SELL", amount=ant, price=price_ant

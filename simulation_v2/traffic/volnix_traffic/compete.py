@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import List, Optional, Sequence, Tuple
 
+SCALE = 1_000_000
+
 
 @dataclass(frozen=True)
 class Rival:
@@ -104,6 +106,7 @@ def _candidate_pairs(
     l_i: int,
     ant: int,
     alpha: Fraction,
+    lam: Fraction,
     b_frac: float,
     s_frac: float,
     rival_s: Optional[Sequence[int]] = None,
@@ -119,6 +122,14 @@ def _candidate_pairs(
         want_s = max(1, min(want_s, residual))
         want_b = residual - want_s
     pairs.append((want_b, want_s))
+
+    # Always consider corridor-feasible packages (WRT-optimal near b_min).
+    b_min, b_max = corridor_bounds(l_i, lam)
+    for b_i in (b_min, b_max, (b_min + b_max) // 2):
+        if 1 <= b_i <= residual - 1:
+            pairs.append((b_i, residual - b_i))
+        if b_i <= residual - 1:
+            pairs.append((b_i, 1))
 
     extra_s = [1, residual]
     for s_j in rival_s or ():
@@ -170,6 +181,7 @@ def pick_declare(
         l_i,
         ant,
         alpha,
+        lam,
         b_frac,
         s_frac,
         rival_s=[r.s_i for r in rivals],
@@ -186,7 +198,7 @@ def pick_declare(
         if enter and b_sum > 0:
             reward = (int(subsidy) + int(fees)) * b_i // b_sum
         burned = f_i + (b_i + s_i if enter else 0)
-        net = reward - int(ant_price) * burned
+        net = reward - (int(ant_price) * burned) // SCALE
         pick = DeclarePick(b_i=b_i, s_i=s_i, enter=enter, expected_wrt=net, f_i=f_i)
         if enter:
             entered.append(pick)

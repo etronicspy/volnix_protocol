@@ -19,10 +19,12 @@ class TxIndex:
         self._log = JsonlStore(data_dir / "tx_index.jsonl")
         self._by_hash: dict[str, TxLocation] = {}
         self._by_account: dict[str, list[TxLocation]] = {}
+        self._order: list[str] = []  # append order (oldest → newest)
 
     def load(self) -> None:
         self._by_hash.clear()
         self._by_account.clear()
+        self._order.clear()
         for rec in self._log.iter_records():
             loc = TxLocation(
                 tx_hash=rec["tx_hash"],
@@ -42,6 +44,8 @@ class TxIndex:
         self._log.flush()
 
     def _add(self, loc: TxLocation) -> None:
+        if loc.tx_hash not in self._by_hash:
+            self._order.append(loc.tx_hash)
         self._by_hash[loc.tx_hash] = loc
         self._by_account.setdefault(loc.sender, []).append(loc)
 
@@ -51,11 +55,30 @@ class TxIndex:
     def by_account(self, address: str) -> list[TxLocation]:
         return list(self._by_account.get(address, []))
 
+    def newest_hashes(self, limit: int, offset: int = 0) -> list[str]:
+        """Newest-first slice without sorting the full index."""
+        if limit <= 0:
+            return []
+        n = len(self._order)
+        if n == 0:
+            return []
+        # order is oldest→newest; reverse index walk
+        start = max(0, n - 1 - offset)
+        out: list[str] = []
+        i = start
+        while i >= 0 and len(out) < limit:
+            out.append(self._order[i])
+            i -= 1
+        return out
+
+    def __len__(self) -> int:
+        return len(self._order)
+
     def all_hashes_newest_first(self) -> list[str]:
-        locs = sorted(self._by_hash.values(), key=lambda x: (x.height, x.index), reverse=True)
-        return [l.tx_hash for l in locs]
+        return list(reversed(self._order))
 
     def clear(self) -> None:
         self._log.clear()
         self._by_hash.clear()
         self._by_account.clear()
+        self._order.clear()

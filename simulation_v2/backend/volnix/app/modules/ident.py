@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from volnix.app.modules.lizenz import max_activated_per_validator
 from volnix.app.modules.supplier_gate import check_new_supplier
 from volnix.app.state import Account, AppState
 from volnix.types.events import Event, ev
@@ -107,10 +108,23 @@ def deliver_migrate(state: AppState, msg: MsgMigrateRole) -> list[Event]:
         if o.owner == src.address and o.status == "open":
             cancel_order(state, o.order_id, protocol=True)
 
-    # Headroom: room = MAX_FROZEN − dst.lzn_activated (§3.2)
-    activated = src.lzn_activated
-    free = src.lzn
-    room = max(0, state.params.lzn_max_frozen_per_address - int(dst.lzn_activated))
+    # Headroom vs L_total after migrate (§3.2 / §4.1): validator dst may keep
+    # activated only up to ⌊new_L_total/3⌋ (sole-holder transfer keeps full amount).
+    activated = int(src.lzn_activated)
+    free = int(src.lzn)
+    if src.role != Role.VALIDATOR:
+        room = activated
+    else:
+        l_total = state.l_total()
+        if activated > 0 and l_total == activated:
+            room = activated  # sole activated holder → full transfer
+        else:
+            t0 = max(0, l_total - activated)  # others after src drops out
+            room = 0
+            for x in range(0, activated + 1):
+                if x <= max_activated_per_validator(t0 + x):
+                    room = x
+            room = max(0, room - int(dst.lzn_activated))
     if activated > room:
         free += activated - room
         activated = room

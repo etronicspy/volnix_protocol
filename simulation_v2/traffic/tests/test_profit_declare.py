@@ -31,7 +31,8 @@ def test_floor_price_and_reservation():
     p = miner_reservation_price(
         l_i=SCALE, l_active=SCALE, block_reward=50 * SCALE, lambda_f=1 / 3
     )
-    assert p > 1
+    # worst-case 1 ANT/LZN: 50 WRT / 1 LZN = 50; fairness 50% → 25 WRT/ANT = 25*SCALE
+    assert p == 25 * SCALE
 
 
 def test_suggest_declare_matches_node_shape():
@@ -55,7 +56,7 @@ def test_profit_prefers_verified_when_capital():
     strat = ProfitStrategy()
     snap = MarketSnapshot(
         block_reward=50 * SCALE,
-        ant_price=150,
+        ant_price=150 * SCALE,
         l_total=SCALE,
         n_validators=1,
         n_suppliers=2,
@@ -78,7 +79,7 @@ def test_validator_roi_equal_share_not_l_mass():
     strat = ProfitStrategy()
     snap = MarketSnapshot(
         block_reward=50 * SCALE,
-        ant_price=1,
+        ant_price=1 * SCALE,
         l_total=100 * SCALE,  # huge network mass — must not crush income to ~1%
         n_validators=2,
         n_suppliers=1,
@@ -120,6 +121,24 @@ def test_snapshot_from_chain_mid_price():
     assert snap.ant_price == 150
     assert snap.bid_vol == 1000
     assert snap.ask_vol == 2000
+
+
+def test_snapshot_empty_book_no_bootstrap_mid():
+    summary = {
+        "height": 10,
+        "l_total": SCALE,
+        "n_validators": 1,
+        "n_suppliers": 0,
+        "params": {
+            "epoch_blocks": 10080,
+            "current_block_reward": 50 * SCALE,
+            "base_block_reward": 50 * SCALE,
+        },
+        "supply": {"ant": 100 * SCALE},
+    }
+    snap = snapshot_from_chain(summary, {"bids": [], "asks": []})
+    assert snap.ant_price == 0
+    assert snap.lzn_price == 0
 
 
 @pytest.mark.asyncio

@@ -51,10 +51,6 @@ class Params:
         return Fraction(self.alpha_num, self.alpha_den)
 
     @property
-    def lzn_max_frozen_per_address(self) -> int:
-        return (self.lzn_total_supply // 3) * SCALE
-
-    @property
     def lzn_total_supply_micro(self) -> int:
         return self.lzn_total_supply * SCALE
 
@@ -225,6 +221,8 @@ class AppState:
         self.genesis_validator: str = ""
         # Last executed ANT/WRT trade price; None = unset (§5.6).
         self.last_ant_wrt_price: int | None = None
+        # Last executed LZN/WRT trade price; None = unset (free-market signal).
+        self.last_lzn_wrt_price: int | None = None
 
     def get_account(self, address: str) -> Account:
         acc = self.accounts.get(address)
@@ -281,6 +279,7 @@ class AppState:
         other.set_updated = self.set_updated
         other.genesis_validator = self.genesis_validator
         other.last_ant_wrt_price = self.last_ant_wrt_price
+        other.last_lzn_wrt_price = self.last_lzn_wrt_price
         return other
 
     def restore(self, other: AppState) -> None:
@@ -305,6 +304,7 @@ class AppState:
             "proposals": {str(k): self.proposals[k].to_dict() for k in sorted(self.proposals)},
             "genesis_validator": self.genesis_validator,
             "last_ant_wrt_price": self.last_ant_wrt_price,
+            "last_lzn_wrt_price": self.last_lzn_wrt_price,
         }
 
     def app_hash(self) -> str:
@@ -339,4 +339,6 @@ class AppState:
         st.last_povb = dict(snap.get("last_povb", {}))
         price = snap.get("last_ant_wrt_price")
         st.last_ant_wrt_price = int(price) if price is not None else None
+        lzn_price = snap.get("last_lzn_wrt_price")
+        st.last_lzn_wrt_price = int(lzn_price) if lzn_price is not None else None
         return st

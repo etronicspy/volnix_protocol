@@ -30,8 +30,12 @@ def init_state(doc: dict[str, Any]) -> tuple[AppState, ValidatorSet, Block]:
     state.height = 0
     state.genesis_validator = kp.address
 
-    lzn_act = int(gv.get("lzn_activated", 1)) * SCALE
-    ant = int(gv.get("ant", 10_080)) * SCALE
+    lzn_tokens = int(gv.get("lzn_activated", 1))
+    lzn_act = lzn_tokens * SCALE
+    # §6.3: genesis ANT = EpochBlocks × L_total (whole tokens → micro).
+    # Tied to params.epoch_blocks so stand/canon stay consistent when epoch changes.
+    ant_tokens = int(params.epoch_blocks) * lzn_tokens
+    ant = ant_tokens * SCALE
     wrt = int(gv.get("wrt", 0))
     acc = Account(
         address=kp.address,

@@ -201,7 +201,7 @@ def test_verify_supplier_and_epoch_boundary(fast_node, genesis_kp):
     assert fast_node.app.state.epoch == 1
     # f_i + b_i + s_i burned each height; epoch wipe keeps the validator remainder.
     burn_per_height = 20_000 + 400_000 + 200_000
-    assert fast_node.app.state.accounts[genesis_kp.address].ant == 10080 * SCALE - 3 * burn_per_height
+    assert fast_node.app.state.accounts[genesis_kp.address].ant == 3 * SCALE - 3 * burn_per_height
     # supplier received ANT_emit = L_total * epoch_blocks
     assert fast_node.app.state.accounts[sup.address].ant == SCALE * 3
 

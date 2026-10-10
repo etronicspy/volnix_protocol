@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from volnix.app.state import AppState, Order
+from volnix.app.state import SCALE, AppState, Order
 from volnix.types.events import Event, ev
 from volnix.types.msgs import MsgCancelOrder, MsgPlaceOrder
 from volnix.types.role import Role
@@ -11,6 +11,20 @@ LZN_WRT = "LZN/WRT"
 
 class AnteilError(ValueError):
     pass
+
+
+def quote_cost(qty: int, price: int) -> int:
+    """micro-WRT for ``qty`` micro-base at ``price`` (micro-WRT per whole token)."""
+    if qty <= 0 or price <= 0:
+        return 0
+    return (int(qty) * int(price)) // SCALE
+
+
+def max_qty_for_quote(escrow_quote: int, price: int) -> int:
+    """Max micro-base affordable with locked micro-WRT at ``price``."""
+    if escrow_quote <= 0 or price <= 0:
+        return 0
+    return (int(escrow_quote) * SCALE) // int(price)
 
 
 def _check_side(role: Role, market: str, side: str) -> None:
@@ -110,13 +124,14 @@ def _lock_escrow(state: AppState, acc, order: Order) -> None:
             acc.lzn -= order.amount
             order.escrow_base = order.amount
     else:
-        quote = order.amount * order.price if order.order_type == "LIMIT" else acc.wrt
         if order.order_type == "MARKET":
             quote = acc.wrt
+        else:
+            quote = quote_cost(order.amount, order.price)
         if acc.wrt < quote or quote <= 0:
             raise AnteilError("insufficient WRT for buy")
         # For market buy lock all WRT intended; unused returned after match.
-        lock = order.amount * order.price if order.order_type == "LIMIT" else quote
+        lock = quote
         acc.wrt -= lock
         order.escrow_quote = lock
 
@@ -164,17 +179,20 @@ def _match(state: AppState, incoming: Order) -> list[Event]:
             continue
         qty = min(incoming.remaining, other.remaining)
         if incoming.side == "BUY":
-            max_by_quote = incoming.escrow_quote // price if price else 0
-            qty = min(qty, max_by_quote)
+            qty = min(qty, max_qty_for_quote(incoming.escrow_quote, price))
         if other.side == "BUY":
-            max_by_quote = other.escrow_quote // price if price else 0
-            qty = min(qty, max_by_quote)
+            qty = min(qty, max_qty_for_quote(other.escrow_quote, price))
         if qty <= 0:
             continue
-        cost = qty * price
+        cost = quote_cost(qty, price)
+        if cost <= 0 and (incoming.side == "BUY" or other.side == "BUY"):
+            # Dust: price too low for this qty under integer division — skip.
+            continue
         _settle(state, incoming, other, qty, cost, price)
         if incoming.market == ANT_WRT:
             state.last_ant_wrt_price = price
+        elif incoming.market == LZN_WRT:
+            state.last_lzn_wrt_price = price
         events.append(
             ev(
                 "anteil.trade_executed",

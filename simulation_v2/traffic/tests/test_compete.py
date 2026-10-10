@@ -31,7 +31,7 @@ def test_raise_s_to_enter_against_high_weight_rival():
         k=2,
         subsidy=50 * SCALE,
         fees=0,
-        ant_price=1,
+        ant_price=1 * SCALE,
         b_frac=0.70,
         s_frac=0.20,
     )
@@ -52,7 +52,7 @@ def test_raise_b_for_reward_without_self_exclusion():
         k=150,
         subsidy=50 * SCALE,
         fees=0,
-        ant_price=1,
+        ant_price=1 * SCALE,
         b_frac=0.50,
         s_frac=0.40,
     )
@@ -75,7 +75,7 @@ def test_lift_b_to_meet_b_min_solo():
         k=150,
         subsidy=50 * SCALE,
         fees=0,
-        ant_price=1,
+        ant_price=1 * SCALE,
         b_frac=0.10,
         s_frac=0.80,
     )
@@ -97,7 +97,7 @@ def test_insufficient_ant_returns_valid_or_none():
         k=150,
         subsidy=50 * SCALE,
         fees=0,
-        ant_price=1,
+        ant_price=1 * SCALE,
     )
     if pick is None:
         return

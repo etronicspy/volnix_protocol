@@ -34,7 +34,7 @@ def test_validator_reward_only_when_enter():
     snap = MarketSnapshot(
         height=10,
         block_reward=50 * SCALE,
-        ant_price=1,
+        ant_price=1 * SCALE,
         l_total=SCALE,
         n_validators=1,
         epoch_blocks=10080,
@@ -88,7 +88,7 @@ def test_supplier_wipe_risk_near_epoch():
     snap = MarketSnapshot(
         height=10_070,
         epoch_blocks=10_080,
-        ant_price=10,
+        ant_price=10 * SCALE,
         l_total=SCALE,
         n_suppliers=2,
         lambda_f=1 / 3,
@@ -99,7 +99,7 @@ def test_supplier_wipe_risk_near_epoch():
     far_snap = MarketSnapshot(
         height=10,
         epoch_blocks=10_080,
-        ant_price=10,
+        ant_price=10 * SCALE,
         l_total=SCALE,
         n_suppliers=2,
         lambda_f=1 / 3,

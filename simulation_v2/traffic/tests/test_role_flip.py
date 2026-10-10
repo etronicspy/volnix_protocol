@@ -26,7 +26,7 @@ from volnix_traffic.supervisor import EnrichmentSupervisor
 
 
 def _snap() -> MarketSnapshot:
-    return MarketSnapshot(ant_price=10, lzn_price=10, block_reward=50 * SCALE)
+    return MarketSnapshot(ant_price=10 * SCALE, lzn_price=10 * SCALE, block_reward=50 * SCALE)
 
 
 @pytest.mark.asyncio

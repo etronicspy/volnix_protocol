@@ -11,13 +11,17 @@ Two surfaces share the same node:
 Amounts in responses are **micro-units** unless a `*_display` field is present
 (divide by `1_000_000`).
 
+**Order / last-trade `price`:** integer **micro-WRT per 1 whole ANT or LZN**
+(fixed-point WRT with 6 decimals). Example: `250_000` = 0.25 WRT per token.
+Clearing cost: `(qty × price) // 1_000_000` where `qty` is micro-base.
+
 ---
 
 ## Explorer `/api/v1`
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/chain/summary` | Height, supplies, `L_total`, epoch/halving countdown, λ/α/K, pace (`attempt_window_sec`, `time_scale`, `wall_sleep_sec` / compat `produce_interval_sec`, debt) + `auto_produce` |
+| GET | `/chain/summary` | Height, supplies, `L_total`, epoch/halving countdown, λ/α/K, `last_ant_wrt_price` / `last_lzn_wrt_price` (null until first trade), pace (`attempt_window_sec`, `time_scale`, `wall_sleep_sec` / compat `produce_interval_sec`, debt) + `auto_produce` |
 | GET | `/blocks?tail=100` | Block tape (+ PoVB summary: `set_updated`, `n_declares`, `n_passed`, `sum_b`, `fill`, `l_decl`, `b_min`/`b_max`) |
 | GET | `/blocks/{height}` | Block + `block_results` + `consensus` (signing/next set, commit for H, PoVB, voted/total power) |
 | GET | `/txs` | Recent transactions |
@@ -42,7 +46,7 @@ Amounts in responses are **micro-units** unless a `*_display` field is present
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/operator/account` | Derive `volnix1…` from a seed. Read-only: does not create an account |
-| POST | `/operator/mint` | `MsgSend` WRT from genesis (must already hold subsidy; no premint) |
+| POST | `/operator/mint` | `MsgSend` WRT from genesis (must already hold subsidy; no premint). Used by traffic-ui **Кошельки** |
 | POST | `/operator/verify` | Sign + mempool `MsgVerifyIdentity` |
 | POST | `/operator/declare` | Sign + mempool `MsgDeclareParticipation` |
 | POST | `/operator/order` | Sign + mempool `MsgPlaceOrder` |
@@ -63,8 +67,10 @@ Talks to the node operator + explorer APIs; env prefix `VOLNIX_SIM2_TRAFFIC_*`.
 See [`../traffic/README.md`](../traffic/README.md).
 
 Pace: traffic **follows** node `produce_interval_sec` (= `wall_sleep_sec = attempt_window / time_scale`)
-from `/chain/summary` — adaptive poll and per-height catch-up. Frontend **Time scale** slider
-sets `/operator/time-scale`. `intensity` is everyday **spend share** in `[0, 10]`
+from `/chain/summary` — adaptive poll and per-height catch-up. The **Time scale** slider in
+`simulation_v2/traffic-ui` (port 5176) sets `/operator/time-scale`; that app is the only UI
+consumer of this control API (the explorer `simulation_v2/frontend` is read-only).
+`intensity` is everyday **spend share** in `[0, 10]`
 (0 = none, 10 = every funded wallet; floor also uses `citizen_transfers_per_tick`).
 
 | Method | Path | Purpose |
@@ -73,7 +79,7 @@ sets `/operator/time-scale`. `intensity` is everyday **spend share** in `[0, 10]
 | POST | `/start` | optional `{ "intensity": 2.0 }` |
 | POST | `/stop` | pause height loop |
 | POST | `/intensity` | `{ "intensity": 1.5 }` |
-| GET | `/wallets` | local bot registry (seeds / roles / kind) |
+| GET | `/wallets` | local bot registry (seeds / roles / kind); consumed by traffic-ui **Кошельки** |
 | POST | `/tick` | force one citizens→enrichment-agents tick |
 | POST | `/reset` | clear the local bot registry (chain state unchanged; the loop recruits again) |
 

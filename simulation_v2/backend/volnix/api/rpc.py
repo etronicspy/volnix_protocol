@@ -64,6 +64,9 @@ def blockchain(request: Request, minHeight: int = 0, maxHeight: int = 0) -> dict
     latest = node.blocks.latest_height()
     lo = minHeight
     hi = maxHeight if maxHeight > 0 else latest
+    # Cap unbounded dumps (maxHeight=0 used to mean "entire chain").
+    if maxHeight <= 0 and (hi - lo) > 100:
+        lo = max(lo, hi - 99)
     metas = []
     for b in node.blocks.range(lo, hi):
         metas.append({"block_id": {"hash": b.hash()}, "header": b.header.to_dict()})
@@ -140,17 +143,22 @@ def tx(request: Request, hash: str = Query(...)) -> dict[str, Any]:
 @router.get("/tx_search")
 def tx_search(request: Request, query: str = "", page: int = 1, per_page: int = 30) -> dict[str, Any]:
     node = _node(request)
-    hashes = node.tx_index.all_hashes_newest_first()
     if query:
-        hashes = [h for h in hashes if query in h]
-    start = (page - 1) * per_page
-    chunk = hashes[start : start + per_page]
+        # Filtered search still needs a scan of known hashes (compact index).
+        hashes = [h for h in node.tx_index.all_hashes_newest_first() if query in h]
+        total = len(hashes)
+        start = (page - 1) * per_page
+        chunk = hashes[start : start + per_page]
+    else:
+        total = len(node.tx_index)
+        offset = (page - 1) * per_page
+        chunk = node.tx_index.newest_hashes(per_page, offset=offset)
     txs = []
     for h in chunk:
         loc = node.tx_index.get(h)
         if loc:
             txs.append({"hash": h, "height": str(loc.height), "index": loc.index})
-    return {"jsonrpc": "2.0", "id": -1, "result": {"txs": txs, "total_count": str(len(hashes))}}
+    return {"jsonrpc": "2.0", "id": -1, "result": {"txs": txs, "total_count": str(total)}}
 
 
 @router.get("/abci_query")

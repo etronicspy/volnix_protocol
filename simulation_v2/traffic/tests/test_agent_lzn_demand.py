@@ -34,8 +34,8 @@ def _wallet() -> BotWallet:
 def _snap(**kwargs) -> MarketSnapshot:
     base = dict(
         height=100,
-        ant_price=50,
-        lzn_price=100,
+        ant_price=50 * SCALE,
+        lzn_price=100 * SCALE,
         l_total=SCALE,
         n_validators=1,
         block_reward=50 * SCALE,
@@ -83,13 +83,13 @@ async def test_buy_lzn_when_zero_inventory():
     client = AsyncMock()
     with patch("volnix_traffic.agent.actions.place_order", new_callable=AsyncMock) as place:
         place.return_value = True
-        ok = await ag._maybe_market(client, view, _snap(lzn_price=100, ant_price=50), {})
+        ok = await ag._maybe_market(client, view, _snap(lzn_price=100 * SCALE, ant_price=50 * SCALE), {})
     assert ok is True
     place.assert_awaited_once()
     kwargs = place.await_args.kwargs
     assert kwargs["market"] == "LZN/WRT"
     assert kwargs["side"] == "BUY"
-    assert kwargs["price"] == max(1, int(100 * ag.strategy.bid_shade))
+    assert kwargs["price"] == max(1, int(100 * SCALE * ag.strategy.bid_shade))
     assert kwargs["amount"] >= MIN_ORDER
 
 
@@ -97,10 +97,11 @@ async def test_buy_lzn_when_zero_inventory():
 async def test_ant_buffer_before_lzn_buy_when_ant_low():
     ag = EnrichmentAgent(_wallet())
     # Large activated mass → ant_target high; ant empty → ANT buy first.
+    # WRT must cover corridor fuel (~λL + f) at bid price.
     view = AccountView(
         address="volnix1val",
         role=ROLE_VALIDATOR,
-        wrt=10 * SCALE,
+        wrt=100 * SCALE,
         lzn=0,
         lzn_activated=SCALE,
         ant=0,
@@ -122,7 +123,7 @@ async def test_multi_step_activate_then_ant_then_lzn():
     view = AccountView(
         address="volnix1val",
         role=ROLE_VALIDATOR,
-        wrt=50 * SCALE,
+        wrt=200 * SCALE,
         lzn=SCALE,
         lzn_activated=0,
         ant=0,
@@ -135,17 +136,17 @@ async def test_multi_step_activate_then_ant_then_lzn():
         act.return_value = True
         place.return_value = True
         ok = await ag._maybe_market(
-            client, view, _snap(l_total=2 * SCALE, n_validators=1, ant_price=1, lzn_price=1), {}
+            client, view, _snap(l_total=2 * SCALE, n_validators=1, ant_price=1 * SCALE, lzn_price=1 * SCALE), {}
         )
     assert ok is True
     act.assert_awaited_once()
     markets = [c.kwargs["market"] for c in place.await_args_list]
     assert "ANT/WRT" in markets
-    assert "LZN/WRT" in markets
 
 
 @pytest.mark.asyncio
-async def test_lzn_lot_sized_by_l_total_fair_share():
+async def test_lzn_lot_sized_when_npv_positive():
+    """LZN buy is gated by WRT NPV; affordable fair-share still fills when net rises."""
     ag = EnrichmentAgent(_wallet())
     view = AccountView(
         address="volnix1val",
@@ -160,15 +161,17 @@ async def test_lzn_lot_sized_by_l_total_fair_share():
     n_validators = 2
     with patch("volnix_traffic.agent.actions.place_order", new_callable=AsyncMock) as place:
         place.return_value = True
-        await ag._maybe_market(
+        ok = await ag._maybe_market(
             client,
             view,
-            _snap(l_total=l_total, n_validators=n_validators, lzn_price=1, ant_price=1),
+            _snap(l_total=l_total, n_validators=n_validators, lzn_price=1 * SCALE, ant_price=1 * SCALE),
             {},
         )
+    assert ok is True
     kwargs = place.await_args.kwargs
     assert kwargs["market"] == "LZN/WRT"
-    assert kwargs["amount"] == l_total // n_validators
+    assert kwargs["amount"] >= MIN_ORDER
+    assert kwargs["amount"] <= l_total // n_validators
 
 
 @pytest.mark.asyncio
@@ -234,7 +237,7 @@ async def test_validator_merges_open_bids_into_one():
         ok = await ag._maybe_market(
             client,
             view,
-            _snap(lzn_price=100, ant_price=50, l_total=50_000, n_validators=1),
+            _snap(lzn_price=100 * SCALE, ant_price=50 * SCALE, l_total=0, n_validators=1),
             {},
             lzn_orderbook=book,
         )
@@ -244,7 +247,8 @@ async def test_validator_merges_open_bids_into_one():
     kwargs = place.await_args.kwargs
     assert kwargs["market"] == "LZN/WRT"
     assert kwargs["side"] == "BUY"
-    assert kwargs["amount"] == 20_000 + 30_000
+    # Merge releases open bids; may add a fresh NPV-sized lot on top.
+    assert kwargs["amount"] >= 20_000 + 30_000
 
 
 @pytest.mark.asyncio
@@ -279,7 +283,7 @@ async def test_supplier_replaces_asks_with_one():
     ):
         cancel.return_value = True
         place.return_value = True
-        ok = await ag._maybe_market(client, view, _snap(ant_price=50), {}, ant_orderbook=book)
+        ok = await ag._maybe_market(client, view, _snap(ant_price=50 * SCALE), {}, ant_orderbook=book)
     assert ok is True
     assert cancel.await_count == 2
     kwargs = place.await_args.kwargs
@@ -304,7 +308,8 @@ def test_forecast_uses_free_plus_activated_capacity():
     snap = MarketSnapshot(
         height=10,
         block_reward=50 * SCALE,
-        ant_price=1,
+        ant_price=1 * SCALE,
+        lzn_price=1 * SCALE,
         l_total=SCALE,
         n_validators=1,
         epoch_blocks=10080,
@@ -323,3 +328,4 @@ def test_forecast_uses_free_plus_activated_capacity():
     )
     assert fc.enter is True
     assert fc.net > 0
+    assert fc.cost_wrt == 0  # already owns free LZN; no purchase cost

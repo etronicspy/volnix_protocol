@@ -13,6 +13,11 @@ from volnix_traffic.profit import (
     MarketSnapshot,
     ProfitStrategy,
     account_view_from_row,
+    effective_ant_price,
+    qty_affordable,
+    quote_ant_ref,
+    quote_cost,
+    quote_lzn_ref,
     snapshot_from_chain,
 )
 from volnix_traffic.registry import (
@@ -197,7 +202,7 @@ class BotEngine:
             if ant < MIN_ORDER:
                 return False
             asks = orderbook.get("asks") or []
-            price = int(asks[0]["price"]) if asks else snap.ant_price
+            price = int(asks[0]["price"]) if asks else quote_ant_ref(snap)
             # Near epoch end, shade ask down (wipe pressure)
             lot = max(MIN_ORDER, int(ant * 0.15))
             return await actions.place_order(
@@ -206,11 +211,12 @@ class BotEngine:
         if validators:
             bot = random.choice(validators)
             wrt = int((by_addr.get(bot.address) or {}).get("wrt") or 0)
-            if wrt < snap.ant_price * MIN_ORDER:
+            ant_px = effective_ant_price(snap)
+            if wrt < quote_cost(MIN_ORDER, ant_px):
                 return False
-            # Bid under reservation (~10% weekly margin anchor)
-            price = max(1, int(snap.ant_price * 0.95))
-            lot = min(MIN_ORDER * 5, wrt // price)
+            # Bid under private opponent-value reference
+            price = max(1, int(quote_ant_ref(snap) * 0.95))
+            lot = min(MIN_ORDER * 5, qty_affordable(wrt, price))
             if lot < MIN_ORDER:
                 return False
             return await actions.place_order(
@@ -236,7 +242,7 @@ class BotEngine:
         bids = lzn_orderbook.get("bids") or []
         best_ask = int(asks[0]["price"]) if asks else 0
         best_bid = int(bids[0]["price"]) if bids else 0
-        quote = max(1, snap.lzn_price)
+        quote = max(1, snap.lzn_price) if snap.lzn_price > 0 else quote_lzn_ref(snap)
 
         # Prefer BUY when any buyer has zero LZN (seed demand before float exists).
         hungry = [
@@ -256,7 +262,7 @@ class BotEngine:
                 price = max(1, int(best_ask * 0.95))
             else:
                 price = max(1, int(quote * 0.95))
-            lot = min(SCALE // 10, wrt // price if price > 0 else 0)
+            lot = min(SCALE // 10, qty_affordable(wrt, price) if price > 0 else 0)
             if lot < MIN_ORDER:
                 # Fall through to sell if possible
                 want_buy = False
@@ -339,7 +345,7 @@ class BotEngine:
             return False
 
         # Validators with zero LZN → bid LZN/WRT before activate
-        price = max(1, snap.lzn_price)
+        price = quote_lzn_ref(snap)
         asks = (lzn_orderbook or {}).get("asks") or []
         if asks:
             price = max(1, int(asks[0]["price"]))
@@ -353,9 +359,9 @@ class BotEngine:
                 continue
             wrt = int(row.get("wrt") or 0)
             bid = max(1, int(price * 0.95))
-            if wrt < bid * MIN_ORDER:
+            if wrt < quote_cost(MIN_ORDER, bid):
                 continue
-            lot = min(SCALE // 10, wrt // bid)
+            lot = min(SCALE // 10, qty_affordable(wrt, bid))
             if lot < MIN_ORDER:
                 continue
             return await actions.place_order(

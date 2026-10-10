@@ -13,7 +13,7 @@ On each new block height (poll `/api/v1/chain/summary`):
 2. **Citizen pool** — grow to 109 unverified wallets (no ZKP).
 3. **Everyday spend** — *all* traffic wallets (citizens, enrichment, genesis) may send a small `bank/MsgSend` WRT each height (mempool → consensus). Imitation of spending money; Intensity is the share that spends (0 = none, 10 = everyone with spare WRT). When intensity > 0, at least `CITIZEN_TRANSFERS_PER_TICK` (clamped 2–4) wallets spend.
 4. **Enrichment pool** — up to 50 independent agents (including genesis). Each has its own P&L forecast, competitive `(b_i, s_i)` declare, and may sample 5–10 peer strategy cards to copy the best WRT growth. First new ZKP is a supplier (floor 1+1).
-   - **Validators (capacity race):** on-chain reward is still by **`b_i`** (§5.4); larger activated `L_i` only raises the declare ceiling. Agents treat public **`l_total`** (chain summary → market snapshot) as the network mass signal: each tick they **activate all free LZN**, refill an ANT buffer for declare, then **BUY LZN/WRT** (lot sized toward `l_total / n_validators`) while under the per-address freeze cap. Peer adopt never lowers `activate_ratio` (no deactivate).
+   - **Validators (capacity race):** on-chain reward is still by **`b_i`** (§5.4); larger activated `L_i` only raises the declare ceiling. Agents treat public **`l_total`** (chain summary → market snapshot) as the network mass signal: each tick they **activate free LZN** under **`new_amount ≤ ⌊new_L_total/3⌋`**, refill an ANT buffer for declare, then **BUY LZN/WRT** (lot sized toward `l_total / n_validators`). Peer adopt never lowers `activate_ratio` (no deactivate).
 5. **Role flip** — sell inventory, `MsgSend` WRT to a new wallet, verify the new role. Genesis cannot flip. Last supplier/validator cannot flip.
 
 **Live path:** enrichment supervisor (`EnrichmentSupervisor` + `EnrichmentAgent`). Modules `BotEngine`, `AutoMarket`, and `AutoDeclare` are **legacy** — kept for unit tests only; they are not called from the default height loop.
@@ -52,7 +52,9 @@ python3 main.py
 
 Control API (default): `http://127.0.0.1:8002`
 
-Explorer **Traffic** page (`/operator`) is a read-only dashboard plus Intensity (`VITE_TRAFFIC_URL`, default `:8002`).
+The control dashboard (start/stop, Intensity, Release/Burn, agent table) is the separate
+[`simulation_v2/traffic-ui`](../traffic-ui/README.md) app (port 5176, `VITE_TRAFFIC_URL`, default `:8002`).
+The explorer (`simulation_v2/frontend`) is read-only and does not talk to this API.
 
 | Method | Path | Purpose |
 |--------|------|---------|

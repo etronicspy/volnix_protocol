@@ -1,4 +1,4 @@
-"""MsgMigrateRole — canon §3.2 (headroom + new ZKP nullifier)."""
+"""MsgMigrateRole — canon §3.2 (L_total headroom + new ZKP nullifier)."""
 
 from __future__ import annotations
 
@@ -43,33 +43,51 @@ def test_migrate_binds_new_zkp_not_src():
     assert "new-zkp" in st.nullifiers
 
 
-def test_migrate_headroom_caps_activated():
+def test_migrate_sole_validator_keeps_full_activated():
     st = AppState()
     st.height = 1
-    # Cap = floor(supply/3)*SCALE; set tiny supply so room is small
-    st.params.lzn_total_supply = 3  # max frozen per addr = 1 * SCALE
-    max_frozen = st.params.lzn_max_frozen_per_address
-    assert max_frozen == SCALE
-
     st.accounts["src"] = Account(
         address="src",
         role=Role.VALIDATOR,
         zkp_id="zkp-src",
         lzn=100,
-        lzn_activated=2 * SCALE,  # over headroom
+        lzn_activated=2 * SCALE,
         ant=10,
     )
     st.nullifiers.add("zkp-src")
-    dst = st.ensure_account("dst")
-    dst.lzn_activated = 0
+    st.ensure_account("dst")
 
     deliver_migrate(
         st,
         MsgMigrateRole(from_address="src", to_address="dst", zkp_proof="zkp-dst"),
     )
-    assert st.accounts["dst"].lzn_activated == max_frozen
-    # excess activated became free LZN (+ original free)
-    assert st.accounts["dst"].lzn == 100 + SCALE
+    assert st.accounts["dst"].lzn_activated == 2 * SCALE
+    assert st.accounts["dst"].lzn == 100
+
+
+def test_migrate_headroom_caps_when_others_hold_activated():
+    st = AppState()
+    st.height = 1
+    # Other validator holds 10 LZN activated → after migrate new_L_total = 10 + X
+    st.accounts["other"] = Account(
+        address="other", role=Role.VALIDATOR, lzn_activated=10 * SCALE
+    )
+    st.accounts["src"] = Account(
+        address="src",
+        role=Role.VALIDATOR,
+        zkp_id="zkp-src",
+        lzn=0,
+        lzn_activated=10 * SCALE,  # wants to move 10; max X = 5
+    )
+    st.nullifiers.add("zkp-src")
+    st.ensure_account("dst")
+
+    deliver_migrate(
+        st,
+        MsgMigrateRole(from_address="src", to_address="dst", zkp_proof="zkp-dst"),
+    )
+    assert st.accounts["dst"].lzn_activated == 5 * SCALE
+    assert st.accounts["dst"].lzn == 5 * SCALE
 
 
 def test_migrate_rejects_used_nullifier():

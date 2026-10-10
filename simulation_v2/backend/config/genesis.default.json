@@ -12,7 +12,7 @@
   },
   "app_state": {
     "params": {
-      "epoch_blocks": 10080,
+      "epoch_blocks": 108,
       "halving_interval": 2100000,
       "lambda_num": 1,
       "lambda_den": 3,
@@ -39,7 +39,7 @@
     "genesis_validator": {
       "seed": "volnix-genesis-validator-v2",
       "lzn_activated": 1,
-      "ant": 10080,
+      "ant": 108,
       "wrt": 0
     }
   }

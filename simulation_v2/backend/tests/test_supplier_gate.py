@@ -10,7 +10,9 @@ from volnix.types.role import Role
 
 
 def test_supplier_income_formula():
-    assert supplier_income(2, 1_000_000, 2) == 2 * (1_000_000 // 2)
+    # price = micro-WRT per whole ANT; share in micro-ANT
+    assert supplier_income(2 * SCALE, SCALE, 1) == 2 * SCALE  # 2 WRT for 1 ANT
+    assert supplier_income(SCALE, 2 * SCALE, 2) == SCALE  # 1 WRT for 1 ANT share
     assert supplier_income(1, 100, 0) == 0
 
 
@@ -28,7 +30,7 @@ def test_gate_not_applicable_without_price():
 
 
 def test_gate_blocks_when_income_at_or_below_floor():
-    # share = SCALE; price=1008 → income = 1008 WRT == X → block
+    # share = SCALE; price = 1008 WRT/ANT → income = 1008 WRT == X → block
     rec = EpochRecord(
         epoch=1,
         height=3,
@@ -38,10 +40,11 @@ def test_gate_blocks_when_income_at_or_below_floor():
         lzn_emit=0,
         suppliers=["s1"],
     )
-    ok, reason = new_supplier_allowed(last_epoch=rec, last_ant_wrt_price=1008)
+    px = 1008 * SCALE
+    ok, reason = new_supplier_allowed(last_epoch=rec, last_ant_wrt_price=px)
     assert not ok
     assert reason == "supplier income below floor"
-    assert supplier_income(1008, SCALE, 1) == SUPPLIER_MIN_EPOCH_INCOME
+    assert supplier_income(px, SCALE, 1) == SUPPLIER_MIN_EPOCH_INCOME
 
 
 def test_gate_allows_when_income_above_floor():
@@ -54,7 +57,7 @@ def test_gate_allows_when_income_above_floor():
         lzn_emit=0,
         suppliers=["s1"],
     )
-    ok, reason = new_supplier_allowed(last_epoch=rec, last_ant_wrt_price=1009)
+    ok, reason = new_supplier_allowed(last_epoch=rec, last_ant_wrt_price=1009 * SCALE)
     assert ok and reason == ""
 
 
@@ -97,6 +100,7 @@ def test_verify_blocked_by_low_income_after_trade():
         genesis_no_zkp=True,
     )
     st.accounts["sup"] = Account(address="sup", role=Role.SUPPLIER, ant=SCALE)
+    # price=1 micro-WRT per whole ANT; trade 1 ANT → cost = 1 micro-WRT
     deliver_place(
         st,
         MsgPlaceOrder(
@@ -104,7 +108,7 @@ def test_verify_blocked_by_low_income_after_trade():
             market="ANT/WRT",
             side="SELL",
             order_type="LIMIT",
-            amount=1000,
+            amount=SCALE,
             price=1,
         ),
     )
@@ -115,13 +119,13 @@ def test_verify_blocked_by_low_income_after_trade():
             market="ANT/WRT",
             side="BUY",
             order_type="LIMIT",
-            amount=1000,
+            amount=SCALE,
             price=1,
         ),
     )
     assert st.last_ant_wrt_price == 1
     process_boundary(st)
-    # Control epoch so income = 1 * SCALE == X
+    # Control epoch so income = (1 * SCALE) // SCALE == 1 micro-WRT << X
     st.epochs[-1] = EpochRecord(
         epoch=1,
         height=3,
@@ -154,7 +158,7 @@ def test_verify_allowed_when_income_high():
             suppliers=["sup"],
         )
     )
-    st.last_ant_wrt_price = 1009  # income = 1009 * SCALE > X (1008 WRT)
+    st.last_ant_wrt_price = 1009 * SCALE  # income = 1009 WRT > X (1008 WRT)
     deliver_verify(
         st,
         MsgVerifyIdentity(address="new", zkp_proof="zkp-hi", desired_role="supplier"),
@@ -177,7 +181,7 @@ def test_slots_full_blocks_regardless_of_income():
             suppliers=["sup"],
         )
     )
-    st.last_ant_wrt_price = 100  # would pass income gate
+    st.last_ant_wrt_price = 100 * SCALE  # would pass income gate
     try:
         deliver_verify(
             st,
@@ -191,6 +195,8 @@ def test_slots_full_blocks_regardless_of_income():
 def test_snapshot_preserves_last_ant_wrt_price():
     st = AppState()
     st.last_ant_wrt_price = 42
+    st.last_lzn_wrt_price = 11
     snap = st.to_snapshot()
     st2 = AppState.from_snapshot(snap)
     assert st2.last_ant_wrt_price == 42
+    assert st2.last_lzn_wrt_price == 11

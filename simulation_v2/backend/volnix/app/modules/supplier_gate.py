@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from volnix.app.state import SUPPLIER_MIN_EPOCH_INCOME, AppState, EpochRecord
+from volnix.app.state import SCALE, SUPPLIER_MIN_EPOCH_INCOME, AppState, EpochRecord
 
 
 def supplier_income(price: int, ant_emit: int, n_suppliers: int) -> int:
-    """income = price × (ANT_emit // N) in micro-WRT."""
+    """income = (price × (ANT_emit // N)) // SCALE in micro-WRT.
+
+    ``price`` is micro-WRT per whole ANT (same units as order ``price``).
+    """
     if n_suppliers <= 0:
         return 0
-    return price * (ant_emit // n_suppliers)
+    share = ant_emit // n_suppliers
+    return (int(price) * int(share)) // SCALE
 
 
 def new_supplier_allowed(

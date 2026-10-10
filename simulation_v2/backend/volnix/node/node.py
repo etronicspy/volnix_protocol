@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable
 
 from volnix.app.abci import BaseApp
 from volnix.app.genesis import format_time, parse_time
+from volnix.app.state import AppState
 from volnix.app.txutil import build_tx, next_account_sequence
 from volnix.crypto.keys import KeyPair
 from volnix.types.msgs import Msg
@@ -29,6 +30,7 @@ from volnix.types.block import (
     Block,
     BlockID,
     BlockResults,
+    Commit,
     Header,
     PartSetHeader,
     empty_block_id,
@@ -38,6 +40,8 @@ from volnix.types.block import (
 )
 from volnix.types.tx import Tx
 from volnix.types.validator import ValidatorSet
+
+SNAPSHOT_VERSION = 1
 
 
 class Node:
@@ -68,9 +72,10 @@ class Node:
         self._chain_lock = threading.Lock()
         self._task: asyncio.Task[None] | None = None
         self._running = False
-        self._last_commit = None
+        self._last_commit: Commit | None = None
         self.consensus_hash = ""
         self._interval_wake = asyncio.Event()
+        self.booted_from_snapshot = False
 
     @property
     def produce_interval(self) -> float:
@@ -114,30 +119,63 @@ class Node:
             except Exception:
                 pass
 
-    def load_or_init(self) -> None:
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.app.init_chain(self.genesis_path)
-        self.consensus_hash = hash_obj(self.app.consensus_params)
-        genesis_block = self.app.genesis_block
-        assert genesis_block is not None
+    def _snapshot_envelope(self) -> dict[str, Any]:
+        return {
+            "version": SNAPSHOT_VERSION,
+            "app": self.app.state.to_snapshot(),
+            "validator_set": self.app.validator_set.to_dict(),
+            "last_commit": self._last_commit.to_dict() if self._last_commit else None,
+            "consensus_hash": self.consensus_hash,
+        }
 
-        self.blocks.load()
-        self.results.load()
-        self.tx_index.load()
-        self.valsets.load()
+    def _save_snapshot(self) -> None:
+        self.snapshot.save(self._snapshot_envelope())
 
-        if self.blocks.get(0) is None:
-            self.blocks.append(genesis_block)
-            self.results.append(BlockResults(height=0))
-            self.valsets.append(0, self.app.validator_set)
-            self._flush_blockstore()
-            self.snapshot.save(self.app.state.to_snapshot())
-            self._last_commit = genesis_block.last_commit
+    def _try_restore_snapshot(self, tip: Block) -> bool:
+        """Restore app state from envelope if it matches tip app_hash. Else False."""
+        raw = self.snapshot.load()
+        if not isinstance(raw, dict) or int(raw.get("version") or 0) != SNAPSHOT_VERSION:
+            return False
+        app_raw = raw.get("app")
+        vs_raw = raw.get("validator_set")
+        if not isinstance(app_raw, dict) or not isinstance(vs_raw, dict):
+            return False
+        try:
+            state = AppState.from_snapshot(app_raw)
+            vset = ValidatorSet.from_dict(vs_raw)
+        except Exception:
+            return False
+        if state.height != tip.header.height:
+            return False
+        if state.app_hash() != tip.header.app_hash:
+            return False
+        self.app.state = state
+        self.app.validator_set = vset
+        self.app.next_validator_set = vset.copy()
+        if raw.get("consensus_hash"):
+            self.consensus_hash = str(raw["consensus_hash"])
+        lc = raw.get("last_commit")
+        self._last_commit = Commit.from_dict(lc) if isinstance(lc, dict) else None
+        if self._last_commit is None and tip.header.height > 0:
+            self._recompute_tip_commit(tip)
+        return True
+
+    def _recompute_tip_commit(self, tip: Block) -> None:
+        """Deterministically rebuild tip Commit for next block's last_commit."""
+        h = tip.header.height
+        if h <= 0:
+            self._last_commit = tip.last_commit
             return
+        voting = self.valsets.get(h - 1)
+        if voting is None:
+            voting = self.app.validator_set
+        decision = self.consensus.run_rounds(h, tip.header.time, tip.hash(), voting)
+        self._last_commit = decision.commit
 
-        # Replay blocks 1..N from JSONL (source of truth).
-        heights = [h for h in self.blocks.heights() if h >= 1]
-        for h in heights:
+    def _replay_from_blocks(self) -> None:
+        """Stream-replay heights 1..tip from disk (JSONL source of truth)."""
+        tip_h = self.blocks.latest_height()
+        for h in range(1, tip_h + 1):
             block = self.blocks.get(h)
             if block is None:
                 continue
@@ -152,11 +190,51 @@ class Node:
                     f"replay app_hash mismatch at height {h}: {app_hash} != {block.header.app_hash}"
                 )
             self.app.validator_set = next_set
-        latest = self.blocks.get(self.blocks.latest_height())
-        if latest is not None:
-            self._last_commit = latest.last_commit
-        # persist reconstructed snapshot
-        self.snapshot.save(self.app.state.to_snapshot())
+            self.app.next_validator_set = next_set.copy()
+        tip = self.blocks.get(self.blocks.latest_height())
+        if tip is not None:
+            self._recompute_tip_commit(tip)
+
+    def load_or_init(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.booted_from_snapshot = False
+        self.app.init_chain(self.genesis_path)
+        self.consensus_hash = hash_obj(self.app.consensus_params)
+        genesis_block = self.app.genesis_block
+        assert genesis_block is not None
+
+        # Open JSONL indexes only — do not materialize full history in RAM.
+        self.blocks.load()
+        self.results.load()
+        self.tx_index.load()
+        self.valsets.load()
+
+        if self.blocks.get(0) is None:
+            self.blocks.append(genesis_block)
+            self.results.append(BlockResults(height=0))
+            self.valsets.append(0, self.app.validator_set)
+            self._flush_blockstore()
+            self._last_commit = genesis_block.last_commit
+            self._save_snapshot()
+            return
+
+        tip_h = self.blocks.latest_height()
+        tip = self.blocks.get(tip_h)
+        assert tip is not None
+
+        if tip_h == 0:
+            # Genesis only — state already from init_chain; keep valset from genesis.
+            self._last_commit = tip.last_commit
+            self._save_snapshot()
+            return
+
+        if self._try_restore_snapshot(tip):
+            self.booted_from_snapshot = True
+            return
+
+        # Missing/invalid/legacy snapshot → full stream replay, then write envelope.
+        self._replay_from_blocks()
+        self._save_snapshot()
 
     def compose_tx(
         self,
@@ -299,7 +377,9 @@ class Node:
             )
         self._flush_blockstore()
         self.app.validator_set = next_set
+        self.app.next_validator_set = next_set.copy()
         self.pace.on_valid_block()
+        self._save_snapshot()
         return block
 
     async def produce_and_notify(self) -> Block | None:

@@ -45,7 +45,7 @@ def test_citizen_may_sell_lzn():
             side="SELL",
             order_type="LIMIT",
             amount=SCALE // 2,
-            price=10,
+            price=10 * SCALE,
         ),
     )
     assert any(e.type == "anteil.order_placed" for e in events)
@@ -64,7 +64,7 @@ def test_citizen_cannot_buy_lzn():
                 side="BUY",
                 order_type="LIMIT",
                 amount=1,
-                price=1,
+                price=SCALE,
             ),
         )
         raise AssertionError("should reject")
