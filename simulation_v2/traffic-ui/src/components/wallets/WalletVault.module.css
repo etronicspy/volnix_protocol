@@ -1,0 +1,43 @@
+.wrap {
+  display: grid;
+  gap: 1rem;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+  margin: 0 0 0.75rem;
+}
+
+.offline {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line));
+  background: color-mix(in srgb, var(--warn) 10%, white);
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin-bottom: 1rem;
+}
+
+.active td {
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+}

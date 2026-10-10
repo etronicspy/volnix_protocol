@@ -26,27 +26,19 @@ interface TxLookup {
   result?: { code?: number; log?: string } | null
 }
 
+const LABELS: Record<string, string> = {
+  'bank/MsgSend': 'WRT transfer',
+  'ident/MsgMigrateRole': 'role migrate',
+  'povb/MsgDeclareParticipation': 'declare bᵢ/sᵢ',
+  'lizenz/MsgActivateLZN': 'activate LZN',
+  'lizenz/MsgDeactivateLZN': 'deactivate LZN',
+}
+
 export function describeMessage(msg: TxMessage): string {
-  switch (msg.type) {
-    case 'bank/MsgSend':
-      return 'WRT transfer'
-    case 'ident/MsgVerifyIdentity':
-      return `role → ${String(msg.desired_role ?? '')}`
-    case 'ident/MsgMigrateRole':
-      return 'role migrate'
-    case 'povb/MsgDeclareParticipation':
-      return 'declare bᵢ/sᵢ'
-    case 'lizenz/MsgActivateLZN':
-      return 'activate LZN'
-    case 'lizenz/MsgDeactivateLZN':
-      return 'deactivate LZN'
-    case 'anteil/MsgPlaceOrder':
-      return `order ${String(msg.market ?? '')} ${String(msg.side ?? '')}`
-    case 'anteil/MsgCancelOrder':
-      return `cancel ${String(msg.order_id ?? '')}`
-    default:
-      return msg.type
-  }
+  if (msg.type === 'ident/MsgVerifyIdentity') return `role → ${String(msg.desired_role ?? '')}`
+  if (msg.type === 'anteil/MsgPlaceOrder') return `order ${String(msg.market ?? '')} ${String(msg.side ?? '')}`
+  if (msg.type === 'anteil/MsgCancelOrder') return `cancel ${String(msg.order_id ?? '')}`
+  return LABELS[msg.type] ?? msg.type
 }
 
 export function cancelIds(txs: PendingTx[]): Set<string> {
@@ -105,11 +97,6 @@ export async function fetchMempool(address?: string): Promise<PendingTx[]> {
     })
   }
   return out
-}
-
-export async function findPending(hash: string): Promise<PendingTx | null> {
-  const txs = await fetchMempool()
-  return txs.find((tx) => tx.hash === hash) ?? null
 }
 
 /** code 0 settled, non-zero rejected, null still missing from the index. */

@@ -49,6 +49,7 @@ simulation_v2/**/venv/
 simulation_v2/**/.venv/
 simulation/wallet-ui/dist/
 simulation_v2/wallet/dist/
+simulation_v2/traffic-ui/dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

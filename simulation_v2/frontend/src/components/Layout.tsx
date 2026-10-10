@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { EXPLORER_POLL_MS } from '../config'
-import { api, trafficApi } from '../lib/api'
+import { MEMPOOL_POLL_MS, TRAFFIC_UI_URL } from '../config'
+import { api } from '../lib/api'
 import { useChainWebSocket } from '../hooks/useChainWebSocket'
 import { useLiveRefresh } from '../hooks/useFetch'
-import { BlockSpeedControl } from './BlockSpeedControl'
 import type { SearchResult } from '../types/api'
 import styles from './Layout.module.css'
 
@@ -16,36 +15,15 @@ const NAV = [
   { to: '/validators', label: 'Validators' },
   { to: '/market', label: 'Market' },
   { to: '/epochs', label: 'Epochs' },
-  { to: '/operator', label: 'Traffic' },
 ]
 
 export function Layout() {
   const live = useChainWebSocket()
-  const livePulse = useLiveRefresh(EXPLORER_POLL_MS)
+  const pollTick = useLiveRefresh(MEMPOOL_POLL_MS)
+  const chainTick = live.connected ? live.height : pollTick
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [searchError, setSearchError] = useState<string | null>(null)
-  const [resetting, setResetting] = useState(false)
-
-  async function onResetChain() {
-    if (resetting) return
-    if (!window.confirm('Reset the chain to genesis? Blocks and accounts will be wiped.')) return
-    setResetting(true)
-    setSearchError(null)
-    try {
-      await api.post('/api/v1/operator/reset-chain')
-      try {
-        await trafficApi.post('/reset')
-      } catch {
-        /* traffic process is optional */
-      }
-      navigate('/')
-    } catch {
-      setSearchError('Reset failed')
-    } finally {
-      setResetting(false)
-    }
-  }
 
   async function onSearch(e: FormEvent) {
     e.preventDefault()
@@ -79,10 +57,15 @@ export function Layout() {
               Volnix <span>Explorer</span>
             </Link>
             <div className={styles.brandControls}>
-              <BlockSpeedControl />
-              <button type="button" className={styles.reset} disabled={resetting} onClick={() => void onResetChain()}>
-                {resetting ? 'Resetting…' : 'Reset chain'}
-              </button>
+              <a
+                className={styles.external}
+                href={TRAFFIC_UI_URL}
+                target="_blank"
+                rel="noreferrer"
+                title="Пульт стенда: traffic, time scale, reset chain"
+              >
+                Traffic ↗
+              </a>
               <div className={styles.live}>
                 <span className={`${styles.dot} ${live.connected ? styles.on : ''}`} />
                 {live.connected ? 'live' : 'offline'}
@@ -103,13 +86,13 @@ export function Layout() {
               </NavLink>
             ))}
           </nav>
-          <form onSubmit={onSearch} className="row" style={{ width: '100%' }}>
+          <form onSubmit={onSearch} className={`row ${styles.search}`}>
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search height, tx hash, address…"
               aria-label="Search"
-              style={{ flex: 1, minWidth: 180, border: '1px solid var(--line)', padding: '0.5rem 0.65rem' }}
+              className={styles.searchInput}
             />
             <button type="submit" className="btn secondary">
               Search
@@ -119,7 +102,7 @@ export function Layout() {
         </div>
       </header>
       <main className={styles.main}>
-        <Outlet context={{ livePulse, liveHeight: live.height }} />
+        <Outlet context={{ chainTick, mempoolTick: pollTick }} />
       </main>
     </div>
   )

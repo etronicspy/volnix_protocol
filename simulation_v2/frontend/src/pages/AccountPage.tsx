@@ -1,174 +1,105 @@
 import { useMemo } from 'react'
-import { Link, useOutletContext, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { formatMicro } from '../lib/api'
 import { useFetch } from '../hooks/useFetch'
+import { useLive } from '../hooks/useLive'
 import { useMempool } from '../hooks/useMempool'
 import { cancelIds, pendingPlaces } from '../lib/pending'
-import { HashLink } from '../components/HashLink'
+import { Badge } from '../components/ui/Badge'
+import { DataTable } from '../components/ui/DataTable'
+import { Page } from '../components/ui/Page'
+import { Panel } from '../components/ui/Panel'
+import { Stat } from '../components/ui/Stat'
+import { TxTable } from '../components/ui/TxTable'
 import type { AccountView, TxListItem } from '../types/api'
-
-interface OutletCtx {
-  livePulse: number
-}
 
 export function AccountPage() {
   const { address } = useParams()
-  const { livePulse } = useOutletContext<OutletCtx>()
-  const acc = useFetch<AccountView>(address ? `/api/v1/accounts/${address}` : null, livePulse)
-  const txs = useFetch<{ txs: TxListItem[] }>(address ? `/api/v1/accounts/${address}/txs` : null, livePulse)
-  const mempool = useMempool(livePulse, address)
+  const { chainTick, mempoolTick } = useLive()
+  const acc = useFetch<AccountView>(address ? `/api/v1/accounts/${address}` : null, chainTick)
+  const txs = useFetch<{ txs: TxListItem[] }>(address ? `/api/v1/accounts/${address}/txs` : null, chainTick)
+  const mempool = useMempool(mempoolTick, address)
   const dropping = useMemo(() => cancelIds(mempool.txs), [mempool.txs])
   const placing = useMemo(() => pendingPlaces(mempool.txs), [mempool.txs])
 
   const a = acc.data?.account
   const bal = acc.data?.balances_display
+  const orders = acc.data?.open_orders ?? []
 
   return (
-    <div className="page">
-      <p className="muted">
-        <Link to="/wallets">← Wallets</Link>
-      </p>
-      <h1 className="page-title">Account</h1>
-      <p className="page-lead mono">{address}</p>
-      {acc.error ? <p className="error">{acc.error}</p> : null}
-      {acc.loading && !a ? <p className="muted">Loading…</p> : null}
-
+    <Page
+      title="Account"
+      lead={<span className="mono">{address}</span>}
+      back={{ to: '/wallets', label: 'Wallets' }}
+      error={acc.error}
+      loading={acc.loading && !a}
+    >
       {a && bal ? (
         <>
           <div className="grid-3" style={{ marginBottom: '1rem' }}>
-            <div className="stat">
-              <div className="stat-label">Role</div>
-              <div className="stat-value">{a.role}</div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">WRT</div>
-              <div className="stat-value">{bal.wrt}</div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">ANT</div>
-              <div className="stat-value">{bal.ant}</div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">LZN free</div>
-              <div className="stat-value">{bal.lzn}</div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">LZN activated</div>
-              <div className="stat-value">{bal.lzn_activated}</div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Sequence / last tx</div>
-              <div className="stat-value sm">
-                {a.sequence} / h{a.last_tx_height}
-              </div>
-            </div>
+            <Stat label="Role">{a.role}</Stat>
+            <Stat label="WRT">{bal.wrt}</Stat>
+            <Stat label="ANT">{bal.ant}</Stat>
+            <Stat label="LZN free">{bal.lzn}</Stat>
+            <Stat label="LZN activated">{bal.lzn_activated}</Stat>
+            <Stat label="Sequence / last tx" sm>
+              {a.sequence} / h{a.last_tx_height}
+            </Stat>
           </div>
 
           {a.genesis_no_zkp ? <p className="muted">Genesis validator (no ZKP).</p> : null}
 
           {acc.data?.last_declare ? (
-            <div className="panel">
-              <div className="panel-title">Last declare (in-memory this height)</div>
+            <Panel title="Last declare (in-memory this height)">
               <div className="mono">
                 b_i={acc.data.last_declare.b_i} · s_i={acc.data.last_declare.s_i} · f_i=
                 {acc.data.last_declare.f_i} · w_i={acc.data.last_declare.w_i.toFixed(4)}
               </div>
-            </div>
+            </Panel>
           ) : null}
 
-          <div className="panel">
-            <div className="panel-title">Open orders</div>
-            {acc.data?.open_orders?.length || placing.length ? (
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Market</th>
-                      <th>Side</th>
-                      <th>Amount</th>
-                      <th>Price</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {acc.data?.open_orders.map((o) => (
-                      <tr key={o.order_id}>
-                        <td className="mono">{o.order_id}</td>
-                        <td>{o.market}</td>
-                        <td>{o.side}</td>
-                        <td className="mono">{o.amount}</td>
-                        <td className="mono">{o.price}</td>
-                        <td>{dropping.has(o.order_id) ? <span className="badge warn">cancelling</span> : null}</td>
-                      </tr>
-                    ))}
-                    {placing.map((row) => (
-                      <tr key={row.hash}>
-                        <td className="mono">—</td>
-                        <td>{row.market}</td>
-                        <td>{row.side}</td>
-                        <td className="mono">{row.amount}</td>
-                        <td className="mono">{row.price}</td>
-                        <td>
-                          <span className="badge warn">order in mempool</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="empty">No open orders</div>
-            )}
-          </div>
+          <Panel title="Open orders">
+            <DataTable
+              head={['ID', 'Market', 'Side', 'Amount', 'Price (WRT)', '']}
+              empty="No open orders"
+              count={orders.length + placing.length}
+            >
+              {orders.map((o) => (
+                <tr key={o.order_id}>
+                  <td className="mono">{o.order_id}</td>
+                  <td>{o.market}</td>
+                  <td>{o.side}</td>
+                  <td className="mono">{formatMicro(o.amount)}</td>
+                  <td className="mono">{formatMicro(o.price)}</td>
+                  <td>{dropping.has(o.order_id) ? <Badge tone="warn">cancelling</Badge> : null}</td>
+                </tr>
+              ))}
+              {placing.map((row) => (
+                <tr key={row.hash}>
+                  <td className="mono">—</td>
+                  <td>{row.market}</td>
+                  <td>{row.side}</td>
+                  <td className="mono">{formatMicro(row.amount)}</td>
+                  <td className="mono">{formatMicro(row.price)}</td>
+                  <td>
+                    <Badge tone="warn">order in mempool</Badge>
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          </Panel>
 
-          <div className="panel">
-            <div className="panel-title">Transaction history</div>
-            {mempool.rejects.length ? <p className="error">{mempool.rejects.join(' · ')}</p> : null}
-            {mempool.txs.length || txs.data?.txs?.length ? (
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Hash</th>
-                      <th>Height</th>
-                      <th>Index</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mempool.txs.map((t) => (
-                      <tr key={t.hash}>
-                        <td>
-                          <HashLink hash={t.hash} />
-                        </td>
-                        <td>
-                          <span className="badge warn">in mempool</span>
-                          <div className="muted" style={{ marginTop: 4, fontSize: '0.75rem' }}>
-                            {t.label}
-                          </div>
-                        </td>
-                        <td>—</td>
-                      </tr>
-                    ))}
-                    {txs.data?.txs.map((t) => (
-                      <tr key={t.hash}>
-                        <td>
-                          <HashLink hash={t.hash} />
-                        </td>
-                        <td>
-                          <HashLink height={t.height} />
-                        </td>
-                        <td>{t.index}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="empty">No transactions</div>
-            )}
-          </div>
+          <Panel title="Transaction history">
+            <TxTable
+              pending={mempool.txs}
+              txs={txs.data?.txs ?? []}
+              extraCol="index"
+              empty="No transactions"
+              rejects={mempool.rejects}
+            />
+          </Panel>
         </>
       ) : null}
-    </div>
+    </Page>
   )
 }

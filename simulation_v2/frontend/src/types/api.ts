@@ -90,10 +90,27 @@ export interface BlockConsensus {
   round: number
 }
 
+export interface BlockHeader {
+  height?: number | string
+  time?: string
+  proposer_address?: string
+  app_hash?: string
+  data_hash?: string
+  validators_hash?: string
+  next_validators_hash?: string
+  last_results_hash?: string
+  [key: string]: string | number | undefined
+}
+
+export interface RawTx {
+  hash?: string
+  body?: { messages?: { type: string }[] }
+}
+
 export interface BlockDetail {
   block: {
-    header: Record<string, unknown>
-    data: { txs: unknown[] }
+    header: BlockHeader
+    data: { txs: RawTx[] }
     evidence: unknown[]
     last_commit: CommitView | null
   }
@@ -256,10 +273,17 @@ export interface EpochRecord {
   suppliers: string[]
 }
 
+export interface BookLevel {
+  order_id: string
+  owner: string
+  price: number
+  remaining: number
+}
+
 export interface OrderBook {
   market: string
-  bids: { order_id: string; owner: string; price: number; remaining: number }[]
-  asks: { order_id: string; owner: string; price: number; remaining: number }[]
+  bids: BookLevel[]
+  asks: BookLevel[]
 }
 
 export interface TradeRow {
@@ -295,63 +319,3 @@ export type WsEvent =
   | { type: 'epoch_boundary'; epoch: number; height: number }
   | { type: 'chain_reset'; height: number; chain_id: string; app_hash: string }
   | { type: 'ping' }
-
-export interface TrafficAgentStatus {
-  address: string
-  role: string
-  genesis?: boolean
-  expected_wrt: number
-  growth_wrt: number
-  b_i: number
-  s_i: number
-  enter: boolean
-  adopted_from: string
-}
-
-export interface TrafficParams {
-  target_enrichment_bots: number
-  target_citizens: number
-  citizen_transfers_per_tick: number
-  horizon_blocks: number
-  peer_sample_min: number
-  peer_sample_max: number
-}
-
-export interface TrafficStatus {
-  running: boolean
-  release?: boolean
-  height: number
-  intensity: number
-  wallets: number
-  roles: Record<string, number>
-  pools?: Record<string, number>
-  floor?: {
-    min_suppliers: number
-    min_validators: number
-    suppliers: number
-    validators: number
-  }
-  genesis?: { address: string; managed: boolean }
-  agents?: TrafficAgentStatus[]
-  horizon_blocks?: number
-  params?: TrafficParams
-  last_tick: {
-    height?: number
-    market?: number
-    bots?: number
-    declare?: number
-    citizen_txs?: number
-    spend_txs?: number
-  }
-  last_errors: string[]
-  node_url: string
-  produce_interval_sec?: number
-  attempt_window_sec?: number
-  pace_debt_blocks?: number
-  effective_poll_sec?: number
-  flags: {
-    market: boolean
-    bots: boolean
-    declare: boolean
-  }
-}

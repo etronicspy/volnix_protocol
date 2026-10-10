@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../lib/api'
 
 interface FetchState<T> {
@@ -7,57 +7,42 @@ interface FetchState<T> {
   loading: boolean
 }
 
-export function useFetch<T>(path: string | null, refreshKey = 0): FetchState<T> & { reload: () => void } {
+export function useFetch<T>(path: string | null, refreshKey = 0): FetchState<T> {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(Boolean(path))
-  const [tick, setTick] = useState(0)
-
-  const reload = useCallback(() => setTick((t) => t + 1), [])
+  const [readyPath, setReadyPath] = useState<string | null>(null)
+  const pathRef = useRef(path)
 
   useEffect(() => {
-    if (!path) {
-      setData(null)
-      setError(null)
-      setLoading(false)
-      return
-    }
-    let cancelled = false
-    setLoading(true)
+    pathRef.current = path
+    if (!path) return
+    const requested = path
     api
-      .get<T>(path)
+      .get<T>(requested)
       .then((d) => {
-        if (!cancelled) {
-          setData(d)
-          setError(null)
-        }
+        if (pathRef.current !== requested) return
+        setReadyPath(requested)
+        setData(d)
+        setError(null)
       })
       .catch((e: unknown) => {
-        if (!cancelled) {
-          setError(e instanceof ApiError ? e.message : 'Request failed')
-          setData(null)
-        }
+        if (pathRef.current !== requested) return
+        setReadyPath(requested)
+        setError(e instanceof ApiError ? e.message : 'Request failed')
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [path, refreshKey, tick])
+  }, [path, refreshKey])
 
-  return { data, error, loading, reload }
+  if (!path) return { data: null, error: null, loading: false }
+  if (readyPath !== path) return { data: null, error: null, loading: true }
+  return { data, error, loading: false }
 }
 
 export function useLiveRefresh(intervalMs = 0): number {
   const [key, setKey] = useState(0)
-  const bump = useCallback(() => setKey((k) => k + 1), [])
-  const bumpRef = useRef(bump)
-  bumpRef.current = bump
 
   useEffect(() => {
     if (intervalMs <= 0) return
-    const id = window.setInterval(() => bumpRef.current(), intervalMs)
+    const id = window.setInterval(() => setKey((k) => k + 1), intervalMs)
     return () => window.clearInterval(id)
   }, [intervalMs])
 

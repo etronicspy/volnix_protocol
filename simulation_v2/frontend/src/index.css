@@ -270,35 +270,6 @@ table.data tr:hover td {
   transform: none;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  margin-bottom: 0.75rem;
-}
-
-.field label {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--ink-muted);
-}
-
-.field input,
-.field select,
-.field textarea {
-  border: 1px solid var(--line);
-  background: white;
-  padding: 0.5rem 0.65rem;
-  color: var(--ink);
-}
-
-.field input:focus,
-.field select:focus,
-.field textarea:focus {
-  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-color: var(--accent);
-}
-
 .muted {
   color: var(--ink-muted);
 }

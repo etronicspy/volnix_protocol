@@ -15,13 +15,13 @@ export function useMempool(refreshKey: number, address?: string) {
         if (cancelled) return
         const hashes = new Set(live.map((tx) => tx.hash))
         const left = [...watched.current].filter((hash) => !hashes.has(hash))
+        const settled = await Promise.all(left.map((hash) => settleTx(hash).then((s) => ({ hash, s }))))
+        if (cancelled) return
         const failures: string[] = []
-        for (const hash of left) {
-          const settled = await settleTx(hash)
-          if (cancelled) return
-          if (!settled) continue
+        for (const { hash, s } of settled) {
+          if (!s) continue
           watched.current.delete(hash)
-          if (settled.code !== 0) failures.push(settled.log || `rejected (${settled.code})`)
+          if (s.code !== 0) failures.push(s.log || `rejected (${s.code})`)
         }
         for (const tx of live) watched.current.add(tx.hash)
         setTxs(live)

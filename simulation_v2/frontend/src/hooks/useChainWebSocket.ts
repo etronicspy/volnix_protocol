@@ -6,8 +6,6 @@ interface LiveState {
   connected: boolean
   height: number
   chainId: string
-  lastEvent: WsEvent | null
-  pulse: number
 }
 
 export function useChainWebSocket(): LiveState {
@@ -15,8 +13,6 @@ export function useChainWebSocket(): LiveState {
     connected: false,
     height: 0,
     chainId: '',
-    lastEvent: null,
-    pulse: 0,
   })
   const retryRef = useRef(0)
 
@@ -47,7 +43,7 @@ export function useChainWebSocket(): LiveState {
           const msg = JSON.parse(String(ev.data)) as WsEvent
           if (msg.type === 'ping') return
           setState((s) => {
-            const next = { ...s, lastEvent: msg, pulse: s.pulse + 1 }
+            const next = { ...s }
             if (msg.type === 'init') {
               next.height = msg.height
               next.chainId = msg.chain_id

@@ -1,121 +1,70 @@
-import { useEffect, useState } from 'react'
-import { Link, useOutletContext, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useFetch } from '../hooks/useFetch'
-import { findPending } from '../lib/pending'
-import type { PendingTx } from '../lib/pending'
+import { useLive } from '../hooks/useLive'
+import { useMempool } from '../hooks/useMempool'
 import { HashLink } from '../components/HashLink'
+import { Badge } from '../components/ui/Badge'
+import { EventList } from '../components/ui/EventList'
+import { Page } from '../components/ui/Page'
+import { Panel } from '../components/ui/Panel'
+import { Stat } from '../components/ui/Stat'
 import type { TxDetail } from '../types/api'
-
-interface OutletCtx {
-  livePulse: number
-}
 
 export function TxDetailPage() {
   const { hash } = useParams()
-  const { livePulse } = useOutletContext<OutletCtx>()
-  const { data, error, loading } = useFetch<TxDetail>(hash ? `/api/v1/txs/${hash}` : null, livePulse)
-  const [pending, setPending] = useState<PendingTx | null>(null)
-
-  useEffect(() => {
-    if (!hash || data) {
-      setPending(null)
-      return
-    }
-    let cancelled = false
-    void findPending(hash).then((tx) => {
-      if (!cancelled) setPending(tx)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [hash, data, livePulse, error])
-  const messages =
-    (data?.tx?.body as { messages?: Record<string, unknown>[] } | undefined)?.messages ?? []
+  const { chainTick, mempoolTick } = useLive()
+  const { data, error, loading } = useFetch<TxDetail>(hash ? `/api/v1/txs/${hash}` : null, chainTick)
+  const mempool = useMempool(mempoolTick)
+  const pending = data ? null : (mempool.txs.find((tx) => tx.hash === hash) ?? null)
+  const messages = data
+    ? ((data.tx.body as { messages?: Record<string, unknown>[] } | undefined)?.messages ?? [])
+    : (pending?.messages ?? [])
 
   return (
-    <div className="page">
-      <p className="muted">
-        <Link to="/">← Overview</Link>
-      </p>
-      <h1 className="page-title">Transaction</h1>
-      {error && !pending ? <p className="error">{error}</p> : null}
-      {loading && !data && !pending ? <p className="muted">Loading…</p> : null}
-
-      {pending && !data ? (
+    <Page
+      title="Transaction"
+      back={{ to: '/', label: 'Overview' }}
+      error={error && !pending ? error : null}
+      loading={loading && !data && !pending}
+    >
+      {data || pending ? (
         <>
           <div className="grid-3" style={{ marginBottom: '1rem' }}>
-            <div className="stat">
-              <div className="stat-label">Hash</div>
-              <div className="stat-value sm">{pending.hash}</div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Status</div>
-              <div className="stat-value sm">
-                <span className="badge warn">in mempool</span>
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Sender</div>
-              <div className="stat-value sm">
-                <HashLink address={pending.sender} />
-              </div>
-            </div>
-          </div>
-          <div className="panel">
-            <div className="panel-title">Messages</div>
-            <p className="muted">{pending.label}</p>
-            <div className="stack">
-              {pending.messages.map((m, i) => (
-                <div key={i} className="pre">
-                  {JSON.stringify(m, null, 2)}
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : null}
-
-      {data ? (
-        <>
-          <div className="grid-3" style={{ marginBottom: '1rem' }}>
-            <div className="stat">
-              <div className="stat-label">Hash</div>
-              <div className="stat-value sm">{data.hash}</div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Height</div>
-              <div className="stat-value">
+            <Stat label="Hash" sm>
+              {data?.hash ?? pending?.hash}
+            </Stat>
+            {data ? (
+              <Stat label="Height">
                 <HashLink height={data.height} />
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Sender</div>
-              <div className="stat-value sm">
-                <HashLink address={data.sender} />
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Result</div>
-              <div className="stat-value sm">
-                {data.result ? (
-                  <span className={`badge ${data.result.code === 0 ? 'ok' : 'bad'}`}>
-                    {data.result.code === 0 ? 'ok' : data.result.log}
-                  </span>
-                ) : (
-                  '—'
-                )}
-              </div>
-            </div>
-            <div className="stat">
-              <div className="stat-label">Gas</div>
-              <div className="stat-value sm">
-                {data.result ? `${data.result.gas_used} / ${data.result.gas_wanted}` : '—'}
-              </div>
-            </div>
+              </Stat>
+            ) : (
+              <Stat label="Status" sm>
+                <Badge tone="warn">in mempool</Badge>
+              </Stat>
+            )}
+            <Stat label="Sender" sm>
+              <HashLink address={data?.sender ?? pending?.sender} />
+            </Stat>
+            {data ? (
+              <>
+                <Stat label="Result" sm>
+                  {data.result ? (
+                    <Badge tone={data.result.code === 0 ? 'ok' : 'bad'}>
+                      {data.result.code === 0 ? 'ok' : data.result.log}
+                    </Badge>
+                  ) : (
+                    '—'
+                  )}
+                </Stat>
+                <Stat label="Gas" sm>
+                  {data.result ? `${data.result.gas_used} / ${data.result.gas_wanted}` : '—'}
+                </Stat>
+              </>
+            ) : null}
           </div>
 
-          <div className="panel">
-            <div className="panel-title">Messages</div>
+          <Panel title="Messages">
+            {pending ? <p className="muted">{pending.label}</p> : null}
             {messages.length ? (
               <div className="stack">
                 {messages.map((m, i) => (
@@ -127,25 +76,15 @@ export function TxDetailPage() {
             ) : (
               <div className="empty">No messages</div>
             )}
-          </div>
+          </Panel>
 
-          {data.result?.events?.length ? (
-            <div className="panel">
-              <div className="panel-title">Events</div>
-              <div className="stack">
-                {data.result.events.map((e, i) => (
-                  <div key={i}>
-                    <span className="badge muted">{e.type}</span>
-                    <div className="mono muted" style={{ marginTop: 4, fontSize: '0.8rem' }}>
-                      {e.attributes.map((a) => `${a.key}=${a.value}`).join(' · ')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {data?.result?.events?.length ? (
+            <Panel title="Events">
+              <EventList events={data.result.events} />
+            </Panel>
           ) : null}
         </>
       ) : null}
-    </div>
+    </Page>
   )
 }

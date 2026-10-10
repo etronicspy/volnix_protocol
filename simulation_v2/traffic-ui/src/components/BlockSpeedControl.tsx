@@ -1,21 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
+import type { PaceStatus } from '../types/api'
 import styles from './BlockSpeedControl.module.css'
 
 const SCALE_MIN = 1
 const SCALE_MAX = 3600
 const SLIDER_MAX = 1000
-
-interface PaceStatus {
-  attempt_window_sec: number
-  pace_debt_blocks: number
-  missed_budget_sec: number
-  base_block_time: number
-  time_scale: number
-  wall_sleep_sec: number
-  produce_interval_sec: number
-  auto_produce: boolean
-}
 
 function scaleToSlider(scale: number): number {
   const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, scale))

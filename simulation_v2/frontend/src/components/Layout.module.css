@@ -56,28 +56,15 @@
   color: var(--accent);
 }
 
-.reset {
-  appearance: none;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--bad);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.35rem 0.55rem;
-  cursor: pointer;
+.external {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--ink-muted);
   white-space: nowrap;
 }
 
-.reset:hover:not(:disabled) {
-  border-color: var(--bad);
-  background: color-mix(in srgb, var(--bad) 8%, transparent);
-}
-
-.reset:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.external:hover {
+  color: var(--accent);
 }
 
 .live {
@@ -139,4 +126,15 @@
 
 .main {
   flex: 1;
+}
+
+.search {
+  width: 100%;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 180px;
+  border: 1px solid var(--line);
+  padding: 0.5rem 0.65rem;
 }

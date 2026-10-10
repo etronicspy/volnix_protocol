@@ -1,15 +1,13 @@
-import { API_BASE, SCALE, TRAFFIC_BASE } from '../config'
+import { API_BASE, SCALE } from '../config'
 
 export class ApiError extends Error {
-  status: number
-  constructor(message: string, status: number) {
+  constructor(message: string) {
     super(message)
-    this.status = status
   }
 }
 
-async function request<T>(base: string, path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       Accept: 'application/json',
@@ -25,28 +23,19 @@ async function request<T>(base: string, path: string, init?: RequestInit): Promi
     } catch {
       /* ignore */
     }
-    throw new ApiError(detail || `HTTP ${res.status}`, res.status)
+    throw new ApiError(detail || `HTTP ${res.status}`)
   }
   return res.json() as Promise<T>
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(API_BASE, path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(API_BASE, path, {
-      method: 'POST',
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
+  get: <T>(path: string) => request<T>(path),
 }
 
-/** Control plane for simulation_v2/traffic (default :8002). */
-export const trafficApi = {
-  get: <T>(path: string) => request<T>(TRAFFIC_BASE, path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(TRAFFIC_BASE, path, {
-      method: 'POST',
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
+export function toNumber(v: number | string | undefined | null): number {
+  if (v === undefined || v === null || v === '') return 0
+  const n = typeof v === 'string' ? Number(v) : v
+  return Number.isFinite(n) ? n : 0
 }
 
 /** Format micro-units for display. */
@@ -58,6 +47,11 @@ export function formatMicro(micro: number | string | undefined | null, digits = 
     minimumFractionDigits: 0,
     maximumFractionDigits: digits,
   })
+}
+
+export function formatTime(iso: string | undefined | null): string {
+  if (!iso) return '—'
+  return iso.replace('T', ' ').replace('Z', '')
 }
 
 export function shortHash(hash: string | null | undefined, head = 8, tail = 4): string {

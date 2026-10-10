@@ -9,7 +9,6 @@ import { WalletsPage } from './pages/WalletsPage'
 import { ValidatorsPage } from './pages/ValidatorsPage'
 import { MarketPage } from './pages/MarketPage'
 import { EpochsPage } from './pages/EpochsPage'
-import { OperatorPage } from './pages/OperatorPage'
 
 export default function App() {
   return (
@@ -25,7 +24,6 @@ export default function App() {
           <Route path="validators" element={<ValidatorsPage />} />
           <Route path="market" element={<MarketPage />} />
           <Route path="epochs" element={<EpochsPage />} />
-          <Route path="operator" element={<OperatorPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

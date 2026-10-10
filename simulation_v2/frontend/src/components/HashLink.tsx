@@ -9,23 +9,24 @@ interface Props {
 }
 
 export function HashLink({ hash, address, height, className }: Props) {
+  const cls = `mono ${className ?? ''}`
   if (height !== undefined && height !== null) {
     return (
-      <Link to={`/blocks/${height}`} className={`mono ${className ?? ''}`}>
+      <Link to={`/blocks/${height}`} className={cls}>
         #{height}
       </Link>
     )
   }
   if (address) {
     return (
-      <Link to={`/accounts/${address}`} className={`mono ${className ?? ''}`} title={address}>
+      <Link to={`/accounts/${address}`} className={cls} title={address}>
         {shortAddress(address)}
       </Link>
     )
   }
   if (hash) {
     return (
-      <Link to={`/txs/${hash}`} className={`mono ${className ?? ''}`} title={hash}>
+      <Link to={`/txs/${hash}`} className={cls} title={hash}>
         {shortHash(hash)}
       </Link>
     )

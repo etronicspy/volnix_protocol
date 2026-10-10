@@ -1,5 +1,8 @@
 import { HashLink } from '../HashLink'
 import type { ValidatorSetView, ValidatorView } from '../../types/api'
+import { Badge } from '../ui/Badge'
+import { DataTable } from '../ui/DataTable'
+import { ValidatorTable } from './ValidatorTable'
 
 interface Props {
   signingSet: ValidatorSetView | null
@@ -16,10 +19,7 @@ interface DiffRow {
   after: ValidatorView | null
 }
 
-function buildDiff(
-  signing: ValidatorSetView | null,
-  next: ValidatorSetView | null,
-): DiffRow[] {
+function buildDiff(signing: ValidatorSetView | null, next: ValidatorSetView | null): DiffRow[] {
   const before = new Map((signing?.validators ?? []).map((v) => [v.address, v]))
   const after = new Map((next?.validators ?? []).map((v) => [v.address, v]))
   const addrs = new Set([...before.keys(), ...after.keys()])
@@ -36,11 +36,11 @@ function buildDiff(
   return rows
 }
 
-function kindBadge(kind: DiffKind) {
-  if (kind === 'in') return <span className="badge ok">in</span>
-  if (kind === 'out') return <span className="badge bad">out</span>
-  if (kind === 'power') return <span className="badge warn">power</span>
-  return <span className="badge muted">same</span>
+function kindTone(kind: DiffKind) {
+  if (kind === 'in') return 'ok' as const
+  if (kind === 'out') return 'bad' as const
+  if (kind === 'power') return 'warn' as const
+  return 'muted' as const
 }
 
 export function ValidatorSetDiff({ signingSet, nextSet, updates }: Props) {
@@ -60,103 +60,29 @@ export function ValidatorSetDiff({ signingSet, nextSet, updates }: Props) {
       <div className="grid-2" style={{ marginBottom: '1rem' }}>
         <div>
           <div className="panel-title">Signing ({signing.length})</div>
-          {signing.length ? (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Address</th>
-                    <th>L_i</th>
-                    <th>s_i</th>
-                    <th>w_i</th>
-                    <th>Power</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {signing.map((v) => (
-                    <tr key={v.address}>
-                      <td>
-                        <HashLink address={v.address} />
-                      </td>
-                      <td className="mono">{v.l_i}</td>
-                      <td className="mono">{v.s_i}</td>
-                      <td className="mono">{v.w_i?.toFixed?.(4) ?? v.w_i}</td>
-                      <td className="mono">{v.power?.toLocaleString?.() ?? v.power}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="empty">Empty</div>
-          )}
+          <ValidatorTable validators={signing} empty="Empty" />
         </div>
         <div>
           <div className="panel-title">Next ({next.length})</div>
-          {next.length ? (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Address</th>
-                    <th>L_i</th>
-                    <th>s_i</th>
-                    <th>w_i</th>
-                    <th>Power</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {next.map((v) => (
-                    <tr key={v.address}>
-                      <td>
-                        <HashLink address={v.address} />
-                      </td>
-                      <td className="mono">{v.l_i}</td>
-                      <td className="mono">{v.s_i}</td>
-                      <td className="mono">{typeof v.w_i === 'number' ? v.w_i.toFixed(4) : v.w_i}</td>
-                      <td className="mono">
-                        {typeof v.power === 'number' ? v.power.toLocaleString() : v.power}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="empty">Empty / set held</div>
-          )}
+          <ValidatorTable validators={next} empty="Empty / set held" />
         </div>
       </div>
 
       <div className="panel-title">Diff</div>
-      {rows.length ? (
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Address</th>
-                <th>Change</th>
-                <th>Power before</th>
-                <th>Power after</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.address}>
-                  <td>
-                    <HashLink address={r.address} />
-                  </td>
-                  <td>{kindBadge(r.kind)}</td>
-                  <td className="mono">{r.before?.power?.toLocaleString() ?? '—'}</td>
-                  <td className="mono">{r.after?.power?.toLocaleString() ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty">No validators</div>
-      )}
+      <DataTable head={['Address', 'Change', 'Power before', 'Power after']} empty="No validators" count={rows.length}>
+        {rows.map((r) => (
+          <tr key={r.address}>
+            <td>
+              <HashLink address={r.address} />
+            </td>
+            <td>
+              <Badge tone={kindTone(r.kind)}>{r.kind}</Badge>
+            </td>
+            <td className="mono">{r.before?.power?.toLocaleString() ?? '—'}</td>
+            <td className="mono">{r.after?.power?.toLocaleString() ?? '—'}</td>
+          </tr>
+        ))}
+      </DataTable>
     </div>
   )
 }
